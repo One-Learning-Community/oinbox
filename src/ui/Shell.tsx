@@ -154,13 +154,22 @@ function Sidebar(props: { current: string }) {
   );
 }
 
+/** Route params may arrive still percent-encoded; decode once, tolerating stray '%'. */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 /** Route component for /:slug, /:slug/t/:threadId and /label/:id[/t/:threadId]. */
 export function MailView() {
   const params = useParams<{ slug?: string; id?: string; q?: string; threadId?: string }>();
   const { engine } = useApp();
   const slug = () =>
     params.q !== undefined
-      ? `search/${encodeURIComponent(params.q)}`
+      ? `search/${encodeURIComponent(safeDecode(params.q))}`
       : params.id
         ? `label/${params.id}`
         : (params.slug ?? 'inbox');

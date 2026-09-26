@@ -11,7 +11,8 @@ import { MessageBody } from './MessageBody';
 
 const ComposerView = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposerView })));
 
-type Item = { kind: 'msg'; email: EmailRec } | { kind: 'older'; count: number };
+/** Email ids, or `older:<count>` for the folded run. Strings keep <For> from recreating messages (and their iframes) on every store change. */
+type Item = string;
 
 export function Conversation(props: { view: View; threadId: Id }) {
   const { engine, toast, actions, nav, composers } = useApp();
@@ -96,13 +97,11 @@ export function Conversation(props: { view: View; threadId: Id }) {
       while (j < list.length && !expanded().has(list[j]!.id)) j++;
       const run = j - i;
       if (run >= 4 && !showOlder()) {
-        out.push({ kind: 'msg', email: list[i]! });
-        out.push({ kind: 'older', count: run - 2 });
-        out.push({ kind: 'msg', email: list[j - 1]! });
+        out.push(list[i]!.id, `older:${run - 2}`, list[j - 1]!.id);
       } else {
-        for (let k = i; k < j; k++) out.push({ kind: 'msg', email: list[k]! });
+        for (let k = i; k < j; k++) out.push(list[k]!.id);
       }
-      if (j < list.length) out.push({ kind: 'msg', email: list[j]! });
+      if (j < list.length) out.push(list[j]!.id);
       i = j + 1;
     }
     return out;
@@ -164,12 +163,14 @@ export function Conversation(props: { view: View; threadId: Id }) {
             </div>
             <For each={items()}>
               {(item) =>
-                item.kind === 'older' ? (
+                item.startsWith('older:') ? (
                   <div class="older-pill" role="button" tabindex="0" onClick={() => setShowOlder(true)} onKeyDown={(e) => e.key === 'Enter' && setShowOlder(true)}>
-                    <span>{item.count}</span> older messages
+                    <span>{item.slice(6)}</span> older messages
                   </div>
                 ) : (
-                  <Message email={item.email} expanded={expanded().has(item.email.id)} onToggle={() => toggle(item.email.id)} />
+                  <Show when={engine.state.emails[item]}>
+                    {(email) => <Message email={email()} expanded={expanded().has(item)} onToggle={() => toggle(item)} />}
+                  </Show>
                 )
               }
             </For>

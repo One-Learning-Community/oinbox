@@ -99,12 +99,14 @@ export class MailEngine {
    * thread's old one), so by default collapsed lists re-read their visible window instead.
    */
   private readonly collapsedQueryChanges: boolean;
+  private readonly settleDelayMs: number;
 
   constructor(
     private readonly client: JmapClient,
-    opts: { collapsedQueryChanges?: boolean } = {},
+    opts: { collapsedQueryChanges?: boolean; settleDelayMs?: number } = {},
   ) {
     this.collapsedQueryChanges = opts.collapsedQueryChanges ?? false;
+    this.settleDelayMs = opts.settleDelayMs ?? 500;
     const [state, set] = createStore<MailState>({
       ready: false,
       mailboxes: {},
@@ -202,6 +204,21 @@ export class MailEngine {
     const p = this.doFetchPage(key, position).finally(() => this.inflightPages.delete(flightKey));
     this.inflightPages.set(flightKey, p);
     return p;
+  }
+
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Stalwart sends StateChange up to ~100 ms before a new message sorts into place, so the
+   * immediate re-read can see it in the wrong position. Re-read once more after things settle.
+   */
+  private settleSoon(keys: string[]): void {
+    if (this.settleDelayMs <= 0 || !keys.length) return;
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      for (const k of keys) if (this.state.queries[k]) void this.refreshWindow(k).catch(() => undefined);
+    }, this.settleDelayMs);
   }
 
   /** Re-read the rows around the viewport in one request (used when queryChanges can't be trusted). */
@@ -591,7 +608,10 @@ export class MailEngine {
     if (em || th) {
       const ch = em ? res.get(em.changes) : null;
       const changed = !ch || ch.created.length + ch.updated.length + ch.destroyed.length > 0;
-      if (changed) await Promise.all(windowed.map((k) => this.refreshWindow(k)));
+      if (changed) {
+        await Promise.all(windowed.map((k) => this.refreshWindow(k)));
+        this.settleSoon(windowed);
+      }
     }
     await this.fillMissingRows();
     this.persistSoon();

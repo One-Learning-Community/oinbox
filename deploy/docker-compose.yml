@@ -1,0 +1,67 @@
+# oinbox dev stack: Stalwart (JMAP/SMTP) + Meilisearch (FTS) + Caddy (SPA + same-origin proxy)
+name: oinbox
+
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:v0.16.23
+    restart: unless-stopped
+    environment:
+      # Fixed dev admin (Stalwart's "recovery admin"; honoured in normal mode too). DEV ONLY.
+      STALWART_RECOVERY_ADMIN: "admin:oinbox-admin-pass"
+      # Base for every URL in /.well-known/jmap, oauth-authorization-server, openid-configuration.
+      STALWART_PUBLIC_URL: "http://localhost:8080"
+      MEILI_MASTER_KEY: "oinbox-dev-meili-master-key"
+    volumes:
+      # config.json only names the datastore; everything else is applied by seed.sh (stalwart/plan.ndjson)
+      - ./stalwart/config.json:/etc/stalwart/config.json:ro
+      - stalwart-data:/var/lib/stalwart
+    ports:
+      - "2525:25"            # SMTP (MTA) for tests to inject mail
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.0
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: "oinbox-dev-meili-master-key"
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili-data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7700/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  caddy:
+    # The app: SPA built from the repo root Dockerfile (pnpm build) and served by Caddy,
+    # which also reverse-proxies Stalwart on the same origin.
+    #   docker compose up -d --build        -> serves the dist baked into the image
+    # For fast iteration against a local `pnpm build` (and for the e2e suite), add the
+    # override that mounts ../dist instead:
+    #   docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: oinbox-web:dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Live Caddyfile (the image has a copy baked in); `docker compose restart caddy` after edits.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - stalwart
+
+volumes:
+  stalwart-data:
+  meili-data:

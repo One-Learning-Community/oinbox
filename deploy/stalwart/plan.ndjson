@@ -1,0 +1,11 @@
+{"@type":"upsert","object":"Domain","matchOn":["name"],"value":{"dom-example":{"name":"example.test","description":"oinbox dev domain","certificateManagement":{"@type":"Manual"},"dkimManagement":{"@type":"Manual"},"dnsManagement":{"@type":"Manual"},"subAddressing":{"@type":"Enabled"}}}}
+{"@type":"update","object":"SystemSettings","id":"singleton","value":{"defaultHostname":"mail.example.test","defaultDomainId":"#dom-example"}}
+{"@type":"update","object":"SearchStore","id":"singleton","value":{"@type":"Meilisearch","url":"http://meilisearch:7700","httpAuth":{"@type":"Bearer","bearerToken":{"@type":"EnvironmentVariable","variableName":"MEILI_MASTER_KEY"}}}}
+{"@type":"update","object":"SpamSettings","id":"singleton","value":{"enable":false}}
+{"@type":"update","object":"SenderAuth","id":"singleton","value":{"reverseIpVerify":{"match":{},"else":"disable"},"spfEhloVerify":{"match":{},"else":"disable"},"spfFromVerify":{"match":{},"else":"disable"},"dmarcVerify":{"match":{},"else":"disable"},"dkimVerify":{"match":{},"else":"disable"},"arcVerify":{"match":{},"else":"disable"}}}
+{"@type":"update","object":"MtaStageEhlo","id":"singleton","value":{"rejectNonFqdn":{"match":{},"else":"false"}}}
+{"@type":"reconcile","object":"MtaInboundThrottle","matchOn":["description"],"value":{}}
+{"@type":"reconcile","object":"Tracer","matchOn":["@type"],"value":{"tracer-console":{"@type":"Stdout","enable":true,"level":"info","ansi":false}}}
+{"@type":"update","object":"Http","id":"singleton","value":{"usePermissiveCors":true}}
+{"@type":"update","object":"OidcProvider","id":"singleton","value":{"requireClientRegistration":true,"accessTokenExpiry":3600000,"refreshTokenExpiry":2592000000}}
+{"@type":"upsert","object":"OAuthClient","matchOn":["clientId"],"value":{"oauth-oinbox":{"clientId":"oinbox","description":"oinbox SPA (public client, PKCE)","redirectUris":{"http://localhost:8080/auth/callback":true,"http://localhost:5173/auth/callback":true}},"oauth-webui":{"clientId":"stalwart-webui","description":"Stalwart WebUI (needed because requireClientRegistration=true)","redirectUris":{"http://localhost:8080/admin/oauth/callback":true,"http://localhost:8080/account/oauth/callback":true}}}}

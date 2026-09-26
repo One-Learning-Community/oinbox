@@ -1,0 +1,10 @@
+# Override: serve the locally built ../dist (from `pnpm build`) instead of the dist baked
+# into the oinbox-web image. Used for fast iteration and by the e2e suite.
+#   docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d
+services:
+  caddy:
+    volumes:
+      # Project root mounted read-only; Caddy serves only ./dist from it (/srv/oinbox/dist).
+      # Mounting the parent (not ../dist directly) avoids Docker creating an empty
+      # root-owned dist/ before the first build.
+      - ..:/srv/oinbox:ro

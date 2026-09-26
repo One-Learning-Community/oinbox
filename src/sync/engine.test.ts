@@ -1,12 +1,12 @@
 import { createRoot } from 'solid-js';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SORT, MailEngine } from './engine';
 import { FakeJmap } from './fake-jmap';
 import { archivePatch, keywordPatch } from './patch';
 
 const inboxSpec = { filter: { inMailbox: 'I' }, sort: DEFAULT_SORT, collapseThreads: true };
 
-function setup(opts: { collapsedQueryChanges?: boolean } = {}) {
+function setup(opts: { collapsedQueryChanges?: boolean; settleDelayMs?: number } = {}) {
   const server = new FakeJmap();
   server.addMailbox('I', 'Inbox', 'inbox');
   server.addMailbox('S', 'Sent', 'sent');
@@ -16,7 +16,7 @@ function setup(opts: { collapsedQueryChanges?: boolean } = {}) {
   server.addEmail({ id: 'e2', threadId: 't1', receivedAt: '2026-09-01T11:00:00Z', mailboxIds: { S: true }, keywords: { $seen: true } }, false);
   server.addEmail({ id: 'e3', threadId: 't1', receivedAt: '2026-09-01T12:00:00Z', mailboxIds: { I: true } }, false);
   server.addEmail({ id: 'e4', threadId: 't2', receivedAt: '2026-09-01T09:00:00Z', mailboxIds: { I: true } }, false);
-  const engine = createRoot(() => new MailEngine(server.client(), opts));
+  const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0, ...opts }));
   return { server, engine };
 }
 
@@ -64,6 +64,23 @@ describe('MailEngine', () => {
     expect(server.calls).not.toContain('Email/queryChanges');
     // A new reply replaces its thread's row rather than adding a second one.
     expect(engine.state.queries[key]!.slots).toEqual(['e6', 'e4']);
+  });
+
+  it('re-reads the window again after a delay, fixing late server ordering', async () => {
+    vi.useFakeTimers();
+    try {
+      ({ server, engine } = setup({ settleDelayMs: 500 }));
+      await engine.start();
+      const key = engine.openQuery(inboxSpec);
+      await engine.ensureRange(key, 0, 10);
+      server.addEmail({ id: 'e7', threadId: 't9', receivedAt: '2026-09-04T00:00:00Z', mailboxIds: { I: true } });
+      await engine.catchUp();
+      server.calls = [];
+      await vi.advanceTimersByTimeAsync(600);
+      expect(server.calls).toContain('Email/query');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does nothing to lists when no emails changed', async () => {
