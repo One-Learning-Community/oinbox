@@ -1,0 +1,305 @@
+// JMAP Core (RFC 8620) and Mail (RFC 8621) types — only what oinbox uses.
+
+export type Id = string;
+export type UTCDate = string;
+
+export const CORE = 'urn:ietf:params:jmap:core';
+export const MAIL = 'urn:ietf:params:jmap:mail';
+export const SUBMISSION = 'urn:ietf:params:jmap:submission';
+
+export interface Session {
+  capabilities: Record<string, unknown>;
+  accounts: Record<Id, { name: string; isPersonal: boolean; isReadOnly: boolean }>;
+  primaryAccounts: Record<string, Id>;
+  username: string;
+  apiUrl: string;
+  downloadUrl: string;
+  uploadUrl: string;
+  eventSourceUrl: string;
+  state: string;
+}
+
+export type MailboxRole =
+  | 'inbox' | 'drafts' | 'sent' | 'trash' | 'junk' | 'archive' | 'important' | 'all' | 'flagged';
+
+export interface Mailbox {
+  id: Id;
+  name: string;
+  parentId: Id | null;
+  role: MailboxRole | null;
+  sortOrder: number;
+  totalEmails: number;
+  unreadEmails: number;
+  totalThreads: number;
+  unreadThreads: number;
+  isSubscribed: boolean;
+}
+
+export interface EmailAddress {
+  name: string | null;
+  email: string;
+}
+
+export interface EmailBodyPart {
+  partId: string | null;
+  blobId: Id | null;
+  size: number;
+  type: string;
+  name: string | null;
+  cid: string | null;
+  disposition: string | null;
+  charset?: string | null;
+}
+
+export interface EmailBodyValue {
+  value: string;
+  isEncodingProblem: boolean;
+  isTruncated: boolean;
+}
+
+export interface Email {
+  id: Id;
+  blobId: Id;
+  threadId: Id;
+  mailboxIds: Record<Id, true>;
+  keywords: Record<string, true>;
+  size: number;
+  receivedAt: UTCDate;
+  messageId: string[] | null;
+  inReplyTo: string[] | null;
+  references: string[] | null;
+  from: EmailAddress[] | null;
+  to: EmailAddress[] | null;
+  cc: EmailAddress[] | null;
+  bcc: EmailAddress[] | null;
+  replyTo: EmailAddress[] | null;
+  subject: string | null;
+  sentAt: UTCDate | null;
+  hasAttachment: boolean;
+  preview: string;
+  textBody: EmailBodyPart[];
+  htmlBody: EmailBodyPart[];
+  attachments: EmailBodyPart[];
+  bodyValues: Record<string, EmailBodyValue>;
+}
+
+export interface Thread {
+  id: Id;
+  emailIds: Id[];
+}
+
+export interface Identity {
+  id: Id;
+  name: string;
+  email: string;
+  replyTo: EmailAddress[] | null;
+  bcc: EmailAddress[] | null;
+  textSignature: string;
+  htmlSignature: string;
+  mayDelete: boolean;
+}
+
+export interface SearchSnippet {
+  emailId: Id;
+  subject: string | null;
+  preview: string | null;
+}
+
+export interface Comparator {
+  property: string;
+  isAscending?: boolean;
+}
+
+export interface EmailFilterCondition {
+  inMailbox?: Id;
+  inMailboxOtherThan?: Id[];
+  before?: UTCDate;
+  after?: UTCDate;
+  minSize?: number;
+  maxSize?: number;
+  allInThreadHaveKeyword?: string;
+  someInThreadHaveKeyword?: string;
+  noneInThreadHaveKeyword?: string;
+  hasKeyword?: string;
+  notKeyword?: string;
+  hasAttachment?: boolean;
+  text?: string;
+  from?: string;
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  subject?: string;
+  body?: string;
+  header?: string[];
+}
+
+export interface FilterOperator {
+  operator: 'AND' | 'OR' | 'NOT';
+  conditions: EmailFilter[];
+}
+
+export type EmailFilter = EmailFilterCondition | FilterOperator;
+
+// ---- Standard method shapes -------------------------------------------------
+
+export interface GetArgs {
+  accountId: Id;
+  ids?: Id[] | null;
+  properties?: string[];
+}
+export interface GetResult<T> {
+  accountId: Id;
+  state: string;
+  list: T[];
+  notFound: Id[];
+}
+
+export interface ChangesArgs {
+  accountId: Id;
+  sinceState: string;
+  maxChanges?: number;
+}
+export interface ChangesResult {
+  accountId: Id;
+  oldState: string;
+  newState: string;
+  hasMoreChanges: boolean;
+  created: Id[];
+  updated: Id[];
+  destroyed: Id[];
+}
+export interface MailboxChangesResult extends ChangesResult {
+  updatedProperties: string[] | null;
+}
+
+export interface QueryArgs<F> {
+  accountId: Id;
+  filter?: F | null;
+  sort?: Comparator[];
+  position?: number;
+  anchor?: Id;
+  anchorOffset?: number;
+  limit?: number;
+  calculateTotal?: boolean;
+}
+export interface EmailQueryArgs extends QueryArgs<EmailFilter> {
+  collapseThreads?: boolean;
+}
+export interface QueryResult {
+  accountId: Id;
+  queryState: string;
+  canCalculateChanges: boolean;
+  position: number;
+  ids: Id[];
+  total?: number;
+}
+
+export interface QueryChangesArgs<F> {
+  accountId: Id;
+  filter?: F | null;
+  sort?: Comparator[];
+  sinceQueryState: string;
+  maxChanges?: number;
+  upToId?: Id;
+  calculateTotal?: boolean;
+}
+export interface EmailQueryChangesArgs extends QueryChangesArgs<EmailFilter> {
+  collapseThreads?: boolean;
+}
+export interface QueryChangesResult {
+  accountId: Id;
+  oldQueryState: string;
+  newQueryState: string;
+  total?: number;
+  removed: Id[];
+  added: { id: Id; index: number }[];
+}
+
+export interface SetArgs<T> {
+  accountId: Id;
+  ifInState?: string;
+  create?: Record<string, Partial<T>>;
+  update?: Record<Id, Record<string, unknown>>;
+  destroy?: Id[];
+}
+export interface SetError {
+  type: string;
+  description?: string;
+  properties?: string[];
+}
+export interface SetResult<T> {
+  accountId: Id;
+  oldState: string | null;
+  newState: string;
+  created: Record<string, T> | null;
+  updated: Record<Id, Partial<T> | null> | null;
+  destroyed: Id[] | null;
+  notCreated: Record<string, SetError> | null;
+  notUpdated: Record<Id, SetError> | null;
+  notDestroyed: Record<Id, SetError> | null;
+}
+
+export interface EmailGetArgs extends GetArgs {
+  bodyProperties?: string[];
+  fetchTextBodyValues?: boolean;
+  fetchHTMLBodyValues?: boolean;
+  fetchAllBodyValues?: boolean;
+  maxBodyValueBytes?: number;
+}
+
+export interface EmailSubmission {
+  id: Id;
+  identityId: Id;
+  emailId: Id;
+  threadId: Id;
+  envelope: { mailFrom: { email: string }; rcptTo: { email: string }[] } | null;
+  sendAt: UTCDate;
+  undoStatus: 'pending' | 'final' | 'canceled';
+}
+
+export interface EmailSubmissionSetArgs extends SetArgs<EmailSubmission> {
+  onSuccessUpdateEmail?: Record<string, Record<string, unknown>>;
+  onSuccessDestroyEmail?: string[];
+}
+
+/** Method name → argument and result types. The request builder is typed off this map. */
+export interface Methods {
+  'Mailbox/get': { args: GetArgs; result: GetResult<Mailbox> };
+  'Mailbox/changes': { args: ChangesArgs; result: MailboxChangesResult };
+  'Mailbox/set': { args: SetArgs<Mailbox>; result: SetResult<Mailbox> };
+  'Email/get': { args: EmailGetArgs; result: GetResult<Email> };
+  'Email/changes': { args: ChangesArgs; result: ChangesResult };
+  'Email/query': { args: EmailQueryArgs; result: QueryResult };
+  'Email/queryChanges': { args: EmailQueryChangesArgs; result: QueryChangesResult };
+  'Email/set': { args: SetArgs<Email>; result: SetResult<Email> };
+  'Thread/get': { args: GetArgs; result: GetResult<Thread> };
+  'Thread/changes': { args: ChangesArgs; result: ChangesResult };
+  'Identity/get': { args: GetArgs; result: GetResult<Identity> };
+  'SearchSnippet/get': {
+    args: { accountId: Id; filter: EmailFilter | null; emailIds: Id[] };
+    result: { accountId: Id; list: SearchSnippet[]; notFound: Id[] | null };
+  };
+  'EmailSubmission/set': { args: EmailSubmissionSetArgs; result: SetResult<EmailSubmission> };
+}
+
+export type MethodName = keyof Methods;
+
+/** A JSON-pointer back-reference (RFC 8620 §3.7). */
+export interface ResultReference {
+  resultOf: string;
+  name: MethodName;
+  path: string;
+}
+
+/** Args where any property may instead be supplied as `#prop: ResultReference`. */
+export type WithRefs<A> = { [K in keyof A]?: A[K] } & { [K in keyof A as `#${K & string}`]?: ResultReference };
+
+export interface StateChange {
+  '@type': 'StateChange';
+  changed: Record<Id, Partial<Record<string, string>>>;
+}
+
+export interface MethodErrorBody {
+  type: string;
+  description?: string;
+}
