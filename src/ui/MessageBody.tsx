@@ -89,6 +89,14 @@ export function MessageBody(props: { email: EmailRec }) {
         .catch(() => undefined);
     }
 
+    // Keys pressed after clicking into a message still drive Gmail shortcuts.
+    doc.addEventListener('keydown', (e) => {
+      const forwarded = new KeyboardEvent('keydown', {
+        key: e.key, code: e.code, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, bubbles: true, cancelable: true,
+      });
+      if (!document.dispatchEvent(forwarded)) e.preventDefault();
+    });
+
     resizeObserver?.disconnect();
     resizeObserver = new ResizeObserver(fit);
     resizeObserver.observe(doc.documentElement);
