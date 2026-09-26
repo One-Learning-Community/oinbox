@@ -2,7 +2,8 @@ import { batch as solidBatch } from 'solid-js';
 import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
 import type { BatchResult, JmapClient } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
-import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, StateChange, Thread } from '../jmap/types';
+import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, SetError, StateChange, Thread } from '../jmap/types';
+import { applyEmailPatch, type EmailPatch } from './patch';
 import { applyQueryChanges, missingPages, type Slots } from './window';
 
 export const PAGE_SIZE = 50;
@@ -284,6 +285,112 @@ export class MailEngine {
       this.mergeEmails(emails);
       this.set('bodies', produce((bodies) => emails.forEach((e) => (bodies[e.id] = true))));
     });
+  }
+
+  // ---- Mutations -----------------------------------------------------------
+
+  /** Ids of every email in the given threads. */
+  threadEmails(threadIds: Id[]): EmailRec[] {
+    return threadIds.flatMap((tid) =>
+      (this.state.threads[tid]?.emailIds ?? []).map((id) => this.state.emails[id]).filter((e): e is EmailRec => !!e),
+    );
+  }
+
+  /**
+   * Optimistically apply Email/set patches, then confirm with the server.
+   * Rows that no longer match simple mailbox/starred views disappear at once.
+   * Anything the server rejects is rolled back; the returned error describes it.
+   */
+  async updateEmails(patches: Record<Id, EmailPatch>): Promise<void> {
+    const ids = Object.keys(patches);
+    if (!ids.length) return;
+    const before = new Map<Id, { keywords: Record<string, true>; mailboxIds: Record<Id, true> }>();
+    const touchedThreads = new Set<Id>();
+
+    solidBatch(() => {
+      this.set('emails', produce((m) => {
+        for (const id of ids) {
+          const e = m[id];
+          if (!e) continue;
+          before.set(id, { keywords: { ...(e.keywords ?? {}) }, mailboxIds: { ...(e.mailboxIds ?? {}) } });
+          Object.assign(e, applyEmailPatch(e, patches[id]!));
+          if (e.threadId) touchedThreads.add(e.threadId);
+        }
+      }));
+    });
+    const removedRows = this.dropNonMatchingRows(touchedThreads);
+
+    const rollback = (failed: Id[]) => {
+      solidBatch(() => {
+        this.set('emails', produce((m) => {
+          for (const id of failed) {
+            const prev = before.get(id);
+            if (prev && m[id]) Object.assign(m[id], prev);
+          }
+        }));
+        const failedThreads = new Set(failed.map((id) => this.state.emails[id]?.threadId));
+        for (const r of removedRows) {
+          if (!failedThreads.has(this.state.emails[r.id]?.threadId)) continue;
+          this.set('queries', r.key, 'slots', produce((slots) => {
+            if (!slots.includes(r.id)) slots.splice(Math.min(r.index, slots.length), 0, r.id);
+          }));
+          this.set('queries', r.key, 'total', (t) => (t ?? 0) + 1);
+        }
+      });
+    };
+
+    const b = this.client.batch();
+    const call = b.call('Email/set', { accountId: this.accountId, update: patches });
+    let failed: Record<Id, SetError> = {};
+    try {
+      const res = await this.client.send(b);
+      failed = res.get(call).notUpdated ?? {};
+    } catch (e) {
+      // Transport or method-level failure: nothing was applied server-side.
+      rollback(ids);
+      throw e;
+    } finally {
+      this.persistSoon();
+    }
+    const failedIds = Object.keys(failed);
+    if (failedIds.length) {
+      rollback(failedIds);
+      const first = failed[failedIds[0]!]!;
+      throw new Error(first.description ?? first.type);
+    }
+  }
+
+  /** Remove rows of mailbox/starred views whose thread no longer belongs there. */
+  private dropNonMatchingRows(threadIds: Set<Id>): { key: string; id: Id; index: number }[] {
+    const removed: { key: string; id: Id; index: number }[] = [];
+    for (const q of Object.values(this.state.queries)) {
+      const f = q.filter as Record<string, unknown> | null;
+      if (!f) continue;
+      const keys = Object.keys(f);
+      let matches: ((members: EmailRec[]) => boolean) | null = null;
+      if (keys.length === 1 && typeof f.inMailbox === 'string') {
+        const mb = f.inMailbox;
+        matches = (members) => members.some((e) => e.mailboxIds?.[mb]);
+      } else if (keys.length === 1 && f.hasKeyword === '$flagged') {
+        matches = (members) => members.some((e) => e.keywords?.$flagged);
+      }
+      if (!matches) continue;
+      const drop: { id: Id; index: number }[] = [];
+      q.slots.forEach((id, index) => {
+        if (!id) return;
+        const tid = this.state.emails[id]?.threadId;
+        if (!tid || !threadIds.has(tid)) return;
+        if (!matches!(this.threadEmails([tid]))) drop.push({ id, index });
+      });
+      if (!drop.length) continue;
+      const dropIds = new Set(drop.map((d) => d.id));
+      this.set('queries', q.key, produce((lq) => {
+        lq.slots = lq.slots.filter((id) => !id || !dropIds.has(id));
+        lq.total = lq.slots.length;
+      }));
+      for (const d of drop) removed.push({ key: q.key, ...d });
+    }
+    return removed;
   }
 
   // ---- Push ----------------------------------------------------------------
