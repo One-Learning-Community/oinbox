@@ -77,7 +77,7 @@ a { color: var(--accent); }
 .icon-btn svg { width: 20px; height: 20px; }
 
 /* ---- Shell ---- */
-.shell { display: grid; grid-template-columns: 256px 1fr; grid-template-rows: 64px 1fr; height: 100%; }
+.shell { display: grid; grid-template-columns: 256px minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); height: 100%; }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 8px 16px 8px 8px; }
 .brand { display: flex; align-items: center; gap: 8px; width: 232px; font-size: 22px; color: var(--text-2); flex: none; }
 .brand b { color: var(--accent); }
@@ -174,7 +174,16 @@ a { color: var(--accent); }
 .only-mobile { display: none; }
 @media (max-width: 800px) {
   :root { --row-h: 76px; }
-  .shell { grid-template-columns: 1fr; grid-template-rows: 64px 1fr; }
+  /* minmax(0, 1fr): never let the top bar's min-content widen the page past the screen. */
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); }
+  .topbar { min-width: 0; gap: 4px; padding-right: 8px; }
+  .topbar .search-box { min-width: 0; }
+  .topbar .hide-mobile { display: none; }
+  .msg-head .msg-date { font-size: 11px; max-width: 30%; white-space: normal; text-align: right; }
+  .msg-head .addr { display: none; }
+  .brand { display: none; }
+  .topbar .status-dot { display: none; }
+  .row .line { padding-right: 36px; }
   .only-mobile { display: inline-grid; }
   .brand { width: auto; }
   .brand span { display: none; }
@@ -302,4 +311,27 @@ a { color: var(--accent); }
   --rozie-combobox-option-color: var(--text);
   --rozie-combobox-bg: var(--surface);
   --rozie-combobox-color: var(--text);
+}
+
+/* The palette's base theme sets its tokens on .rozie-command-palette, so re-declare them there. */
+:root .rozie-command-palette {
+  --rozie-command-palette-bg: var(--surface);
+  --rozie-command-palette-color: var(--text);
+  --rozie-command-palette-border: 1px solid var(--border);
+  --rozie-command-palette-backdrop-bg: rgb(0 0 0 / 40%);
+  --rozie-command-palette-input-bg: var(--surface);
+  --rozie-command-palette-group-color: var(--text-3);
+  --rozie-command-palette-empty-color: var(--text-3);
+  --rozie-command-palette-divider-color: var(--border);
+  --rozie-command-palette-trailing-color: var(--text-3);
+  --rozie-command-palette-footer-color: var(--text-3);
+  --rozie-combobox-bg: var(--surface);
+  --rozie-combobox-color: var(--text);
+  --rozie-combobox-list-bg: var(--surface);
+  --rozie-combobox-list-border-color: var(--border);
+  --rozie-combobox-option-color: var(--text);
+  --rozie-combobox-option-active-bg: var(--hover);
+  --rozie-combobox-group-heading-color: var(--text-3);
+  --rozie-combobox-empty-color: var(--text-3);
+  --rozie-combobox-border-color: transparent;
 }

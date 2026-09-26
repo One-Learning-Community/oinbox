@@ -94,6 +94,21 @@ describe('parseSearch', () => {
     });
   });
 
+  it('binds OR tighter than the implied AND, like Gmail', () => {
+    expect(parseSearch('from:bob has:attachment OR is:unread', ctx).filter).toEqual({
+      operator: 'AND',
+      conditions: [
+        { from: 'bob' },
+        { operator: 'OR', conditions: [{ hasAttachment: true }, { notKeyword: '$seen' }] },
+        notTrashOrSpam,
+      ],
+    });
+    expect(parseSearch('a OR b OR c d', ctx).filter).toEqual({
+      operator: 'AND',
+      conditions: [{ operator: 'OR', conditions: [{ text: 'a' }, { text: 'b' }, { text: 'c' }] }, { text: 'd' }, notTrashOrSpam],
+    });
+  });
+
   it('treats unknown operators and stray syntax as text', () => {
     expect(parseSearch('foo:bar (', ctx).filter).toEqual({ operator: 'AND', conditions: [{ text: 'foo:bar' }, notTrashOrSpam] });
   });

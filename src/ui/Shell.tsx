@@ -50,7 +50,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element }) 
         >
           <Icon name="theme" />
         </button>
-        <button class="icon-btn" title="Keyboard shortcuts (?)" onClick={() => app.nav.setHelpOpen(true)}>
+        <button class="icon-btn hide-mobile" title="Keyboard shortcuts (?)" onClick={() => app.nav.setHelpOpen(true)}>
           <Icon name="keyboard" />
         </button>
         <button class="icon-btn" title={`Sign out ${app.client.session.username}`} onClick={() => app.signOut()}>

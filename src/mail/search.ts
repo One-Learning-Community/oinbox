@@ -183,32 +183,32 @@ export function parseSearch(input: string, ctx: SearchContext): ParsedSearch {
   const or = (conds: EmailFilter[]): EmailFilter | null =>
     conds.length === 0 ? null : conds.length === 1 ? conds[0]! : { operator: 'OR', conditions: conds };
 
-  // orExpr := andExpr ('OR' andExpr)*
-  // andExpr := unary+
-  // unary := '-' unary | '(' orExpr ')' | '{' unary* '}' | term
-  const parseOr = (negated: boolean, closer?: ')' | '}'): EmailFilter | null => {
-    const alts: EmailFilter[] = [];
-    let cur: EmailFilter[] = [];
+  // Gmail precedence: OR binds tighter than the implied AND.
+  // andExpr := orExpr+
+  // orExpr  := unary ('OR' unary)*
+  // unary   := '-' unary | '(' andExpr ')' | '{' unary* '}' | term
+  const parseAnd = (negated: boolean, closer?: ')' | '}'): EmailFilter | null => {
+    const conds: EmailFilter[] = [];
     while (pos < tokens.length) {
       const tok = tokens[pos]!;
       if (closer && tok.t === closer) break;
-      if (tok.t === ')' || tok.t === '}') {
-        pos++; // stray closer
+      if (tok.t === ')' || tok.t === '}' || tok.t === 'OR') {
+        pos++; // stray closer or dangling OR
         continue;
       }
-      if (tok.t === 'OR') {
+      const alts: EmailFilter[] = [];
+      const first = parseUnary(negated);
+      if (first) alts.push(first);
+      while (tokens[pos]?.t === 'OR') {
         pos++;
-        const a = and(cur);
-        if (a) alts.push(a);
-        cur = [];
-        continue;
+        if (pos >= tokens.length || (closer && tokens[pos]!.t === closer)) break;
+        const next = parseUnary(negated);
+        if (next) alts.push(next);
       }
-      const u = parseUnary(negated);
-      if (u) cur.push(u);
+      const o = or(alts);
+      if (o) conds.push(o);
     }
-    const a = and(cur);
-    if (a) alts.push(a);
-    return or(alts);
+    return and(conds);
   };
 
   const parseUnary = (negated: boolean): EmailFilter | null => {
@@ -220,7 +220,7 @@ export function parseSearch(input: string, ctx: SearchContext): ParsedSearch {
         return inner ? { operator: 'NOT', conditions: [inner] } : null;
       }
       case '(': {
-        const inner = parseOr(negated, ')');
+        const inner = parseAnd(negated, ')');
         if (tokens[pos]?.t === ')') pos++;
         return inner;
       }
@@ -247,7 +247,7 @@ export function parseSearch(input: string, ctx: SearchContext): ParsedSearch {
     }
   };
 
-  const parsed = pos < tokens.length ? parseOr(false) : null;
+  const parsed = pos < tokens.length ? parseAnd(false) : null;
   const conds: EmailFilter[] = [];
   if (parsed) {
     if ('operator' in parsed && parsed.operator === 'AND') conds.push(...parsed.conditions);
