@@ -2,6 +2,7 @@
 import { Navigate, Route, Router } from '@solidjs/router';
 import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
+import { createComposers } from './app/composer';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
@@ -19,7 +20,7 @@ const origin = location.origin;
 const auth = new OAuth({
   origin,
   clientId: import.meta.env.VITE_OAUTH_CLIENT_ID ?? 'oinbox',
-  scope: import.meta.env.VITE_OAUTH_SCOPE,
+  scope: import.meta.env.VITE_OAUTH_SCOPE ?? 'openid offline_access urn:ietf:params:oauth:scope:mail',
 });
 
 async function boot() {
@@ -75,6 +76,7 @@ async function boot() {
     toast: toasts.toast,
     actions: createActions(engine, toasts.toast),
     nav: createNav(),
+    composers: createComposers(engine, client, toasts.toast),
     images: await createImagePrefs(),
     ...theme,
     signOut,

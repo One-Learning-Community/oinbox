@@ -9,7 +9,7 @@ import { Icon } from './icons';
 import { createMediaQuery, createVirtualList } from './virtual';
 
 export function ThreadList(props: { view: View; hidden: boolean }) {
-  const { engine, toast, actions, nav } = useApp();
+  const { engine, toast, actions, nav, composers } = useApp();
   const navigate = useNavigate();
   const key = createMemo(() => engine.openQuery(props.view.spec));
   const query = () => engine.state.queries[key()];
@@ -83,6 +83,20 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
     const tid = threadIdAt(nav.cursor());
     if (tid && !props.hidden) prefetch(tid);
   });
+
+  /** Drafts-only threads open in the composer (Gmail); everything else opens the conversation. */
+  const openRow = async (threadId: string) => {
+    if (props.view.role === 'drafts') {
+      await engine.loadThread(threadId).catch(() => undefined);
+      const emails = engine.threadEmails([threadId]);
+      if (emails.length && emails.every((e) => e.keywords?.$draft)) {
+        const latest = emails.sort((a, b) => (b.receivedAt ?? '').localeCompare(a.receivedAt ?? ''))[0]!;
+        composers.openDraft(latest);
+        return;
+      }
+    }
+    navigate(`/${props.view.slug}/t/${threadId}`);
+  };
 
   const selection = () => [...nav.selected()];
   const loadedThreadIds = () =>
@@ -182,7 +196,7 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
                         nav.setCursor(item.index);
                         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
                         e.preventDefault();
-                        navigate(`/${props.view.slug}/t/${r().threadId}`);
+                        void openRow(r().threadId);
                       }}
                     >
                       <span

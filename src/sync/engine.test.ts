@@ -6,7 +6,7 @@ import { archivePatch, keywordPatch } from './patch';
 
 const inboxSpec = { filter: { inMailbox: 'I' }, sort: DEFAULT_SORT, collapseThreads: true };
 
-function setup() {
+function setup(opts: { collapsedQueryChanges?: boolean } = {}) {
   const server = new FakeJmap();
   server.addMailbox('I', 'Inbox', 'inbox');
   server.addMailbox('S', 'Sent', 'sent');
@@ -16,7 +16,7 @@ function setup() {
   server.addEmail({ id: 'e2', threadId: 't1', receivedAt: '2026-09-01T11:00:00Z', mailboxIds: { S: true }, keywords: { $seen: true } }, false);
   server.addEmail({ id: 'e3', threadId: 't1', receivedAt: '2026-09-01T12:00:00Z', mailboxIds: { I: true } }, false);
   server.addEmail({ id: 'e4', threadId: 't2', receivedAt: '2026-09-01T09:00:00Z', mailboxIds: { I: true } }, false);
-  const engine = createRoot(() => new MailEngine(server.client()));
+  const engine = createRoot(() => new MailEngine(server.client(), opts));
   return { server, engine };
 }
 
@@ -41,7 +41,9 @@ describe('MailEngine', () => {
     expect(engine.state.threads.t1?.emailIds).toEqual(['e1', 'e2', 'e3']);
   });
 
-  it('applies new mail via Email/changes + Email/queryChanges without refetching the list', async () => {
+  it('applies new mail via Email/changes + Email/queryChanges when the server supports it', async () => {
+    ({ server, engine } = setup({ collapsedQueryChanges: true }));
+    await engine.start();
     const key = engine.openQuery(inboxSpec);
     await engine.ensureRange(key, 0, 10);
     server.addEmail({ id: 'e5', threadId: 't3', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { I: true } });
@@ -53,7 +55,28 @@ describe('MailEngine', () => {
     expect(engine.state.emails.e5?.subject).toBe('S e5');
   });
 
+  it('by default re-reads only the visible window of a collapsed list after changes', async () => {
+    const key = engine.openQuery(inboxSpec);
+    await engine.ensureRange(key, 0, 10);
+    server.addEmail({ id: 'e6', threadId: 't1', receivedAt: '2026-09-03T00:00:00Z', mailboxIds: { I: true } });
+    server.calls = [];
+    await engine.catchUp();
+    expect(server.calls).not.toContain('Email/queryChanges');
+    // A new reply replaces its thread's row rather than adding a second one.
+    expect(engine.state.queries[key]!.slots).toEqual(['e6', 'e4']);
+  });
+
+  it('does nothing to lists when no emails changed', async () => {
+    const key = engine.openQuery(inboxSpec);
+    await engine.ensureRange(key, 0, 10);
+    server.calls = [];
+    await engine.catchUp();
+    expect(server.calls).not.toContain('Email/query');
+  });
+
   it('falls back to refetching the visible window when queryChanges is unsupported', async () => {
+    ({ server, engine } = setup({ collapsedQueryChanges: true }));
+    await engine.start();
     const key = engine.openQuery(inboxSpec);
     await engine.ensureRange(key, 0, 10);
     server.queryChangesUnsupported = true;
@@ -103,7 +126,7 @@ describe('MailEngine', () => {
     const key = engine.openQuery(inboxSpec);
     await engine.ensureRange(key, 0, 10);
     const snap = engine.snapshot();
-    const fresh = createRoot(() => new MailEngine(server.client()));
+    const fresh = createRoot(() => new MailEngine(server.client(), { collapsedQueryChanges: true }));
     expect(fresh.hydrate(snap)).toBe(true);
     expect(fresh.state.queries[key]!.slots).toEqual(['e3', 'e4']);
     server.addEmail({ id: 'e5', threadId: 't3', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { I: true } });

@@ -1,5 +1,6 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import type { Actions, ToastFn } from './actions';
+import type { Composers } from './composer';
 import type { OAuth } from '../auth/oauth';
 import { loadImageAllowList, saveImageAllowList } from '../cache/persist';
 import type { JmapClient } from '../jmap/client';
@@ -15,6 +16,7 @@ export interface App {
   toast: ToastFn;
   actions: Actions;
   nav: Nav;
+  composers: Composers;
   images: ImagePrefs;
   theme: Accessor<Theme>;
   setTheme: (t: Theme) => void;

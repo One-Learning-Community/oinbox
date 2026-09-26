@@ -217,3 +217,41 @@ a { color: var(--accent); }
 .shortcut-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 24px; margin: 0; }
 .shortcut-list dt { font-family: ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
 .shortcut-list dd { margin: 0; }
+
+/* ---- Compose ---- */
+.link-btn { border: 0; background: none; color: var(--text-3); cursor: pointer; padding: 0; font-size: 13px; }
+.link-btn:hover { color: var(--text); text-decoration: underline; }
+.compose-dock { position: fixed; right: 16px; bottom: 0; z-index: 30; display: flex; align-items: flex-end; gap: 16px; pointer-events: none; }
+.composer { display: flex; flex-direction: column; background: var(--surface); color: var(--text); pointer-events: auto; }
+.compose-dock .composer { width: 540px; max-height: min(640px, calc(100vh - 80px)); border-radius: 12px 12px 0 0; box-shadow: 0 8px 10px 1px rgb(0 0 0 / 14%), 0 3px 14px 2px rgb(0 0 0 / 12%), 0 5px 5px -3px rgb(0 0 0 / 20%); }
+.composer.inline { margin: 8px 16px 16px 68px; border-radius: 12px; box-shadow: var(--shadow); }
+.composer.dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.composer-title { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 16px; background: var(--surface-2); border-radius: 12px 12px 0 0; font-weight: 500; }
+.composer-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compose-field { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.compose-label { color: var(--text-3); font-size: 14px; min-width: 32px; }
+.compose-field > :last-child { flex: 1; min-width: 0; }
+.compose-field select, .compose-subject { border: 0; background: transparent; color: var(--text); font: inherit; outline: none; padding: 8px 0; width: 100%; }
+.compose-cc-toggle { align-self: flex-end; margin: -28px 16px 8px 0; position: relative; }
+.compose-body { flex: 1; overflow: auto; padding: 8px 16px; min-height: 160px; }
+.compose-editor { outline: none; min-height: 120px; font-size: 14px; }
+.compose-editor p { margin: 0 0 4px; }
+.compose-format { display: flex; gap: 2px; margin-bottom: 6px; }
+.compose-format button { border: 0; background: none; color: var(--text-2); min-width: 28px; height: 28px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.compose-format button:hover { background: var(--hover); }
+.compose-attachments { padding: 0 16px 8px; margin-top: 0; }
+.composer-actions { display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px 16px; }
+.compose-status { flex: 1; font-size: 12px; color: var(--text-3); }
+.reply-bar { display: flex; gap: 12px; padding: 16px 16px 24px 68px; }
+.reply-bar .btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+.reply-bar .btn:hover { background: var(--hover); }
+.reply-bar svg { width: 18px; height: 18px; }
+.compose-fab { display: inline-flex; align-items: center; gap: 12px; margin: 8px 0 16px 8px; padding: 0 24px 0 16px; height: 56px; border: 0; border-radius: 16px; background: var(--accent-soft); color: var(--text); font-weight: 500; cursor: pointer; box-shadow: var(--shadow); }
+.compose-fab svg { width: 24px; height: 24px; }
+@media (max-width: 800px) {
+  .compose-dock { inset: 0; right: 0; }
+  .compose-dock .composer { width: 100%; height: 100%; max-height: none; border-radius: 0; }
+  .composer.inline { margin: 8px; }
+  .reply-bar { padding-left: 16px; flex-wrap: wrap; }
+}
+.draft-tag { color: var(--danger); font-weight: 500; }

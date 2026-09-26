@@ -1,5 +1,5 @@
 import { A, useLocation, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, Show, type JSX } from 'solid-js';
 import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
 import { labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
@@ -7,7 +7,11 @@ import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
 import { HelpDialog, MailboxPicker } from './Overlays';
+import { latestReplyable } from './Conversation';
 import { ThreadList } from './ThreadList';
+
+// The editor (TipTap/ProseMirror) is most of the bundle: load it on first compose.
+const ComposeDock = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposeDock })));
 
 const ROLE_ICONS: Record<string, IconName> = {
   inbox: 'inbox', drafts: 'draft', sent: 'send', archive: 'archive', junk: 'junk', trash: 'trash',
@@ -19,8 +23,11 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element }) 
   const location = useLocation();
   const navigate = useNavigate();
   const dispose = installShortcuts(app, app.nav, navigate, {
-    compose: () => app.toast('Compose arrives in M3'),
-    reply: () => app.toast('Reply arrives in M3'),
+    compose: () => app.composers.open('new'),
+    reply: (mode) => {
+      const latest = latestReplyable(app, app.nav.openThread());
+      if (latest) app.composers.open(mode, latest);
+    },
   });
   onCleanup(dispose);
 
@@ -53,11 +60,17 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element }) 
       <Show when={navOpen()}>
         <div class="scrim" onClick={() => setNavOpen(false)} />
       </Show>
-      <nav class="sidebar" classList={{ open: navOpen() }} onClick={(e) => (e.target as Element).closest('a') && setNavOpen(false)}>
+      <nav class="sidebar" classList={{ open: navOpen() }} onClick={(e) => (e.target as Element).closest('a, .compose-fab') && setNavOpen(false)}>
+        <button class="compose-fab" onClick={() => app.composers.open('new')} title="Compose (c)">
+          <Icon name="edit" /> Compose
+        </button>
         <Sidebar current={location.pathname} />
       </nav>
       <main class="main">{props.children}</main>
       <props.toasts />
+      <Show when={app.composers.list().length}>
+        <ComposeDock />
+      </Show>
       <MailboxPicker />
       <HelpDialog />
     </div>

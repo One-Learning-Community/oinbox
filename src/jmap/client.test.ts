@@ -117,6 +117,11 @@ describe('JmapClient', () => {
     expect(res.sessionChanged).toBe(true);
   });
 
+  it('treats a session without accounts as unauthorized (Stalwart returns 200)', async () => {
+    const c = makeClient((async () => json({ ...session, accounts: {}, primaryAccounts: {} })) as unknown as typeof fetch);
+    await expect(c.loadSession()).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
   it('raises UnauthorizedError on 401', async () => {
     const f = vi.fn(async () => new Response('', { status: 401 }));
     const c = makeClient(f as unknown as typeof fetch);

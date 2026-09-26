@@ -1,6 +1,6 @@
 import { useNavigate } from '@solidjs/router';
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch } from 'solid-js';
-import { useApp } from '../app/context';
+import { createEffect, createMemo, createResource, createSignal, For, lazy, Match, on, onCleanup, Show, Switch } from 'solid-js';
+import { useApp, type App } from '../app/context';
 import type { EmailAddress, EmailBodyPart, Id } from '../jmap/types';
 import { avatarColor, fileSize, fullDate, listDate } from '../mail/format';
 import { displayName } from '../mail/participants';
@@ -9,10 +9,12 @@ import { hiddenMailboxIds, isHidden, type View } from '../sync/selectors';
 import { Icon } from './icons';
 import { MessageBody } from './MessageBody';
 
+const ComposerView = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposerView })));
+
 type Item = { kind: 'msg'; email: EmailRec } | { kind: 'older'; count: number };
 
 export function Conversation(props: { view: View; threadId: Id }) {
-  const { engine, toast, actions, nav } = useApp();
+  const { engine, toast, actions, nav, composers } = useApp();
   const navigate = useNavigate();
 
   createEffect(() => nav.setOpenThread(props.threadId));
@@ -102,6 +104,8 @@ export function Conversation(props: { view: View; threadId: Id }) {
     return out;
   });
 
+  const inlineComposer = () => composers.list().find((c) => c.threadId === props.threadId && c.mode !== 'new');
+
   const subject = () => messages()[0]?.subject || all()[0]?.subject || '(no subject)';
   const labels = createMemo(() => {
     const ids = new Set<Id>();
@@ -173,6 +177,9 @@ export function Conversation(props: { view: View; threadId: Id }) {
                 </button>
               </div>
             </Show>
+            <Show when={inlineComposer()} fallback={<ReplyBar threadId={props.threadId} />}>
+              {(c) => <ComposerView composer={c()} inline />}
+            </Show>
           </Match>
         </Switch>
       </div>
@@ -186,8 +193,41 @@ function recipients(e: EmailRec, me: Set<string>): string {
   return 'to ' + addrs.map((a) => (me.has(a.email.toLowerCase()) ? 'me' : displayName(a, addrs.length > 1))).join(', ');
 }
 
+/** The message r/a/f act on: the newest non-draft message that isn't in Trash/Junk. */
+export function latestReplyable(app: App, threadId: Id | null): EmailRec | null {
+  if (!threadId) return null;
+  const hidden = hiddenMailboxIds(app.engine.state.mailboxes, null);
+  const list = app.engine
+    .threadEmails([threadId])
+    .filter((e) => app.engine.state.bodies[e.id] && !e.keywords?.$draft && !isHidden(e, hidden))
+    .sort((a, b) => (b.receivedAt ?? '').localeCompare(a.receivedAt ?? ''));
+  return list[0] ?? null;
+}
+
+function ReplyBar(props: { threadId: Id }) {
+  const app = useApp();
+  const open = (mode: 'reply' | 'replyAll' | 'forward') => {
+    const latest = latestReplyable(app, props.threadId);
+    if (latest) app.composers.open(mode, latest);
+  };
+  const multiple = () => {
+    const e = latestReplyable(app, props.threadId);
+    return !!e && (e.to?.length ?? 0) + (e.cc?.length ?? 0) > 1;
+  };
+  return (
+    <div class="reply-bar">
+      <button class="btn" onClick={() => open('reply')}><Icon name="reply" /> Reply</button>
+      <Show when={multiple()}>
+        <button class="btn" onClick={() => open('replyAll')}><Icon name="replyAll" /> Reply all</button>
+      </Show>
+      <button class="btn" onClick={() => open('forward')}><Icon name="forward" /> Forward</button>
+    </div>
+  );
+}
+
 function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => void }) {
-  const { engine } = useApp();
+  const { engine, composers } = useApp();
+  const isDraft = () => !!props.email.keywords?.$draft;
   const from = () => props.email.from?.[0];
   const me = createMemo(() => engine.myAddresses());
   const name = () => (from() && me().has(from()!.email.toLowerCase()) ? 'me' : displayName(from()));
@@ -200,6 +240,9 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
         </div>
         <div class="msg-meta">
           <div>
+            <Show when={isDraft()}>
+              <span class="draft-tag">Draft</span>{' '}
+            </Show>
             <span class="from">{name()}</span>
             <Show when={props.expanded && from()}>
               <span class="addr">&lt;{from()!.email}&gt;</span>
@@ -212,11 +255,21 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
         <div class="msg-date" title={fullDate(props.email.receivedAt)}>
           {props.expanded ? fullDate(props.email.receivedAt) : listDate(props.email.receivedAt)}
         </div>
+        <Show when={props.expanded && !isDraft()}>
+          <button class="icon-btn" title="Reply" onClick={(e) => { e.stopPropagation(); composers.open('reply', props.email); }}>
+            <Icon name="reply" />
+          </button>
+        </Show>
       </div>
       <Show when={props.expanded}>
         <div class="msg-body">
           <MessageBody email={props.email} />
           <Attachments email={props.email} />
+          <Show when={isDraft()}>
+            <button class="btn tonal" style={{ 'margin-top': '12px' }} onClick={() => composers.openDraft(props.email)}>
+              Edit draft
+            </button>
+          </Show>
         </div>
       </Show>
     </article>

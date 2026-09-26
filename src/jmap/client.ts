@@ -107,7 +107,10 @@ export class JmapClient {
   async loadSession(): Promise<Session> {
     const res = await this.authFetch(this.opts.sessionUrl, { headers: { accept: 'application/json' } });
     if (!res.ok) throw new RequestError(res.status, await res.text());
-    this._session = (await res.json()) as Session;
+    const session = (await res.json()) as Session;
+    // Stalwart answers an unauthenticated session request with 200 and no accounts.
+    if (!session.accounts || !Object.keys(session.accounts).length) throw new UnauthorizedError();
+    this._session = session;
     return this._session;
   }
 

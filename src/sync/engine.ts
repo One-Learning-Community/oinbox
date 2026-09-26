@@ -93,7 +93,18 @@ export class MailEngine {
   private ranges = new Map<string, [number, number]>();
   onPersist: ((s: Snapshot) => void) | null = null;
 
-  constructor(private readonly client: JmapClient) {
+  /**
+   * Whether Email/queryChanges can be trusted for collapseThreads queries. Stalwart 0.16
+   * answers it without collapsing threads (a new reply adds a row without removing the
+   * thread's old one), so by default collapsed lists re-read their visible window instead.
+   */
+  private readonly collapsedQueryChanges: boolean;
+
+  constructor(
+    private readonly client: JmapClient,
+    opts: { collapsedQueryChanges?: boolean } = {},
+  ) {
+    this.collapsedQueryChanges = opts.collapsedQueryChanges ?? false;
     const [state, set] = createStore<MailState>({
       ready: false,
       mailboxes: {},
@@ -193,7 +204,15 @@ export class MailEngine {
     return p;
   }
 
-  private async doFetchPage(key: string, position: number): Promise<void> {
+  /** Re-read the rows around the viewport in one request (used when queryChanges can't be trusted). */
+  private refreshWindow(key: string): Promise<void> {
+    const [from, to] = this.ranges.get(key) ?? [0, PAGE_SIZE];
+    const start = Math.floor(Math.max(0, from) / PAGE_SIZE) * PAGE_SIZE;
+    const end = Math.max(start + PAGE_SIZE, Math.ceil(to / PAGE_SIZE) * PAGE_SIZE);
+    return this.doFetchPage(key, start, end - start);
+  }
+
+  private async doFetchPage(key: string, position: number, limit = PAGE_SIZE): Promise<void> {
     const q = this.state.queries[key];
     if (!q) return;
     const accountId = this.accountId;
@@ -204,7 +223,7 @@ export class MailEngine {
       sort: q.sort,
       collapseThreads: q.collapseThreads,
       position,
-      limit: PAGE_SIZE,
+      limit,
       calculateTotal: true,
     });
     const rows = b.call('Email/get', { accountId, '#ids': query.ref('/ids'), properties: LIST_PROPS });
@@ -360,6 +379,55 @@ export class MailEngine {
     }
   }
 
+  /**
+   * Save a draft. JMAP emails are immutable, so each save creates a new email and
+   * destroys the previous version in the same request. Returns the new id.
+   */
+  async saveDraft(email: Partial<Email>, replaces: Id | null): Promise<{ id: Id; threadId: Id }> {
+    const b = this.client.batch();
+    const call = b.call('Email/set', {
+      accountId: this.accountId,
+      create: { draft: email },
+      ...(replaces ? { destroy: [replaces] } : {}),
+    });
+    const r = (await this.client.send(b)).get(call);
+    const created = r.created?.draft;
+    if (!created) {
+      const err = r.notCreated?.draft;
+      throw new Error(err?.description ?? err?.type ?? 'Draft was not saved');
+    }
+    return { id: created.id!, threadId: created.threadId! };
+  }
+
+  async destroyEmails(ids: Id[]): Promise<void> {
+    if (!ids.length) return;
+    const b = this.client.batch();
+    const call = b.call('Email/set', { accountId: this.accountId, destroy: ids });
+    const r = (await this.client.send(b)).get(call);
+    const failed = Object.values(r.notDestroyed ?? {})[0];
+    if (failed) throw new Error(failed.description ?? failed.type);
+  }
+
+  /** Submit a saved draft; on success the server files it in Sent and clears $draft. */
+  async sendDraft(emailId: Id, identityId: Id): Promise<void> {
+    const drafts = this.mailboxByRole('drafts')?.id;
+    const sent = this.mailboxByRole('sent')?.id;
+    const onSuccess: Record<string, unknown> = { 'keywords/$draft': null };
+    if (drafts) onSuccess[`mailboxIds/${drafts}`] = null;
+    if (sent) onSuccess[`mailboxIds/${sent}`] = true;
+    const b = this.client.batch();
+    const call = b.call('EmailSubmission/set', {
+      accountId: this.accountId,
+      create: { send: { identityId, emailId } },
+      onSuccessUpdateEmail: { '#send': onSuccess },
+    });
+    const r = (await this.client.send(b)).get(call);
+    if (!r.created?.send) {
+      const err = r.notCreated?.send;
+      throw new Error(err?.description ?? err?.type ?? 'Message was not sent');
+    }
+  }
+
   /** Remove rows of mailbox/starred views whose thread no longer belongs there. */
   private dropNonMatchingRows(threadIds: Set<Id>): { key: string; id: Id; index: number }[] {
     const removed: { key: string; id: Id; index: number }[] = [];
@@ -431,7 +499,9 @@ export class MailEngine {
     const em = s.Email ? this.changeCalls(b, 'Email', s.Email, LIST_PROPS) : null;
     const th = s.Thread ? this.changeCalls(b, 'Thread', s.Thread, null) : null;
 
-    const liveQueries = Object.values(this.state.queries).filter((q) => q.queryState);
+    const loaded = Object.values(this.state.queries).filter((q) => q.queryState);
+    const liveQueries = loaded.filter((q) => !q.collapseThreads || this.collapsedQueryChanges);
+    const windowed = loaded.filter((q) => !liveQueries.includes(q)).map((q) => q.key);
     const qcs = liveQueries.map((q) => ({
       q,
       call: b.call('Email/queryChanges', {
@@ -497,6 +567,11 @@ export class MailEngine {
     });
 
     for (const key of toResetQueries) await this.resetQuery(key);
+    if (em || th) {
+      const ch = em ? res.get(em.changes) : null;
+      const changed = !ch || ch.created.length + ch.updated.length + ch.destroyed.length > 0;
+      if (changed) await Promise.all(windowed.map((k) => this.refreshWindow(k)));
+    }
     await this.fillMissingRows();
     this.persistSoon();
     return more;
