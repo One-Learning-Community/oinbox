@@ -1,8 +1,10 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
+import type { Actions, ToastFn } from './actions';
 import type { OAuth } from '../auth/oauth';
 import { loadImageAllowList, saveImageAllowList } from '../cache/persist';
 import type { JmapClient } from '../jmap/client';
 import type { MailEngine } from '../sync/engine';
+import type { Nav } from '../ui/nav';
 
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -10,7 +12,9 @@ export interface App {
   client: JmapClient;
   engine: MailEngine;
   auth: OAuth;
-  toast: (message: string, type?: 'info' | 'success' | 'error') => void;
+  toast: ToastFn;
+  actions: Actions;
+  nav: Nav;
   images: ImagePrefs;
   theme: Accessor<Theme>;
   setTheme: (t: Theme) => void;

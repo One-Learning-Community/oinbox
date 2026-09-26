@@ -1,5 +1,5 @@
 import { useNavigate } from '@solidjs/router';
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch } from 'solid-js';
 import { useApp } from '../app/context';
 import type { EmailAddress, EmailBodyPart, Id } from '../jmap/types';
 import { avatarColor, fileSize, fullDate, listDate } from '../mail/format';
@@ -12,8 +12,11 @@ import { MessageBody } from './MessageBody';
 type Item = { kind: 'msg'; email: EmailRec } | { kind: 'older'; count: number };
 
 export function Conversation(props: { view: View; threadId: Id }) {
-  const { engine, toast } = useApp();
+  const { engine, toast, actions, nav } = useApp();
   const navigate = useNavigate();
+
+  createEffect(() => nav.setOpenThread(props.threadId));
+  onCleanup(() => nav.setOpenThread(null));
 
   const [loaded] = createResource(
     () => props.threadId,
@@ -37,6 +40,13 @@ export function Conversation(props: { view: View; threadId: Id }) {
       .sort((a, b) => (a.receivedAt ?? '').localeCompare(b.receivedAt ?? ''));
   });
   const hidden = createMemo(() => hiddenMailboxIds(engine.state.mailboxes, props.view.mailboxId));
+
+  // Opening a conversation marks it read (Gmail), once per open.
+  createEffect(on(() => [props.threadId, loaded()] as const, ([tid, ok]) => {
+    if (!ok) return;
+    const unread = engine.threadEmails([tid]).filter((e) => !e.keywords?.$seen && !isHidden(e, hidden()));
+    if (unread.length) void actions.markRead([tid]);
+  }));
   const deletedCount = createMemo(() => all().filter((e) => isHidden(e, hidden())).length);
   const messages = createMemo(() => (showDeleted() ? all() : all().filter((e) => !isHidden(e, hidden()))));
 
@@ -105,8 +115,28 @@ export function Conversation(props: { view: View; threadId: Id }) {
   return (
     <section class="conv-pane" style={{ display: 'flex', 'flex-direction': 'column', flex: '1', 'min-height': '0' }}>
       <div class="toolbar">
-        <button class="icon-btn" title="Back to list" onClick={() => navigate(`/${props.view.slug}`)}>
+        <button class="icon-btn" title="Back to list (u)" onClick={() => navigate(`/${props.view.slug}`)}>
           <Icon name="back" />
+        </button>
+        <Show when={props.view.role !== 'archive'}>
+          <button class="icon-btn" title="Archive (e)" onClick={() => { actions.archive([props.threadId]); navigate(`/${props.view.slug}`); }}>
+            <Icon name="archive" />
+          </button>
+        </Show>
+        <button class="icon-btn" title="Report spam (!)" onClick={() => { actions.spam([props.threadId]); navigate(`/${props.view.slug}`); }}>
+          <Icon name="junk" />
+        </button>
+        <button class="icon-btn" title="Delete (#)" onClick={() => { actions.trash([props.threadId]); navigate(`/${props.view.slug}`); }}>
+          <Icon name="trash" />
+        </button>
+        <button class="icon-btn" title="Mark as unread (Shift+U)" onClick={() => { void actions.markUnread([props.threadId]); navigate(`/${props.view.slug}`); }}>
+          <Icon name="unread" />
+        </button>
+        <button class="icon-btn" title="Move to (v)" onClick={() => nav.setPicker({ kind: 'move', threadIds: [props.threadId] })}>
+          <Icon name="move" />
+        </button>
+        <button class="icon-btn" title="Label (l)" onClick={() => nav.setPicker({ kind: 'label', threadIds: [props.threadId] })}>
+          <Icon name="label" />
         </button>
       </div>
       <div class="conv">

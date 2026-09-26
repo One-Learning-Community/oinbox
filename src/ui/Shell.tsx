@@ -1,21 +1,28 @@
 import { A, useLocation, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
-import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
-import { Toaster, type ToasterHandle } from '@rozie-ui/toast-solid';
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from 'solid-js';
 import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
 import { labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
 import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
+import { installShortcuts } from './keyboard';
+import { HelpDialog, MailboxPicker } from './Overlays';
 import { ThreadList } from './ThreadList';
 
 const ROLE_ICONS: Record<string, IconName> = {
   inbox: 'inbox', drafts: 'draft', sent: 'send', archive: 'archive', junk: 'junk', trash: 'trash',
 };
 
-export function Shell(props: RouteSectionProps & { onToaster: (h: ToasterHandle) => void }) {
+export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element }) {
   const app = useApp();
   const [navOpen, setNavOpen] = createSignal(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const dispose = installShortcuts(app, app.nav, navigate, {
+    compose: () => app.toast('Compose arrives in M3'),
+    reply: () => app.toast('Reply arrives in M3'),
+  });
+  onCleanup(dispose);
 
   return (
     <div class="shell">
@@ -36,6 +43,9 @@ export function Shell(props: RouteSectionProps & { onToaster: (h: ToasterHandle)
         >
           <Icon name="theme" />
         </button>
+        <button class="icon-btn" title="Keyboard shortcuts (?)" onClick={() => app.nav.setHelpOpen(true)}>
+          <Icon name="keyboard" />
+        </button>
         <button class="icon-btn" title={`Sign out ${app.client.session.username}`} onClick={() => app.signOut()}>
           <Icon name="logout" />
         </button>
@@ -47,7 +57,9 @@ export function Shell(props: RouteSectionProps & { onToaster: (h: ToasterHandle)
         <Sidebar current={location.pathname} />
       </nav>
       <main class="main">{props.children}</main>
-      <Toaster ref={props.onToaster} position="bottom-left" duration={5000} />
+      <props.toasts />
+      <MailboxPicker />
+      <HelpDialog />
     </div>
   );
 }

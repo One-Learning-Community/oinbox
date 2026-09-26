@@ -1,7 +1,7 @@
 /* @refresh reload */
 import { Navigate, Route, Router } from '@solidjs/router';
-import type { ToasterHandle } from '@rozie-ui/toast-solid';
 import { render } from 'solid-js/web';
+import { createActions } from './app/actions';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
@@ -10,6 +10,8 @@ import { openPushStream } from './jmap/sse';
 import { MailEngine } from './sync/engine';
 import { MailView, Shell } from './ui/Shell';
 import { SignIn } from './ui/SignIn';
+import { createNav } from './ui/nav';
+import { createToasts } from './ui/Toasts';
 import './ui/styles.css';
 
 const root = document.getElementById('root')!;
@@ -40,7 +42,7 @@ async function boot() {
 
   const client = new JmapClient({ sessionUrl: `${origin}/.well-known/jmap`, getToken: () => auth.getToken() });
   const engine = new MailEngine(client);
-  let toaster: ToasterHandle | undefined;
+  const toasts = createToasts();
 
   const signOut = () => {
     const user = client.hasSession ? client.session.username : null;
@@ -70,7 +72,9 @@ async function boot() {
     client,
     engine,
     auth,
-    toast: (message, type = 'info') => toaster?.show({ message, type }),
+    toast: toasts.toast,
+    actions: createActions(engine, toasts.toast),
+    nav: createNav(),
     images: await createImagePrefs(),
     ...theme,
     signOut,
@@ -108,7 +112,7 @@ async function boot() {
   render(
     () => (
       <AppContext.Provider value={app}>
-        <Router root={(p) => <Shell {...p} onToaster={(h) => (toaster = h)} />}>
+        <Router root={(p) => <Shell {...p} toasts={toasts.Host} />}>
           <Route path="/" component={() => <Navigate href="/inbox" />} />
           <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
           <Route path="/search/:q" component={MailView} />
