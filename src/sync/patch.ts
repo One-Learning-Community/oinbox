@@ -41,9 +41,17 @@ export function keywordPatch(emails: MutableEmail[], keyword: string, on: boolea
   return out;
 }
 
-export function archivePatch(emails: MutableEmail[], inboxId: Id): Record<Id, EmailPatch> {
+/**
+ * Gmail archive: take the thread out of the Inbox. JMAP has no "All Mail" and an email
+ * must stay in at least one mailbox, so emails left with none go to the Archive mailbox.
+ */
+export function archivePatch(emails: MutableEmail[], inboxId: Id, archiveId: Id): Record<Id, EmailPatch> {
   const out: Record<Id, EmailPatch> = {};
-  for (const e of emails) if (e.mailboxIds?.[inboxId]) out[e.id] = { [`mailboxIds/${inboxId}`]: null };
+  for (const e of emails) {
+    if (!e.mailboxIds?.[inboxId]) continue;
+    const others = Object.keys(e.mailboxIds).filter((id) => id !== inboxId);
+    out[e.id] = others.length ? { [`mailboxIds/${inboxId}`]: null } : { [`mailboxIds/${inboxId}`]: null, [`mailboxIds/${archiveId}`]: true };
+  }
   return out;
 }
 

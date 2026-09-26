@@ -41,11 +41,18 @@ export function createActions(engine: MailEngine, toast: ToastFn) {
   const role = (r: string) => engine.mailboxByRole(r)?.id;
 
   return {
-    archive(threadIds: Id[]) {
+    async archive(threadIds: Id[]) {
       const inbox = role('inbox');
       if (!inbox || !threadIds.length) return;
+      let archive: Id;
+      try {
+        archive = await engine.ensureMailbox('archive', 'Archive');
+      } catch (e) {
+        toast((e as Error).message, 'error');
+        return;
+      }
       const emails = engine.threadEmails(threadIds);
-      void moveWithUndo(emails, archivePatch(emails, inbox), `${conversations(threadIds.length)} archived.`);
+      await moveWithUndo(emails, archivePatch(emails, inbox, archive), `${conversations(threadIds.length)} archived.`);
     },
 
     trash(threadIds: Id[]) {

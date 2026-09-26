@@ -59,6 +59,10 @@ export interface JmapClientOptions {
   sessionUrl: string;
   getToken: () => Promise<string>;
   fetch?: typeof fetch;
+  /** Abort non-streaming requests after this long (default 30 s). */
+  timeoutMs?: number;
+  /** Called on 401; resolve true if credentials were renewed and the request should be retried once. */
+  onUnauthorized?: () => Promise<boolean>;
 }
 
 export interface UploadResult {
@@ -87,11 +91,23 @@ export class JmapClient {
     return id;
   }
 
-  async authFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  /** Authenticated fetch. Requests without their own signal time out; streams pass a signal. */
+  async authFetch(url: string, init: RequestInit = {}, retried = false): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${await this.opts.getToken()}`);
-    const res = await this.fetchImpl(url, { ...init, headers });
-    if (res.status === 401) throw new UnauthorizedError();
+    const signal = init.signal ?? AbortSignal.timeout(this.opts.timeoutMs ?? 30_000);
+    let res: Response;
+    try {
+      res = await this.fetchImpl(url, { ...init, headers, signal });
+    } catch (e) {
+      if ((e as Error).name === 'TimeoutError') throw new RequestError(0, 'the mail server did not respond in time');
+      throw e;
+    }
+    if (res.status === 401) {
+      // Blob bodies (uploads) can be re-sent; streams can't, but we never upload streams.
+      if (!retried && (await this.opts.onUnauthorized?.())) return this.authFetch(url, init, true);
+      throw new UnauthorizedError();
+    }
     return res;
   }
 

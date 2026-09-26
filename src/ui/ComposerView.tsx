@@ -1,6 +1,6 @@
 import { Tags } from '@rozie-ui/tags-solid';
 import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
-import { createSignal, For, onMount, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
 import type { EmailAddress } from '../jmap/types';
@@ -35,6 +35,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
   const [showCc, setShowCc] = createSignal(c.draft().cc.length > 0 || c.draft().bcc.length > 0);
   const [dragging, setDragging] = createSignal(false);
   let editor: TipTapHandle | undefined;
+  let root: HTMLDivElement | undefined;
   let fileInput: HTMLInputElement | undefined;
   const d = () => c.draft();
 
@@ -47,12 +48,9 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
     editor?.setContent(html);
   };
 
-  onMount(() => {
-    if (c.mode !== 'new' || d().to.length) queueMicrotask(() => editor?.focusEditor());
-  });
-
   return (
     <div
+      ref={root}
       class="composer"
       classList={{ inline: props.inline, dragging: dragging() }}
       onKeyDown={(e) => {
@@ -117,7 +115,18 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
 
       <div class="compose-body">
         <TipTap
-          ref={(h) => (editor = h)}
+          ref={(h) => {
+            editor = h;
+            // TipTap's autofocus prop doesn't take (docs/rozie-feedback.md); focus once the editor exists.
+            if (c.mode !== 'new' || d().to.length) {
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  h.focusEditor();
+                  if (!root?.contains(document.activeElement)) root?.querySelector<HTMLElement>('[contenteditable]')?.focus();
+                }),
+              );
+            }
+          }}
           html={d().bodyHtml}
           onHtmlChange={(html: string) => {
             if (html !== d().bodyHtml) c.update({ bodyHtml: html === '<p></p>' ? '' : html });

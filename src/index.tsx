@@ -41,7 +41,11 @@ async function boot() {
     return;
   }
 
-  const client = new JmapClient({ sessionUrl: `${origin}/.well-known/jmap`, getToken: () => auth.getToken() });
+  const client = new JmapClient({
+    sessionUrl: `${origin}/.well-known/jmap`,
+    getToken: () => auth.getToken(),
+    onUnauthorized: () => auth.renew(),
+  });
   const engine = new MailEngine(client);
   const toasts = createToasts();
 

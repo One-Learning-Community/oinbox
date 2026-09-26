@@ -42,7 +42,7 @@ export function MessageBody(props: { email: EmailRec }) {
   });
 
   const srcdoc = createMemo(() =>
-    buildFrameDocument(rendered().html, { allowRemote: allowRemote(), dark: rendered().plain && isDark() }),
+    buildFrameDocument(rendered().html, { allowRemote: allowRemote(), dark: rendered().plain && isDark(), padded: !rendered().plain }),
   );
 
   const objectUrls: string[] = [];

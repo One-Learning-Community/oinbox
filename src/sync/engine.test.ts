@@ -88,11 +88,11 @@ describe('MailEngine', () => {
   it('archives optimistically and keeps the change when the server accepts it', async () => {
     const key = engine.openQuery(inboxSpec);
     await engine.ensureRange(key, 0, 10);
-    const p = engine.updateEmails(archivePatch(engine.threadEmails(['t1']), 'I'));
+    const p = engine.updateEmails(archivePatch(engine.threadEmails(['t1']), 'I', 'A'));
     // Gone from the inbox before the server answers.
     expect(engine.state.queries[key]!.slots).toEqual(['e4']);
     await p;
-    expect(server.emails.get('e3')!.mailboxIds).toEqual({});
+    expect(server.emails.get('e3')!.mailboxIds).toEqual({ A: true });
     await engine.catchUp();
     expect(engine.state.queries[key]!.slots).toEqual(['e4']);
   });
@@ -101,7 +101,7 @@ describe('MailEngine', () => {
     const key = engine.openQuery(inboxSpec);
     await engine.ensureRange(key, 0, 10);
     server.rejectUpdates.add('e3');
-    await expect(engine.updateEmails(archivePatch(engine.threadEmails(['t1']), 'I'))).rejects.toThrow('forbidden');
+    await expect(engine.updateEmails(archivePatch(engine.threadEmails(['t1']), 'I', 'A'))).rejects.toThrow('forbidden');
     expect(engine.state.queries[key]!.slots).toEqual(['e3', 'e4']);
     expect(engine.state.emails.e3!.mailboxIds).toEqual({ I: true });
   });

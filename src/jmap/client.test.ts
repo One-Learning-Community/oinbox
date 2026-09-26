@@ -122,10 +122,28 @@ describe('JmapClient', () => {
     await expect(c.loadSession()).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
+  it('renews credentials once on 401 and retries', async () => {
+    let calls = 0;
+    const f = vi.fn(async () => (++calls === 1 ? new Response('', { status: 401 }) : json(session)));
+    let renewed = 0;
+    const c = new JmapClient({ sessionUrl: 'http://x/s', fetch: f as unknown as typeof fetch, getToken: async () => 't', onUnauthorized: async () => (++renewed, true) });
+    await c.loadSession();
+    expect(renewed).toBe(1);
+    expect(calls).toBe(2);
+  });
+
   it('raises UnauthorizedError on 401', async () => {
     const f = vi.fn(async () => new Response('', { status: 401 }));
     const c = makeClient(f as unknown as typeof fetch);
     await expect(c.loadSession()).rejects.toBeInstanceOf(UnauthorizedError);
+  });
+
+  it('times out a request that never answers', async () => {
+    const f = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_, reject) => init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason))),
+    );
+    const c = new JmapClient({ sessionUrl: 'http://x/s', fetch: f as unknown as typeof fetch, getToken: async () => 't', timeoutMs: 20 });
+    await expect(c.loadSession()).rejects.toThrow(/did not respond/);
   });
 
   it('expands download URL templates', async () => {

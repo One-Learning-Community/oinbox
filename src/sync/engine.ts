@@ -2,7 +2,7 @@ import { batch as solidBatch } from 'solid-js';
 import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
 import type { BatchResult, JmapClient } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
-import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, SetError, StateChange, Thread } from '../jmap/types';
+import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, MailboxRole, SetError, StateChange, Thread } from '../jmap/types';
 import { applyEmailPatch, type EmailPatch } from './patch';
 import { applyQueryChanges, missingPages, type Slots } from './window';
 
@@ -426,6 +426,27 @@ export class MailEngine {
       const err = r.notCreated?.send;
       throw new Error(err?.description ?? err?.type ?? 'Message was not sent');
     }
+  }
+
+  /** The mailbox with a role, creating it if the account lacks one (e.g. Archive). */
+  async ensureMailbox(role: MailboxRole, name: string): Promise<Id> {
+    const existing = this.mailboxByRole(role);
+    if (existing) return existing.id;
+    const b = this.client.batch();
+    const call = b.call('Mailbox/set', { accountId: this.accountId, create: { mb: { name, role, parentId: null } } });
+    const r = (await this.client.send(b)).get(call);
+    const created = r.created?.mb;
+    if (!created) {
+      const err = r.notCreated?.mb;
+      throw new Error(`Couldn't create the ${name} mailbox: ${err?.description ?? err?.type ?? 'unknown error'}`);
+    }
+    // The server returns only the properties it set; fill in the ones we sent.
+    const defaults: Mailbox = {
+      id: '', name, role, parentId: null, sortOrder: 0, totalEmails: 0, unreadEmails: 0, totalThreads: 0, unreadThreads: 0, isSubscribed: true,
+    };
+    const mb: Mailbox = Object.assign(defaults, created);
+    this.mergeMailboxes([mb]);
+    return mb.id;
   }
 
   /** Remove rows of mailbox/starred views whose thread no longer belongs there. */

@@ -132,6 +132,23 @@ export class OAuth {
     return this.refreshing;
   }
 
+  /** The server rejected our access token: try the refresh token. Resolves false if that fails too. */
+  async renew(): Promise<boolean> {
+    const t = this.load();
+    if (!t?.refreshToken) return false;
+    this.refreshing ??= this.tokenRequest({
+      grant_type: 'refresh_token',
+      refresh_token: t.refreshToken,
+      client_id: this.opts.clientId,
+    }).finally(() => (this.refreshing = null));
+    try {
+      await this.refreshing;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   signOut(): void {
     localStorage.removeItem(TOKENS_KEY);
   }

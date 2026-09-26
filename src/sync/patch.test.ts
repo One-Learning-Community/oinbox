@@ -26,8 +26,9 @@ describe('patch builders', () => {
     expect(keywordPatch(emails, '$seen', false)).toEqual({ e1: { 'keywords/$seen': null } });
   });
 
-  it('archivePatch removes the inbox', () => {
-    expect(archivePatch([email], 'I')).toEqual({ e1: { 'mailboxIds/I': null } });
+  it('archivePatch removes the inbox, filing emails that would have no mailbox in Archive', () => {
+    expect(archivePatch([email], 'I', 'A')).toEqual({ e1: { 'mailboxIds/I': null } });
+    expect(archivePatch([{ id: 'e2', mailboxIds: { I: true } }], 'I', 'A')).toEqual({ e2: { 'mailboxIds/I': null, 'mailboxIds/A': true } });
   });
 
   it('movePatch swaps mailboxes, never leaving an email in none', () => {

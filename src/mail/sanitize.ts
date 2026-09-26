@@ -82,6 +82,8 @@ export function sanitizeEmailHtml(html: string, opts: SanitizeOptions): Sanitize
 export interface FrameOptions {
   allowRemote: boolean;
   dark: boolean;
+  /** Inset HTML mail from its white card. */
+  padded?: boolean;
 }
 
 /** Full srcdoc for the message iframe. No script-src: the iframe has no allow-scripts either. */
@@ -91,7 +93,7 @@ export function buildFrameDocument(bodyHtml: string, opts: FrameOptions): string
   const scheme = opts.dark ? 'dark' : 'light';
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="color-scheme" content="${scheme}"><style>
 html,body{margin:0;padding:0;overflow:hidden}
-body{font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:${opts.dark ? '#e3e3e3' : '#1f1f1f'};overflow-wrap:anywhere}
+body{${opts.padded ? 'padding:12px 16px;box-sizing:border-box;' : ''}font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:${opts.dark ? '#e3e3e3' : '#1f1f1f'};overflow-wrap:anywhere}
 img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
 a{color:${opts.dark ? '#8ab4f8' : '#0b57d0'}}

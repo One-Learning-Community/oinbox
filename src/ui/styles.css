@@ -255,3 +255,47 @@ a { color: var(--accent); }
   .reply-bar { padding-left: 16px; flex-wrap: wrap; }
 }
 .draft-tag { color: var(--danger); font-weight: 500; }
+
+/* ---- rozie theme bridge: map component tokens onto app tokens (so dark mode applies) ---- */
+:root {
+  --rozie-tags-bg: transparent;
+  --rozie-tags-color: var(--text);
+  --rozie-tags-border-width: 0;
+  --rozie-tags-chip-bg: var(--chip);
+  --rozie-tags-chip-color: var(--text);
+  --rozie-tags-placeholder-color: var(--text-3);
+  --rozie-tags-remove-color: var(--text-2);
+  --rozie-tags-focus-ring-width: 0;
+  --rozie-tags-padding: 4px 0;
+  --rozie-tags-font: inherit;
+  --rozie-tiptap-bg: transparent;
+  --rozie-tiptap-border: 0;
+  --rozie-tiptap-button-bg: transparent;
+  --rozie-tiptap-button-border: 0;
+  --rozie-tiptap-button-color: var(--text-2);
+  --rozie-tiptap-button-hover-bg: var(--hover);
+  --rozie-tiptap-button-active-bg: var(--accent-soft);
+  --rozie-tiptap-button-active-color: var(--text);
+  --rozie-tiptap-content-padding: 0;
+  --rozie-tiptap-link-bg: var(--surface);
+  --rozie-tiptap-link-border: 1px solid var(--border);
+  --rozie-tiptap-link-input-bg: var(--surface-2);
+  --rozie-tiptap-link-input-color: var(--text);
+  --rozie-tiptap-link-input-border: 1px solid var(--border);
+  --rozie-tiptap-link-button-bg: var(--accent-soft);
+  --rozie-tiptap-link-button-color: var(--text);
+  --rozie-command-palette-bg: var(--surface);
+  --rozie-command-palette-color: var(--text);
+  --rozie-command-palette-border: 1px solid var(--border);
+  --rozie-command-palette-backdrop-bg: rgb(0 0 0 / 40%);
+  --rozie-command-palette-input-bg: var(--surface-2);
+  --rozie-command-palette-input-border-color: var(--border);
+  --rozie-command-palette-input-focus-border-color: var(--accent);
+  --rozie-command-palette-group-color: var(--text-3);
+  --rozie-command-palette-empty-color: var(--text-3);
+  --rozie-command-palette-divider-color: var(--border);
+  --rozie-combobox-option-active-bg: var(--hover);
+  --rozie-combobox-option-color: var(--text);
+  --rozie-combobox-bg: var(--surface);
+  --rozie-combobox-color: var(--text);
+}

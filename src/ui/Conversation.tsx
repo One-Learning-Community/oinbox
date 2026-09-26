@@ -1,5 +1,5 @@
 import { useNavigate } from '@solidjs/router';
-import { createEffect, createMemo, createResource, createSignal, For, lazy, Match, on, onCleanup, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, createResource, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack } from 'solid-js';
 import { useApp, type App } from '../app/context';
 import type { EmailAddress, EmailBodyPart, Id } from '../jmap/types';
 import { avatarColor, fileSize, fullDate, listDate } from '../mail/format';
@@ -64,13 +64,17 @@ export function Conversation(props: { view: View; threadId: Id }) {
   createEffect(() => {
     const list = messages();
     if (!list.length) return;
-    const next = new Set(expanded());
+    // untrack: this effect writes `expanded`, so it must not also depend on it.
+    const next = new Set(untrack(expanded));
     const first = known.size === 0;
+    let changed = false;
     for (const e of list) {
       if (known.has(e.id)) continue;
       known.add(e.id);
-      if (!first || !e.keywords?.$seen) next.add(e.id);
+      changed = true;
+      if (!first || !untrack(() => e.keywords?.$seen)) next.add(e.id);
     }
+    if (!changed) return;
     if (first) next.add(list[list.length - 1]!.id);
     setExpanded(next);
   });
