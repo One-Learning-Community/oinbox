@@ -95,6 +95,15 @@ export class JmapClient {
     return res;
   }
 
+  /** Use a previously fetched session (warm start) until loadSession() refreshes it. */
+  useSession(session: Session): void {
+    this._session = session;
+  }
+
+  get hasSession(): boolean {
+    return this._session !== null;
+  }
+
   async loadSession(): Promise<Session> {
     const res = await this.authFetch(this.opts.sessionUrl, { headers: { accept: 'application/json' } });
     if (!res.ok) throw new RequestError(res.status, await res.text());
