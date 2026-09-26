@@ -4,7 +4,7 @@ Findings from dogfooding `@rozie-ui/*-solid` in a live-updating webmail client.
 Each entry: what we needed, what's missing, and what we did instead.
 
 ## BLOCKER: Solid dists ship raw JSX
-Every `@rozie-ui/*-solid` package checked (toast, popover, combobox, command-palette, tags,
+Every `@rozie-ui/*-solid` package checked (toast, popover, combobox, command-palette, tags, tiptap,
 data-table) has JSX in `dist/index.mjs`, which is what the `import` export condition resolves to.
 Vite 8 / rolldown fails with `PARSE_ERROR Unexpected JSX expression`. This contradicts "no build step".
 Fix: compile JSX with `babel-preset-solid` at publish time for `import`, and expose the JSX
@@ -45,7 +45,7 @@ oinbox instead uses `@tanstack/virtual-core` directly with a ~40-line Solid adap
    so this needs confirming in a normal window before filing. Either way, there's no "ready" event to
    know when `focusEditor()` will work. Workaround: two rAFs, then focus the `[contenteditable]`.
    Suggest an `onReady(editor)` event.
-2. Missing peer `@tiptap/extension-character-count` is required even when `maxLength` is unused.
+2. `@tiptap/extension-character-count` is a required peer dependency even when `maxLength` is unused.
 3. The default theme hardcodes a light toolbar/background; there's no dark-mode default. oinbox maps
    `--rozie-tiptap-*` onto its own tokens.
 
