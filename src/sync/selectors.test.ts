@@ -67,3 +67,16 @@ describe('views', () => {
     expect(labels.map((m) => m.id)).toEqual(['W']);
   });
 });
+
+describe('search views', () => {
+  it('parses the query into a snippet-enabled spec', () => {
+    const v = resolveView('search/' + encodeURIComponent('in:work budget'), mailboxes)!;
+    expect(v.spec.filter).toEqual({ operator: 'AND', conditions: [{ inMailbox: 'W' }, { text: 'budget' }] });
+    expect(v.spec.snippets).toBe(true);
+    expect(v.search).toEqual({ query: 'in:work budget', errors: [] });
+  });
+
+  it('scopes the view to a mailbox when the query is only in:', () => {
+    expect(resolveView('search/in%3Asent', mailboxes)!.mailboxId).toBe('S');
+  });
+});

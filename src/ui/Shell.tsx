@@ -1,9 +1,9 @@
-import { A, useLocation, useParams, type RouteSectionProps } from '@solidjs/router';
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { A, useLocation, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
+import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { Toaster, type ToasterHandle } from '@rozie-ui/toast-solid';
 import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
-import { labelPath, mailboxSlug, resolveView, sidebarMailboxes } from '../sync/selectors';
+import { labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
 import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { ThreadList } from './ThreadList';
@@ -26,10 +26,7 @@ export function Shell(props: RouteSectionProps & { onToaster: (h: ToasterHandle)
         <div class="brand">
           <b>o</b><span>inbox</span>
         </div>
-        <label class="search-box">
-          <Icon name="search" style={{ width: '20px', height: '20px', margin: '0 8px', color: 'var(--text-3)' }} />
-          <input type="search" placeholder="Search mail" aria-label="Search mail" disabled title="Search arrives in M2" />
-        </label>
+        <SearchBox />
         <div class="spacer" />
         <span class="status-dot" classList={{ online: app.engine.state.online }} title={app.engine.state.online ? 'Live updates connected' : 'Reconnecting…'} />
         <button
@@ -52,6 +49,48 @@ export function Shell(props: RouteSectionProps & { onToaster: (h: ToasterHandle)
       <main class="main">{props.children}</main>
       <Toaster ref={props.onToaster} position="bottom-left" duration={5000} />
     </div>
+  );
+}
+
+function SearchBox() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // Mirror the current search route into the box (back/forward, deep links).
+  const routeQuery = () => {
+    const m = /^\/search\/([^/]+)/.exec(location.pathname);
+    return m ? decodeURIComponent(m[1]!) : '';
+  };
+  const [text, setText] = createSignal(routeQuery());
+  createEffect(on(routeQuery, (q) => setText(q)));
+
+  const submit = (e: SubmitEvent) => {
+    e.preventDefault();
+    const q = text().trim();
+    navigate(q ? `/${searchSlug(q)}` : '/inbox');
+    (document.activeElement as HTMLElement | null)?.blur();
+  };
+
+  return (
+    <form class="search-box" role="search" onSubmit={submit}>
+      <button class="icon-btn" type="submit" aria-label="Search" style={{ width: '36px', height: '36px' }}>
+        <Icon name="search" />
+      </button>
+      <input
+        id="search-input"
+        type="search"
+        placeholder="Search mail"
+        aria-label="Search mail"
+        autocomplete="off"
+        value={text()}
+        onInput={(e) => setText(e.currentTarget.value)}
+        onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
+      />
+      <Show when={text()}>
+        <button class="icon-btn" type="button" aria-label="Clear search" style={{ width: '36px', height: '36px' }} onClick={() => { setText(''); if (routeQuery()) navigate('/inbox'); }}>
+          <Icon name="close" />
+        </button>
+      </Show>
+    </form>
   );
 }
 
@@ -92,9 +131,14 @@ function Sidebar(props: { current: string }) {
 
 /** Route component for /:slug, /:slug/t/:threadId and /label/:id[/t/:threadId]. */
 export function MailView() {
-  const params = useParams<{ slug?: string; id?: string; threadId?: string }>();
+  const params = useParams<{ slug?: string; id?: string; q?: string; threadId?: string }>();
   const { engine } = useApp();
-  const slug = () => (params.id ? `label/${params.id}` : (params.slug ?? 'inbox'));
+  const slug = () =>
+    params.q !== undefined
+      ? `search/${encodeURIComponent(params.q)}`
+      : params.id
+        ? `label/${params.id}`
+        : (params.slug ?? 'inbox');
   // Only a different mailbox counts as a new view; count updates must not remount the list.
   const view = createMemo(() => resolveView(slug(), engine.state.mailboxes), undefined, {
     equals: (a, b) => a?.slug === b?.slug && a?.mailboxId === b?.mailboxId && a?.title === b?.title,

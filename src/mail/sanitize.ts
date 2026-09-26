@@ -118,3 +118,8 @@ export function plainTextToHtml(text: string): string {
   }
   return out + escapeHtml(text.slice(last));
 }
+
+/** SearchSnippet/get returns HTML with <mark> highlights; allow nothing else. */
+export function snippetHtml(s: string): string {
+  return DOMPurify.sanitize(s, { ALLOWED_TAGS: ['mark'], ALLOWED_ATTR: [] });
+}

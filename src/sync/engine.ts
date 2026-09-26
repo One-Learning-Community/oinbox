@@ -1,6 +1,7 @@
 import { batch as solidBatch } from 'solid-js';
 import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
 import type { BatchResult, JmapClient } from '../jmap/client';
+import type { CallHandle } from '../jmap/request';
 import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, StateChange, Thread } from '../jmap/types';
 import { applyQueryChanges, missingPages, type Slots } from './window';
 
@@ -25,6 +26,13 @@ export interface QuerySpec {
   filter: EmailFilter | null;
   sort: Comparator[];
   collapseThreads: boolean;
+  /** Fetch SearchSnippet/get highlights for rows (search results). */
+  snippets?: boolean;
+}
+
+export interface Snippet {
+  subject: string | null;
+  preview: string | null;
 }
 
 export interface LiveQuery extends QuerySpec {
@@ -33,6 +41,7 @@ export interface LiveQuery extends QuerySpec {
   total: number | null;
   queryState: string | null;
   error: string | null;
+  snippetMap: Record<Id, Snippet>;
 }
 
 export interface MailState {
@@ -64,7 +73,7 @@ export interface Snapshot {
 export const DEFAULT_SORT: Comparator[] = [{ property: 'receivedAt', isAscending: false }];
 
 export function queryKey(spec: QuerySpec): string {
-  return JSON.stringify([spec.filter, spec.sort, spec.collapseThreads]);
+  return JSON.stringify([spec.filter, spec.sort, spec.collapseThreads, !!spec.snippets]);
 }
 
 /**
@@ -154,7 +163,7 @@ export class MailEngine {
   openQuery(spec: QuerySpec): string {
     const key = queryKey(spec);
     if (!this.state.queries[key]) {
-      this.set('queries', key, { ...spec, key, slots: [], total: null, queryState: null, error: null });
+      this.set('queries', key, { ...spec, key, slots: [], total: null, queryState: null, error: null, snippetMap: {} });
     }
     return key;
   }
@@ -200,6 +209,9 @@ export class MailEngine {
     const rows = b.call('Email/get', { accountId, '#ids': query.ref('/ids'), properties: LIST_PROPS });
     const threads = b.call('Thread/get', { accountId, '#ids': rows.ref('/list/*/threadId') });
     const members = b.call('Email/get', { accountId, '#ids': threads.ref('/list/*/emailIds'), properties: MEMBER_PROPS });
+    const snippets = q.snippets
+      ? b.call('SearchSnippet/get', { accountId, filter: q.filter, '#emailIds': query.ref('/ids') })
+      : null;
 
     let res: BatchResult;
     try {
@@ -231,6 +243,10 @@ export class MailEngine {
         lq.total = total;
         lq.queryState = qr.queryState;
         lq.error = null;
+        // Snippets are a nicety: a server without SearchSnippet support still lists results.
+        if (snippets && !res.error(snippets)) {
+          for (const sn of res.get(snippets).list) lq.snippetMap[sn.emailId] = { subject: sn.subject, preview: sn.preview };
+        }
       }));
     });
     this.persistSoon();
@@ -406,15 +422,28 @@ export class MailEngine {
    */
   private async fillMissingRows(): Promise<void> {
     const needRow = new Set<Id>();
+    const needSnippets: { key: string; filter: EmailFilter | null; ids: Id[] }[] = [];
     for (const q of Object.values(this.state.queries)) {
       const range = this.ranges.get(q.key) ?? [0, PAGE_SIZE];
+      const missingSnippets: Id[] = [];
       for (const id of q.slots.slice(Math.max(0, range[0] - PAGE_SIZE), range[1] + PAGE_SIZE)) {
         if (id && this.state.emails[id]?.subject === undefined) needRow.add(id);
+        if (id && q.snippets && !q.snippetMap[id]) missingSnippets.push(id);
       }
+      if (missingSnippets.length) needSnippets.push({ key: q.key, filter: q.filter, ids: missingSnippets });
     }
-    if (!needRow.size) return;
+    if (!needRow.size && !needSnippets.length) return;
     const accountId = this.accountId;
     const b = this.client.batch();
+    const snippetCalls = needSnippets.map((n) => ({
+      key: n.key,
+      call: b.call('SearchSnippet/get', { accountId, filter: n.filter, emailIds: n.ids }),
+    }));
+    if (!needRow.size) {
+      const res = await this.client.send(b);
+      this.applySnippets(res, snippetCalls);
+      return;
+    }
     const rows = b.call('Email/get', { accountId, ids: [...needRow], properties: LIST_PROPS });
     const threads = b.call('Thread/get', { accountId, '#ids': rows.ref('/list/*/threadId') });
     const members = b.call('Email/get', { accountId, '#ids': threads.ref('/list/*/emailIds'), properties: MEMBER_PROPS });
@@ -423,7 +452,17 @@ export class MailEngine {
       this.mergeEmails(res.get(members).list);
       this.mergeEmails(res.get(rows).list);
       this.mergeThreads(res.get(threads).list);
+      this.applySnippets(res, snippetCalls);
     });
+  }
+
+  private applySnippets(res: BatchResult, calls: { key: string; call: CallHandle<'SearchSnippet/get'> }[]): void {
+    for (const { key, call } of calls) {
+      if (res.error(call) || !this.state.queries[key]) continue;
+      this.set('queries', key, 'snippetMap', produce((m) => {
+        for (const sn of res.get(call).list) m[sn.emailId] = { subject: sn.subject, preview: sn.preview };
+      }));
+    }
   }
 
   /** The server can't compute changes for this query: reload only what's on screen. */

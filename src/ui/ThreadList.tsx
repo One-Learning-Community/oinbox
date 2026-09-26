@@ -2,6 +2,7 @@ import { A } from '@solidjs/router';
 import { createEffect, createMemo, For, on, onCleanup, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { listDate } from '../mail/format';
+import { snippetHtml } from '../mail/sanitize';
 import { queryKey } from '../sync/engine';
 import { resolveView, threadRow, type View } from '../sync/selectors';
 import { Icon } from './icons';
@@ -62,11 +63,14 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
         <button class="icon-btn" title="Refresh" onClick={() => void engine.catchUp()}>
           <Icon name="refresh" />
         </button>
+        <Show when={props.view.search?.errors.length}>
+          <span class="error" style={{ 'font-size': '13px' }}>{props.view.search!.errors.join('; ')}</span>
+        </Show>
         <span class="range">{rangeLabel()}</span>
       </div>
       <div class="list-scroll" ref={scrollEl} role="list" aria-label={props.view.title}>
         <Show when={query()?.total === 0}>
-          <div class="list-empty">No conversations in {props.view.title}.</div>
+          <div class="list-empty">{props.view.search ? 'No messages matched your search.' : `No conversations in ${props.view.title}.`}</div>
         </Show>
         <Show when={query()?.error && !query()?.total}>
           <div class="list-empty error">Couldn't load this mailbox. {query()?.error}</div>
@@ -117,8 +121,23 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
                       </span>
                       <span class="line">
                         <For each={r().labels}>{(l) => <span class="chip">{l.name}</span>}</For>
-                        <span class="subject">{r().subject}</span>
-                        <Show when={r().preview}> — {r().preview}</Show>
+                        <Show
+                          when={query()?.snippetMap[r().emailId]}
+                          fallback={
+                            <>
+                              <span class="subject">{r().subject}</span>
+                              <Show when={r().preview}> — {r().preview}</Show>
+                            </>
+                          }
+                        >
+                          {(sn) => (
+                            <>
+                              <span class="subject" innerHTML={sn().subject ? snippetHtml(sn().subject!) : r().subject} />
+                              {' — '}
+                              <span innerHTML={sn().preview ? snippetHtml(sn().preview!) : r().preview} />
+                            </>
+                          )}
+                        </Show>
                       </span>
                       <Show when={r().hasAttachment}>
                         <Icon name="clip" class="clip" />

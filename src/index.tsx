@@ -111,6 +111,8 @@ async function boot() {
         <Router root={(p) => <Shell {...p} onToaster={(h) => (toaster = h)} />}>
           <Route path="/" component={() => <Navigate href="/inbox" />} />
           <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
+          <Route path="/search/:q" component={MailView} />
+          <Route path="/search/:q/t/:threadId" component={MailView} />
           <Route path="/label/:id" component={MailView} />
           <Route path="/label/:id/t/:threadId" component={MailView} />
           <Route path="/:slug" component={MailView} />

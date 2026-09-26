@@ -74,3 +74,10 @@ describe('plainTextToHtml', () => {
     );
   });
 });
+
+describe('snippetHtml', () => {
+  it('keeps <mark> and strips everything else', async () => {
+    const { snippetHtml } = await import('./sanitize');
+    expect(snippetHtml('the <mark>budget</mark> <img src=x onerror=alert(1)><b>x</b>')).toBe('the <mark>budget</mark> x');
+  });
+});
