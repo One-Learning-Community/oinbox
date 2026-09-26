@@ -38,3 +38,17 @@ oinbox instead uses `@tanstack/virtual-core` directly with a ~40-line Solid adap
    toast. Workaround: `toastSlot` plus a side map from toast id to action. Suggest
    `show({ message, action: { label, onClick } })` or passing through a `data` field.
 2. Handle is typed `(...args: any[]) => any`; `show` should be typed with its option object.
+
+## TipTap 0.3.6
+1. **Unconfirmed:** `autofocus` and `focusEditor()` didn't move focus into an inline reply editor.
+   Only observed in an automated Chrome window without OS focus (`document.hasFocus() === false`),
+   so this needs confirming in a normal window before filing. Either way, there's no "ready" event to
+   know when `focusEditor()` will work. Workaround: two rAFs, then focus the `[contenteditable]`.
+   Suggest an `onReady(editor)` event.
+2. Missing peer `@tiptap/extension-character-count` is required even when `maxLength` is unused.
+3. The default theme hardcodes a light toolbar/background; there's no dark-mode default. oinbox maps
+   `--rozie-tiptap-*` onto its own tokens.
+
+## Tags 0.1.9
+Works well for recipients: `validate` + `delimiters` handle paste of "a, b; c". Default chip/input
+colors are light-only (same theming note as TipTap).

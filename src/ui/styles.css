@@ -277,6 +277,10 @@ a { color: var(--accent); }
   --rozie-tiptap-button-active-bg: var(--accent-soft);
   --rozie-tiptap-button-active-color: var(--text);
   --rozie-tiptap-content-padding: 0;
+  --rozie-tiptap-toolbar-bg: transparent;
+  --rozie-tiptap-toolbar-border: 0;
+  --rozie-tiptap-toolbar-padding: 0 0 6px;
+  --rozie-tiptap-toolbar-sep-bg: var(--border);
   --rozie-tiptap-link-bg: var(--surface);
   --rozie-tiptap-link-border: 1px solid var(--border);
   --rozie-tiptap-link-input-bg: var(--surface-2);
