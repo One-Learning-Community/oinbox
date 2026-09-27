@@ -14,10 +14,11 @@ the `solid` export condition points at raw JSX (`dist/source/index.jsx`). Remove
 ## FIXED (2026-09-27 release): Packages not published for Solid
 `dialog-solid`, `listbox-solid`, `resizable-solid`, `slider-solid`, `switch-solid`,
 `number-field-solid`, `pagination-solid` are now on npm (first releases, 0.1.3). oinbox wanted
-Dialog (shortcut help, confirm) and Resizable (list/reading-pane split) — not yet adopted in-app,
-tracked separately.
+Dialog for shortcut help and a new confirm-before-archive/trash/spam/discard-draft flow — both now
+built on `dialog-solid` (`src/ui/Overlays.tsx` `HelpDialog`, `src/ui/ConfirmDialog.tsx`). Resizable
+(list/reading-pane split) is still not adopted — deliberately out of scope this pass, not a rozie gap.
 
-## DataTable 0.6.0 — was not usable for a live thread list, now mostly is
+## DataTable 0.6.0 — the 3 row-level asks are fixed, but it's not a fit for ThreadList
 Wanted: the Gmail thread list (50k rows, server-paged, rows inserted/removed by push).
 1. **FIXED: `getRowId`** is now exposed and documented for exactly this case (rows added/removed
    while selection/expansion state is held).
@@ -28,8 +29,26 @@ Wanted: the Gmail thread list (50k rows, server-paged, rows inserted/removed by 
    "oinbox's email thread" as the motivating case.
 4. **Still open: types are `any`** across props, slot contexts and the handle.
 
-oinbox still uses `@tanstack/virtual-core` directly with its own Solid adapter — worth revisiting
-now that 1–3 are solved, not yet migrated.
+**New, after actually attempting the migration (2026-09-27):** even with 1–3 solved, DataTable isn't
+a good fit for a list-shaped UI like a thread list, for three reasons found by trying it:
+- **It renders a real `<table>`/`<tr>` structure** (`interactionMode: 'table'`, "byte-behaviorally
+  identical to a plain accessible table"). ThreadList's rows are Gmail-style list items
+  (`role="list"`/`role="listitem"`), so migrating would change how screen readers announce the
+  inbox — a table of cells instead of a list of conversations. That's a real regression, not a
+  styling difference, and not something a consumer can safely override from outside (the table
+  semantics are the point of an accessible-by-default `<table>`).
+- **No `scrollToIndex`/`getScrollElement` on the imperative handle.** `focusCell` exists but is
+  documented as grid-interaction-mode focus, not a plain scroll-into-view. A consumer that needs
+  precise programmatic scrolling (keyboard cursor navigation, "jump to row N") has to reach into
+  the internal `.rdt-scroll` class, which isn't public API. Suggest a `scrollToRow(index)` verb (or
+  exposing the scroll container) alongside `visible-range-change`.
+- **It's a full spreadsheet-grade grid** (inline editing, grouping, column pinning, undo/redo, grid
+  keyboard nav) — a lot of machinery to import for a component that's conceptually a virtualized
+  list with one flexible "row" column, not a multi-column data grid.
+
+oinbox still uses `@tanstack/virtual-core` directly with its own ~60-line Solid adapter
+(`src/ui/virtual.ts`) and isn't migrating ThreadList to DataTable. The 1–3 fixes are still valuable
+for anyone using DataTable as an actual multi-column grid with live/pushed data.
 
 ## Toast 0.2.0
 1. **FIXED: `show()` now takes `action`/`data`** — see the README's `Undo` example
