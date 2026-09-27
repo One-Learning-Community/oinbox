@@ -1,0 +1,10 @@
+minimumReleaseAgeExclude:
+  - '@rozie-ui/combobox-solid@0.6.0'
+  - '@rozie-ui/command-palette-solid@0.4.10'
+  - '@rozie-ui/data-table-solid@0.6.0'
+  - '@rozie-ui/popover-solid@0.2.4'
+  - '@rozie-ui/tags-solid@0.1.10'
+  - '@rozie-ui/tiptap-solid@0.4.0'
+  - '@rozie-ui/toast-solid@0.2.0'
+  - '@rozie/runtime-keynav-core@0.7.5'
+  - '@rozie/runtime-solid@0.7.5'
