@@ -8,3 +8,4 @@ minimumReleaseAgeExclude:
   - '@rozie-ui/toast-solid@0.2.0'
   - '@rozie/runtime-keynav-core@0.7.5'
   - '@rozie/runtime-solid@0.7.5'
+  - '@rozie-ui/dialog-solid@0.1.3'

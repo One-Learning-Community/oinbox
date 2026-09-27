@@ -3,6 +3,7 @@ import type { JmapClient } from '../jmap/client';
 import type { Id, Identity } from '../jmap/types';
 import { buildEmailCreate, initialDraft, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
 import type { EmailRec, MailEngine } from '../sync/engine';
+import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
 
 const AUTOSAVE_MS = 2000;
@@ -29,7 +30,7 @@ export interface Composer {
 }
 
 /** Open composers plus the delayed-send queue. */
-export function createComposers(engine: MailEngine, client: JmapClient, toast: ToastFn) {
+export function createComposers(engine: MailEngine, client: JmapClient, toast: ToastFn, confirm: ConfirmFn) {
   const [list, setList] = createSignal<Composer[]>([]);
   let seq = 0;
   /** Sends waiting out the undo window, so we can warn before the tab closes. */
@@ -164,6 +165,8 @@ export function createComposers(engine: MailEngine, client: JmapClient, toast: T
   };
 
   const discard = async (c: Composer) => {
+    const ok = await confirm({ title: 'Discard draft?', message: 'This draft will be permanently deleted.', confirmLabel: 'Discard' });
+    if (!ok) return;
     remove(c);
     const id = c.draftId();
     if (id) await engine.destroyEmails([id]).catch(() => undefined);

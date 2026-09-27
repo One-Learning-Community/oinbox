@@ -9,6 +9,7 @@ import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSna
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream } from './jmap/sse';
 import { MailEngine } from './sync/engine';
+import { createConfirmDialog } from './ui/ConfirmDialog';
 import { MailView, Shell } from './ui/Shell';
 import { SignIn } from './ui/SignIn';
 import { createNav } from './ui/nav';
@@ -48,6 +49,7 @@ async function boot() {
   });
   const engine = new MailEngine(client);
   const toasts = createToasts();
+  const confirmDialog = createConfirmDialog();
 
   const signOut = () => {
     const user = client.hasSession ? client.session.username : null;
@@ -78,9 +80,9 @@ async function boot() {
     engine,
     auth,
     toast: toasts.toast,
-    actions: createActions(engine, toasts.toast),
+    actions: createActions(engine, toasts.toast, confirmDialog.confirm),
     nav: createNav(),
-    composers: createComposers(engine, client, toasts.toast),
+    composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm),
     images: await createImagePrefs(),
     ...theme,
     signOut,
@@ -118,7 +120,7 @@ async function boot() {
   render(
     () => (
       <AppContext.Provider value={app}>
-        <Router root={(p) => <Shell {...p} toasts={toasts.Host} />}>
+        <Router root={(p) => <Shell {...p} toasts={toasts.Host} confirmHost={confirmDialog.Host} />}>
           <Route path="/" component={() => <Navigate href="/inbox" />} />
           <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
           <Route path="/search/:q" component={MailView} />

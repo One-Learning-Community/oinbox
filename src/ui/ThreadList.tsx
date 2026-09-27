@@ -128,14 +128,14 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
           }
         >
           <Show when={props.view.role !== 'archive'}>
-            <button class="icon-btn" title="Archive (e)" onClick={() => { actions.archive(selection()); nav.clearSelection(); }}>
+            <button class="icon-btn" title="Archive (e)" onClick={() => { void actions.archive(selection()).then((ok) => ok && nav.clearSelection()); }}>
               <Icon name="archive" />
             </button>
           </Show>
-          <button class="icon-btn" title="Report spam (!)" onClick={() => { actions.spam(selection()); nav.clearSelection(); }}>
+          <button class="icon-btn" title="Report spam (!)" onClick={() => { void actions.spam(selection()).then((ok) => ok && nav.clearSelection()); }}>
             <Icon name="junk" />
           </button>
-          <button class="icon-btn" title="Delete (#)" onClick={() => { actions.trash(selection()); nav.clearSelection(); }}>
+          <button class="icon-btn" title="Delete (#)" onClick={() => { void actions.trash(selection()).then((ok) => ok && nav.clearSelection()); }}>
             <Icon name="trash" />
           </button>
           <button class="icon-btn" title="Mark as read (Shift+I)" onClick={() => { void actions.markRead(selection()); nav.clearSelection(); }}>

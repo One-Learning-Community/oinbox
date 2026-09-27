@@ -7,7 +7,7 @@ test.afterEach(async () => {
   await destroyEmails(created.splice(0));
 });
 
-test('j then e archives the thread under the cursor; Undo restores it', async ({ page }) => {
+test('j then e prompts to confirm archiving the thread under the cursor; Cancel keeps it, Archive removes it', async ({ page }) => {
   const tag = uniqueTag();
   // Target first, then a newer one so the target sits at index 1 (one "j" down from the top).
   const target = await deliverToAlice({ from: 'Archive Me <archive@partner.test>', subject: `Archive target ${tag}`, text: 'archive me' });
@@ -23,19 +23,26 @@ test('j then e archives the thread under the cursor; Undo restores it', async ({
 
   await page.keyboard.press('j');
   await expect(rowFor(page, target.threadId)).toHaveClass(/\bcursor\b/);
+
+  // Cancel: the thread stays put.
   await page.keyboard.press('e');
+  const dialog = page.getByRole('dialog', { name: /archive/i });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(rowFor(page, target.threadId)).toBeVisible();
+
+  // Confirm: it archives.
+  await page.keyboard.press('e');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Archive' }).click();
 
   await expect(rowFor(page, target.threadId)).toHaveCount(0);
   await expect(rowFor(page, top.threadId)).toBeVisible();
-  const toast = page.locator('.toast', { hasText: 'archived' });
-  await expect(toast).toBeVisible();
+  await expect(page.locator('.toast', { hasText: 'archived' })).toBeVisible();
 
   const inbox = await mailboxByRole('inbox');
   await expect.poll(async () => (await threadEmails(target.threadId))[0]?.mailboxIds[inbox] ?? false).toBe(false);
-
-  await toast.getByRole('button', { name: 'Undo' }).click();
-  await expect(rowFor(page, target.threadId)).toBeVisible();
-  await expect.poll(async () => (await threadEmails(target.threadId))[0]?.mailboxIds[inbox] ?? false).toBe(true);
 });
 
 test('o opens the cursor thread, u goes back, ? opens the shortcuts dialog', async ({ page }) => {
@@ -49,7 +56,8 @@ test('o opens the cursor thread, u goes back, ? opens the shortcuts dialog', asy
   await expect(rows(page).first()).toBeVisible();
 
   await page.keyboard.press('?');
-  await expect(page.locator('.dialog')).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+  await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.locator('.dialog')).toBeHidden();
+  await expect(dialog).toBeHidden();
 });

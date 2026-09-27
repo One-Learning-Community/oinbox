@@ -219,13 +219,17 @@ a { color: var(--accent); }
 .row .row-check input, .toolbar input[type='checkbox'] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; }
 @media (max-width: 800px) { .row .row-check { display: none; } }
 
-/* ---- Overlays ---- */
-.overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: start center; padding-top: 10vh; background: rgb(0 0 0 / 40%); }
-.dialog { width: min(640px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--surface); color: var(--text); border-radius: 16px; box-shadow: var(--shadow); padding: 20px 24px; }
-.dialog h2 { margin: 0 0 16px; font-weight: 400; font-size: 20px; }
+/* ---- Overlays (@rozie-ui/dialog-solid) ---- */
+.rozie-dialog h2 { margin: 0 0 16px; font-weight: 400; font-size: 20px; }
+.rozie-dialog p { margin: 0 0 20px; color: var(--text-2); }
 .shortcut-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 24px; margin: 0; }
 .shortcut-list dt { font-family: ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
 .shortcut-list dd { margin: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-actions button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 8px 16px; cursor: pointer; font: inherit; }
+.dialog-actions button:hover { background: var(--hover); }
+.dialog-actions button.danger { border-color: transparent; background: var(--danger); color: #fff; }
+.dialog-actions button.danger:hover { filter: brightness(1.1); }
 
 /* ---- Compose ---- */
 .link-btn { border: 0; background: none; color: var(--text-3); cursor: pointer; padding: 0; font-size: 13px; }
@@ -311,6 +315,15 @@ a { color: var(--accent); }
   --rozie-combobox-option-color: var(--text);
   --rozie-combobox-bg: var(--surface);
   --rozie-combobox-color: var(--text);
+  --rozie-dialog-max-width: min(640px, calc(100vw - 32px));
+  --rozie-dialog-max-height: 80vh;
+  --rozie-dialog-bg: var(--surface);
+  --rozie-dialog-color: var(--text);
+  --rozie-dialog-border: 0;
+  --rozie-dialog-radius: 16px;
+  --rozie-dialog-shadow: var(--shadow);
+  --rozie-dialog-backdrop-bg: rgb(0 0 0 / 40%);
+  --rozie-dialog-padding: 20px 24px;
 }
 
 /* The palette's base theme sets its tokens on .rozie-command-palette, so re-declare them there. */

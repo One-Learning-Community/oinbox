@@ -1,7 +1,8 @@
 import { CommandPalette } from '@rozie-ui/command-palette-solid';
 import '@rozie-ui/command-palette-solid/themes/base.css';
+import { Dialog } from '@rozie-ui/dialog-solid';
 import { useLocation } from '@solidjs/router';
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createMemo, createSignal, For } from 'solid-js';
 import { useApp } from '../app/context';
 import { labelPath, resolveView } from '../sync/selectors';
 import { SHORTCUTS } from './keyboard';
@@ -64,23 +65,19 @@ export function MailboxPicker() {
 export function HelpDialog() {
   const { nav } = useApp();
   return (
-    <Show when={nav.helpOpen()}>
-      <div class="overlay" onClick={() => nav.setHelpOpen(false)}>
-        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={(e) => e.stopPropagation()}>
-          <h2 id="help-title">Keyboard shortcuts</h2>
-          <dl class="shortcut-list">
-            <For each={SHORTCUTS}>
-              {([keys, what]) => (
-                <>
-                  <dt>{keys}</dt>
-                  <dd>{what}</dd>
-                </>
-              )}
-            </For>
-          </dl>
-        </div>
-      </div>
-    </Show>
+    <Dialog open={nav.helpOpen()} onOpenChange={nav.setHelpOpen} ariaLabelledby="help-title">
+      <h2 id="help-title">Keyboard shortcuts</h2>
+      <dl class="shortcut-list">
+        <For each={SHORTCUTS}>
+          {([keys, what]) => (
+            <>
+              <dt>{keys}</dt>
+              <dd>{what}</dd>
+            </>
+          )}
+        </For>
+      </dl>
+    </Dialog>
   );
 }
 

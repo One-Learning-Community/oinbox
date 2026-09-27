@@ -113,16 +113,13 @@ export function installShortcuts(app: App, nav: Nav, navigate: Navigator, compos
         break;
       }
       case 'e':
-        a.archive(targets);
-        afterRemoval();
+        void a.archive(targets).then((ok) => ok && afterRemoval());
         break;
       case '#':
-        a.trash(targets);
-        afterRemoval();
+        void a.trash(targets).then((ok) => ok && afterRemoval());
         break;
       case '!':
-        a.spam(targets);
-        afterRemoval();
+        void a.spam(targets).then((ok) => ok && afterRemoval());
         break;
       case 's':
         void a.toggleStar(targets);

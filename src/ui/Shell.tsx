@@ -17,7 +17,7 @@ const ROLE_ICONS: Record<string, IconName> = {
   inbox: 'inbox', drafts: 'draft', sent: 'send', archive: 'archive', junk: 'junk', trash: 'trash',
 };
 
-export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element }) {
+export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; confirmHost: () => JSX.Element }) {
   const app = useApp();
   const [navOpen, setNavOpen] = createSignal(false);
   const location = useLocation();
@@ -73,6 +73,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element }) 
       </Show>
       <MailboxPicker />
       <HelpDialog />
+      <props.confirmHost />
     </div>
   );
 }

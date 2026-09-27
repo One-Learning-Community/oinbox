@@ -126,14 +126,14 @@ export function Conversation(props: { view: View; threadId: Id }) {
           <Icon name="back" />
         </button>
         <Show when={props.view.role !== 'archive'}>
-          <button class="icon-btn" title="Archive (e)" onClick={() => { actions.archive([props.threadId]); navigate(`/${props.view.slug}`); }}>
+          <button class="icon-btn" title="Archive (e)" onClick={() => { void actions.archive([props.threadId]).then((ok) => ok && navigate(`/${props.view.slug}`)); }}>
             <Icon name="archive" />
           </button>
         </Show>
-        <button class="icon-btn" title="Report spam (!)" onClick={() => { actions.spam([props.threadId]); navigate(`/${props.view.slug}`); }}>
+        <button class="icon-btn" title="Report spam (!)" onClick={() => { void actions.spam([props.threadId]).then((ok) => ok && navigate(`/${props.view.slug}`)); }}>
           <Icon name="junk" />
         </button>
-        <button class="icon-btn" title="Delete (#)" onClick={() => { actions.trash([props.threadId]); navigate(`/${props.view.slug}`); }}>
+        <button class="icon-btn" title="Delete (#)" onClick={() => { void actions.trash([props.threadId]).then((ok) => ok && navigate(`/${props.view.slug}`)); }}>
           <Icon name="trash" />
         </button>
         <button class="icon-btn" title="Mark as unread (Shift+U)" onClick={() => { void actions.markUnread([props.threadId]); navigate(`/${props.view.slug}`); }}>
