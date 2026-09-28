@@ -28,11 +28,11 @@ export async function accountId(user = ALICE): Promise<string> {
 }
 
 /** Run method calls; returns responses keyed by call tag. Throws on method-level errors. */
-export async function jmap(calls: Invocation[], user = ALICE): Promise<Record<string, any>> {
+export async function jmap(calls: Invocation[], user = ALICE, using: string[] = USING): Promise<Record<string, any>> {
   const res = await fetch(`${BASE}/jmap/`, {
     method: 'POST',
     headers: { authorization: auth(user), 'content-type': 'application/json' },
-    body: JSON.stringify({ using: USING, methodCalls: calls }),
+    body: JSON.stringify({ using, methodCalls: calls }),
   });
   if (!res.ok) throw new Error(`JMAP HTTP ${res.status}: ${await res.text()}`);
   const body = (await res.json()) as { methodResponses: Invocation[] };
