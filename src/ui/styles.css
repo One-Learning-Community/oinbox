@@ -379,3 +379,13 @@ a { color: var(--accent); }
 .cal-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; border: 2px solid transparent; }
 .cal-toggle input:not(:checked) + .cal-dot { background: transparent !important; border-color: var(--text-3); }
 .cal-toggle input:focus-visible + .cal-dot { outline: 2px solid var(--accent); outline-offset: 2px; }
+.event-anchor { position: fixed; pointer-events: none; z-index: 20; }
+.event-anchor > .rozie-popover, .event-anchor .rozie-popover-anchor { width: 100%; height: 100%; }
+.event-card { pointer-events: auto; width: min(360px, calc(100vw - 32px)); padding: 16px 20px; background: var(--surface); color: var(--text); border-radius: 12px; box-shadow: var(--shadow); }
+.event-card h3 { margin: 0 0 4px; font-size: 18px; font-weight: 500; }
+.event-card p { margin: 4px 0; }
+.event-card .when, .event-card .calendar-name { color: var(--text-2); font-size: 14px; }
+.event-card .description { white-space: pre-wrap; }
+.event-card .participants { list-style: none; margin: 8px 0; padding: 0; }
+.event-card .participants li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.event-card .rsvp { color: var(--text-3); font-size: 13px; }
