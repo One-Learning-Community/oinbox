@@ -106,3 +106,21 @@ don't accept `class`/`style`) sized to the clicked event's rect, with the anchor
 and an empty anchor slot, mounted fresh per click. Suggest an `anchor`
 prop accepting `Element | { getBoundingClientRect(): DOMRect }`. Related: FullCalendar's
 `eventClick` payload drops `info.el`, so the element is recovered via `jsEvent.target.closest('.fc-event')`.
+
+## FullCalendar 0.1.10 (Solid) — typing and defaults
+Found while wiring the calendar page; none blocked us, all cost a workaround or a surprise.
+1. **Event handlers and slots are untyped.** Every handler is `(...args: unknown[]) => void` and every
+   slot context is `{ arg: any }`, although the README documents each payload (`datesSet` →
+   `{ start, end, view }`, `eventClick` → `{ event, jsEvent, view }`, …). `src/ui/CalendarView.tsx`
+   casts both handlers it uses. Suggest exporting payload types (`DatesSetPayload`,
+   `EventClickPayload`, …) and typing the `on*` props with them.
+2. **Events are always keyboard-focusable.** The wrapper always registers FullCalendar's
+   `eventClick`, and FullCalendar makes events interactive (`tabindex="0"`) whenever an eventClick
+   handler exists. oinbox wants this (event details open with Enter; pinned by
+   `e2e/calendar.spec.ts`), but a consumer that ignores clicks still gets a tab stop per event.
+   Suggest registering `eventClick` only when `onEventClick` is bound (or exposing
+   `eventInteractive`), and documenting the behaviour either way.
+3. **The title fallback leaks ids.** `normalizeEvent` shows an untitled event as `Event <id>`
+   (`Event (no id)` without one). For server-backed data that id is internal (Stalwart ids look like
+   `h1jfdmaaaaap`). oinbox always sends a title (`(No title)`), so we don't hit it. Suggest an empty
+   title or a `untitledLabel` prop.
