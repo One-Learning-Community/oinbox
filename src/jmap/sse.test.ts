@@ -88,4 +88,22 @@ describe('openPushStream', () => {
       vi.useRealTimers();
     }
   });
+
+  it('subscribes to mail and calendar state changes', async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      return { ok: true, status: 200, body: droppedStream() } as unknown as Response;
+    };
+    const client = new JmapClient({ sessionUrl: 'http://fake/session', getToken: async () => 't', fetch: fetchImpl as unknown as typeof fetch });
+    client.useSession({ ...fakeSession(), eventSourceUrl: 'http://fake/events?types={types}&closeafter={closeafter}&ping={ping}' });
+    const close = openPushStream(client, { onStateChange: () => {} });
+    try {
+      await vi.waitFor(() => expect(urls.length).toBeGreaterThan(0));
+      const types = new URL(urls[0]!).searchParams.get('types')!.split(',');
+      expect(types).toEqual(expect.arrayContaining(['Email', 'Mailbox', 'Thread', 'EmailDelivery', 'Calendar', 'CalendarEvent']));
+    } finally {
+      close();
+    }
+  });
 });

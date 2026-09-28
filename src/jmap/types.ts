@@ -1,4 +1,4 @@
-// JMAP Core (RFC 8620) and Mail (RFC 8621) types — only what oinbox uses.
+// JMAP Core (RFC 8620), Mail (RFC 8621) and Calendars types — only what oinbox uses.
 
 export type Id = string;
 export type UTCDate = string;
@@ -6,6 +6,7 @@ export type UTCDate = string;
 export const CORE = 'urn:ietf:params:jmap:core';
 export const MAIL = 'urn:ietf:params:jmap:mail';
 export const SUBMISSION = 'urn:ietf:params:jmap:submission';
+export const CALENDARS = 'urn:ietf:params:jmap:calendars';
 
 export interface Session {
   capabilities: Record<string, unknown>;
@@ -262,6 +263,66 @@ export interface EmailSubmissionSetArgs extends SetArgs<EmailSubmission> {
   onSuccessDestroyEmail?: string[];
 }
 
+export interface Calendar {
+  id: Id;
+  name: string;
+  color: string | null;
+  sortOrder: number;
+  isDefault: boolean;
+  isVisible: boolean;
+}
+
+export interface CalendarLocation {
+  name?: string | null;
+}
+
+export interface CalendarParticipant {
+  name?: string | null;
+  /** "mailto:…" (Stalwart follows JSCalendar bis; the older `email`/`sendTo` are silently dropped). */
+  calendarAddress?: string;
+  participationStatus?: 'needs-action' | 'accepted' | 'declined' | 'tentative' | 'delegated';
+  roles?: Record<string, boolean>;
+}
+
+/**
+ * A JSCalendar Event as Stalwart 0.16 serves it (the "JSCalendar bis" draft: singular
+ * `recurrenceRule`, `calendarAddress`). With `expandRecurrences`, each occurrence is its own
+ * record with `baseEventId`, `recurrenceId` and server-computed `utcStart`.
+ */
+export interface CalendarEvent {
+  id: Id;
+  baseEventId?: Id | null;
+  recurrenceId?: string | null;
+  calendarIds?: Record<Id, boolean>;
+  uid?: string;
+  title?: string;
+  description?: string;
+  /** LocalDateTime, e.g. "2026-10-05T09:00:00". */
+  start?: string;
+  timeZone?: string | null;
+  /** ISO 8601 duration, e.g. "PT30M", "P1D". Missing means zero. */
+  duration?: string;
+  showWithoutTime?: boolean;
+  utcStart?: UTCDate;
+  color?: string | null;
+  locations?: Record<string, CalendarLocation> | null;
+  participants?: Record<string, CalendarParticipant> | null;
+  organizerCalendarAddress?: string | null;
+  recurrenceRule?: Record<string, unknown> | null;
+  /** recurrenceId → PatchObject. Keys are property names or JSON-pointer paths ("participants/p1/…"). */
+  recurrenceOverrides?: Record<string, Record<string, unknown>> | null;
+}
+
+export interface CalendarEventFilter {
+  after?: UTCDate;
+  before?: UTCDate;
+  inCalendar?: Id;
+}
+export interface CalendarEventQueryArgs extends QueryArgs<CalendarEventFilter> {
+  expandRecurrences?: boolean;
+  timeZone?: string;
+}
+
 /** Method name → argument and result types. The request builder is typed off this map. */
 export interface Methods {
   'Mailbox/get': { args: GetArgs; result: GetResult<Mailbox> };
@@ -280,6 +341,9 @@ export interface Methods {
     result: { accountId: Id; list: SearchSnippet[]; notFound: Id[] | null };
   };
   'EmailSubmission/set': { args: EmailSubmissionSetArgs; result: SetResult<EmailSubmission> };
+  'Calendar/get': { args: GetArgs; result: GetResult<Calendar> };
+  'CalendarEvent/query': { args: CalendarEventQueryArgs; result: QueryResult };
+  'CalendarEvent/get': { args: GetArgs; result: GetResult<CalendarEvent> };
 }
 
 export type MethodName = keyof Methods;

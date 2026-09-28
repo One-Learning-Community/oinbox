@@ -21,7 +21,7 @@ const origin = location.origin;
 const auth = new OAuth({
   origin,
   clientId: import.meta.env.VITE_OAUTH_CLIENT_ID ?? 'oinbox',
-  scope: import.meta.env.VITE_OAUTH_SCOPE ?? 'openid offline_access urn:ietf:params:oauth:scope:mail',
+  scope: import.meta.env.VITE_OAUTH_SCOPE ?? 'openid offline_access urn:ietf:params:oauth:scope:mail urn:ietf:params:oauth:scope:calendars',
 });
 
 async function boot() {

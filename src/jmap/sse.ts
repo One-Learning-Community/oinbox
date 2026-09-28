@@ -62,6 +62,9 @@ export interface PushOptions {
   onUnauthorized?: () => void;
 }
 
+/** Data types oinbox wants StateChange pushes for. */
+export const PUSH_TYPES = 'Email,Mailbox,Thread,EmailDelivery,Calendar,CalendarEvent';
+
 /**
  * Keep a JMAP push connection open, reconnecting with capped exponential backoff.
  * Returns a function that closes it.
@@ -75,7 +78,7 @@ export function openPushStream(client: JmapClient, opts: PushOptions): () => voi
     while (!closed) {
       controller = new AbortController();
       try {
-        const res = await client.authFetch(client.eventSourceUrl('Email,Mailbox,Thread,EmailDelivery'), {
+        const res = await client.authFetch(client.eventSourceUrl(PUSH_TYPES), {
           headers: { accept: 'text/event-stream' },
           signal: controller.signal,
         });
