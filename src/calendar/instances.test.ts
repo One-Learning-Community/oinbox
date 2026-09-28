@@ -164,6 +164,12 @@ describe('range helpers', () => {
     expect(rangeKey(range)).toBe('2026-10-04T04:00:00Z/2026-10-11T04:00:00Z');
   });
 
+  it('accepts a six-week month grid that crosses the autumn DST change (42 local days + 1h)', () => {
+    // FullCalendar's Oct 2026 grid in America/New_York: Sep 27 00:00 EDT → Nov 8 00:00 EST.
+    const range = { start: '2026-09-27T04:00:00Z', end: '2026-11-08T05:00:00Z' };
+    expect(() => addRangeCalls(new RequestBuilder(), 'a1', range, 'America/New_York')).not.toThrow();
+  });
+
   it('refuses ranges longer than six weeks', () => {
     expect(() => addRangeCalls(new RequestBuilder(), 'a1', { start: '2026-01-01T00:00:00Z', end: '2026-03-01T00:00:00Z' }, 'UTC')).toThrow(/42 days/);
   });

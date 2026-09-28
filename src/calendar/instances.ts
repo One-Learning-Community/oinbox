@@ -74,7 +74,8 @@ export function parseDuration(d?: string | null): { days: number; ms: number } {
 
 /** Add the three chained calls for one range: query → occurrences → their base events. */
 export function addRangeCalls(b: RequestBuilder, accountId: Id, range: Range, timeZone: string) {
-  if (Date.parse(range.end) - Date.parse(range.start) > MAX_RANGE_DAYS * DAY_MS) {
+  // A day of slack: a 42-local-day grid spans 42 days + 1h in UTC across the autumn DST change.
+  if (Date.parse(range.end) - Date.parse(range.start) > (MAX_RANGE_DAYS + 1) * DAY_MS) {
     throw new Error(`calendar range ${rangeKey(range)} is longer than ${MAX_RANGE_DAYS} days`);
   }
   const query = b.call('CalendarEvent/query', {
