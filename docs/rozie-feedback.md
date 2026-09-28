@@ -18,7 +18,7 @@ Dialog for shortcut help and a new confirm-before-archive/trash/spam/discard-dra
 built on `dialog-solid` (`src/ui/Overlays.tsx` `HelpDialog`, `src/ui/ConfirmDialog.tsx`). Resizable
 (list/reading-pane split) is still not adopted — deliberately out of scope this pass, not a rozie gap.
 
-## DataTable 0.6.0 — the 3 row-level asks are fixed, but it's not a fit for ThreadList
+## DataTable 0.7.0 — every asked-for API now exists, but it's still not a fit for ThreadList
 Wanted: the Gmail thread list (50k rows, server-paged, rows inserted/removed by push).
 1. **FIXED: `getRowId`** is now exposed and documented for exactly this case (rows added/removed
    while selection/expansion state is held).
@@ -27,43 +27,48 @@ Wanted: the Gmail thread list (50k rows, server-paged, rows inserted/removed by 
 3. **FIXED: `row-activate` event** — fires on a plain click (not on a control/link/editor) or Enter
    on a non-editable cell; payload `{ row, index, trigger }`. The rozie README literally cites
    "oinbox's email thread" as the motivating case.
-4. **Still open: types are `any`** across props, slot contexts and the handle.
+4. **FIXED (0.7.0): `scrollToRow(index, options?)` and `getScrollElement()`** on the imperative
+   handle — exactly the ask filed after trying the migration below: `scrollToRow` mirrors
+   TanStack virtual-core's `scrollToIndex`, and `getScrollElement()` is "the supported replacement
+   for reaching into the internal `.rdt-scroll` class selector." Independent of grid-mode focus,
+   so it doesn't fight a `role="list"` consumer either.
+5. **Still open: types are `any`** across props, slot contexts and the handle (unchanged in 0.7.0).
 
-**New, after actually attempting the migration (2026-09-27):** even with 1–3 solved, DataTable isn't
-a good fit for a list-shaped UI like a thread list, for three reasons found by trying it:
-- **It renders a real `<table>`/`<tr>` structure** (`interactionMode: 'table'`, "byte-behaviorally
-  identical to a plain accessible table"). ThreadList's rows are Gmail-style list items
-  (`role="list"`/`role="listitem"`), so migrating would change how screen readers announce the
-  inbox — a table of cells instead of a list of conversations. That's a real regression, not a
-  styling difference, and not something a consumer can safely override from outside (the table
-  semantics are the point of an accessible-by-default `<table>`).
-- **No `scrollToIndex`/`getScrollElement` on the imperative handle.** `focusCell` exists but is
-  documented as grid-interaction-mode focus, not a plain scroll-into-view. A consumer that needs
-  precise programmatic scrolling (keyboard cursor navigation, "jump to row N") has to reach into
-  the internal `.rdt-scroll` class, which isn't public API. Suggest a `scrollToRow(index)` verb (or
-  exposing the scroll container) alongside `visible-range-change`.
-- **It's a full spreadsheet-grade grid** (inline editing, grouping, column pinning, undo/redo, grid
-  keyboard nav) — a lot of machinery to import for a component that's conceptually a virtualized
-  list with one flexible "row" column, not a multi-column data grid.
+Even with every row-level API now fixed, DataTable still isn't a good fit for a list-shaped UI like
+a thread list, for the reason that actually matters: **it renders a real `<table>`/`<tr>` structure**
+(`interactionMode: 'table'`, "byte-behaviorally identical to a plain accessible table"). ThreadList's
+rows are Gmail-style list items (`role="list"`/`role="listitem"`), so migrating would change how
+screen readers announce the inbox — a table of cells instead of a list of conversations. That's a
+real regression, not a styling difference, and not something a consumer can override from outside
+(the table semantics are the point of an accessible-by-default `<table>`). It's also still a full
+spreadsheet-grade grid (inline editing, grouping, column pinning, undo/redo) — a lot of machinery to
+import for a component that's conceptually a virtualized list with one flexible "row" column.
 
 oinbox still uses `@tanstack/virtual-core` directly with its own ~60-line Solid adapter
-(`src/ui/virtual.ts`) and isn't migrating ThreadList to DataTable. The 1–3 fixes are still valuable
-for anyone using DataTable as an actual multi-column grid with live/pushed data.
+(`src/ui/virtual.ts`) and isn't migrating ThreadList to DataTable. Every fix above is still valuable
+for anyone using DataTable as an actual multi-column grid with live/pushed data — that's most of what
+was asked for.
 
-## Toast 0.2.0
-1. **FIXED: `show()` now takes `action`/`data`** — see the README's `Undo` example
-   (`action: { label, onClick }`, `data` rides to the callback and the `dismissed` event).
-2. **Still open:** handle is typed `(...args: any[]) => any` in `dist/index.d.mts`; `show` isn't
-   typed with its option object despite the feature working.
+## Toast 0.2.1
+1. **FIXED: `show()` takes `action`/`data`**, as of 0.2.0.
+2. **FIXED (0.2.1): the whole `ToasterHandle` is properly typed** — `show`/`patch`/`promise` now
+   have real option-object signatures instead of `(...args: any[]) => any`. Nothing left open here.
 
-## TipTap 0.4.0
-1. **Still unconfirmed:** `autofocus`/`focusEditor()` focus timing — no `onReady(editor)` event
-   found in this release either. Not re-tested this pass.
-2. **FIXED: `@tiptap/extension-character-count` is now `optional: true`** in `peerDependenciesMeta`
-   (along with `extension-image` and `extension-floating-menu`); `core`/`extensions`/`starter-kit`/
-   `extension-bubble-menu` remain required, which is correct.
-3. **Still open:** default theme is light-only; oinbox still maps `--rozie-tiptap-*` onto its own
-   tokens (unchanged, not re-tested this pass).
+## TipTap 0.5.0
+1. **FIXED: a `ready` event** now exists — "The editor exists — the live TipTap `Editor` instance.
+   Fires once per mount. Handle verbs (`focusEditor()`, `setContent()`, …) work from here on."
+   Exactly the `onReady(editor)` ask; resolves the `autofocus`/`focusEditor()` timing uncertainty
+   too, since there's now a documented moment to act instead of guessing with rAFs.
+2. **FIXED (0.4.0, confirmed still true):** `@tiptap/extension-character-count` stays `optional: true`
+   in `peerDependenciesMeta`.
+3. **Still open:** default theme is light-only — no CSS file, no `## Theming` section, no dark
+   default at all in this package (unlike tags-solid, which got exactly this treatment below).
+   oinbox still maps `--rozie-tiptap-*` onto its own tokens as the workaround.
 
-## Tags 0.1.10
-Not re-tested this pass; light-only default chip/input colors were the only open item as of 0.1.9.
+## Tags 0.1.11
+**FIXED: real dark-mode default**, both OS-driven (`@media (prefers-color-scheme: dark)`) and
+app-toggled (`:where(.dark, [data-theme="dark"])`) — the app-toggled selector matches oinbox's own
+`document.documentElement.dataset.theme` mechanism exactly. oinbox's own `--rozie-tags-*` token
+overrides in `styles.css` still win (public tokens beat the package's internal dark-mode wiring), so
+this was a no-op for us visually, but it means a consumer with *no* theme bridge of their own now
+gets a correct dark mode for free. Nothing open left for this package.
