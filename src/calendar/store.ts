@@ -122,6 +122,12 @@ export class CalendarStore {
       const instances = res.get(calls.instances);
       const events = toDisplayEvents(instances.list, res.get(calls.bases).list);
       if (generation === this.generation) {
+        // Every other cached range was fetched at an older state (e.g. an edit from another
+        // device whose push hasn't arrived yet, and will then be ignored as already seen).
+        if (this.eventState !== null && instances.state !== this.eventState) {
+          this.cache.clear();
+          this.generation++;
+        }
         this.remember(rangeKey(range), events);
         this.eventState = instances.state;
       }

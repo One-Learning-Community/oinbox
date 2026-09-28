@@ -98,6 +98,17 @@ describe('CalendarStore', () => {
     expect(store.state.events[0]?.title).toBe('Renamed');
   });
 
+  it('drops other cached ranges when a fetch sees a newer state than the one they were fetched at', async () => {
+    const { server, store } = setup();
+    await store.show(WEEK1); // cached at ce0
+    server.baseEvents.get('b1')!.title = 'Renamed'; // changed from another device
+    server.calendarEventState++;
+    await store.show(WEEK2); // fetched at ce1, before the push arrives
+    store.onStateChange(change('ce1')); // already seen, so ignored
+    await store.show(WEEK1);
+    expect(store.state.events[0]?.title).toBe('Renamed');
+  });
+
   it('refetches after a push reconnect', async () => {
     const { store, queries } = setup();
     await store.show(WEEK1);
