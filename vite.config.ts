@@ -5,6 +5,9 @@ import solid from 'vite-plugin-solid';
 export default defineConfig({
   plugins: [solid()],
   server: {
+    // Only :5173/auth/callback is a registered OAuth redirect URI; fail instead of drifting to :5174.
+    port: 5173,
+    strictPort: true,
     // Dev: proxy JMAP + OAuth to the Docker Compose Caddy so the app stays same-origin.
     proxy: Object.fromEntries(
       // Stalwart's OAuth lives at /login (authorize), /api/auth (login form), /auth/token.
