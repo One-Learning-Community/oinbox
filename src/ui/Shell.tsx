@@ -121,7 +121,7 @@ function SearchBox() {
 }
 
 function Sidebar(props: { current: string }) {
-  const { engine } = useApp();
+  const { engine, hasCalendars } = useApp();
   const groups = createMemo(() => sidebarMailboxes(engine.state.mailboxes));
   const isActive = (slug: string) => props.current === `/${slug}` || props.current.startsWith(`/${slug}/t/`);
 
@@ -151,7 +151,35 @@ function Sidebar(props: { current: string }) {
           {(mb) => item(mb, mailboxSlug(mb), labelPath(mb, engine.state.mailboxes), 'label', mb.unreadThreads)}
         </For>
       </Show>
+      <Show when={hasCalendars()}>
+        <A href="/calendar" class="nav-item" classList={{ active: props.current === '/calendar' }}>
+          <Icon name="calendar" />
+          <span class="name">Calendar</span>
+        </A>
+        <Show when={props.current === '/calendar'}>
+          <CalendarList />
+        </Show>
+      </Show>
     </>
+  );
+}
+
+/** The calendars, each with a show/hide checkbox (a per-browser preference). */
+function CalendarList() {
+  const { calendar } = useApp();
+  const calendars = createMemo(() =>
+    Object.values(calendar.state.calendars).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+  );
+  return (
+    <For each={calendars()}>
+      {(c) => (
+        <label class="nav-item cal-toggle">
+          <input type="checkbox" checked={!calendar.hidden().has(c.id)} onChange={() => calendar.toggleHidden(c.id)} />
+          <span class="cal-dot" style={{ background: c.color ?? 'var(--cal-default)' }} />
+          <span class="name">{c.name}</span>
+        </label>
+      )}
+    </For>
   );
 }
 

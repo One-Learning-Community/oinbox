@@ -63,12 +63,12 @@ export function MailboxPicker() {
 }
 
 export function HelpDialog() {
-  const { nav } = useApp();
+  const { nav, hasCalendars } = useApp();
   return (
     <Dialog open={nav.helpOpen()} onOpenChange={nav.setHelpOpen} ariaLabelledby="help-title">
       <h2 id="help-title">Keyboard shortcuts</h2>
       <dl class="shortcut-list">
-        <For each={SHORTCUTS}>
+        <For each={SHORTCUTS.filter(([keys]) => keys !== 'g then k' || hasCalendars())}>
           {([keys, what]) => (
             <>
               <dt>{keys}</dt>
