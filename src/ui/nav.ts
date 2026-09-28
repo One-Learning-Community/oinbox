@@ -33,7 +33,8 @@ export function createNav() {
   const targets = (): Id[] => {
     const open = openThread();
     if (open) return [open];
-    if (selected().size) return [...selected()];
+    // A selection only counts while its list is on screen (not, say, on /calendar).
+    if (selected().size && list()) return [...selected()];
     const id = list()?.threadIdAt(cursor());
     return id ? [id] : [];
   };
