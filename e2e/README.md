@@ -29,6 +29,8 @@ Environment variables:
 
 Specs share Alice's mailbox, so they run serially (`workers: 1`). Each spec arranges its own preconditions through JMAP (Basic auth) and SMTP in `support/mail.ts`: it marks threads read, puts mail back in the Inbox, or delivers messages with unique subjects and deletes them afterwards. The specs therefore don't depend on run order or on earlier runs.
 
+**Gotcha:** Stalwart's `Email/query` subject filter (and `deliverToAlice`'s wait, which uses it) silently returns zero results for any search string containing a colon — e.g. searching for a literal `"Re: ..."` subject never matches, even though the same text without `"Re:"` matches fine, and even though the message is actually there. This looks like a Meilisearch query-syntax collision, not an oinbox bug. When a fixture needs a reply subject (`Re: ...`), deliver it with `sendMail` directly and wait on thread membership (`threadEmails`) instead of `deliverToAlice`/`emailsBySubject`. See `imap-sync.spec.ts`'s thread-delete test for the pattern.
+
 The `setup` project signs Alice in once through the real OAuth flow and saves `e2e/.auth/alice.json` (gitignored), which the other specs reuse.
 
 ## Coverage
@@ -40,7 +42,8 @@ The `setup` project signs Alice in once through the real OAuth flow and saves `e
 | `html-message.spec.ts` | Erin's HTML reply: `.images-banner` shown and no `img[src=http…]`. The quote is folded behind `button.oinbox-quote-toggle` inside the iframe and toggles open and closed. No request reaches `picsum.photos` or `tracker.design.test`. |
 | `push.spec.ts` | SMTP delivery while the inbox is open → a new unread row appears live (about 50 ms), with no navigation or reload. |
 | `search.spec.ts` | `from:bob` (deep link) returns only Bob's threads, including "Lunch Friday?". A free-text search for "zeppelin" from the search box hits the Q3 thread with `<mark>` highlights. |
-| `keyboard.spec.ts` | `j` then `e` archives the cursor thread (row disappears, server confirms) and toast "Undo" restores it. Also `o` opens a thread, `u` goes back, `?` opens `.dialog` and Escape closes it. |
+| `keyboard.spec.ts` | `j` then `e` prompts a confirm dialog before archiving the cursor thread; Cancel keeps it, confirming removes it (row disappears, server confirms). Also `o` opens a thread, `u` goes back, `?` opens the shortcuts dialog and Escape closes it. |
+| `imap-sync.spec.ts` | A real IMAP client (simulating another mail app) mutates mail while oinbox is open: marking a message seen, moving it out of the inbox, and deleting one message of an open thread all update the UI live via push, with no reload. |
 
 ## Regression tests for fixed bugs
 
