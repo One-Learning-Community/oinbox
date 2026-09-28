@@ -70,4 +70,7 @@ fi
 echo "seed: delivering mail"
 docker run --rm --network "$NET" -v "$PWD/seed:/seed:ro" "$PY_IMAGE" python3 -u /seed/seed_mail.py
 
+echo "seed: calendar"
+docker run --rm --network "$NET" -v "$PWD/seed:/seed:ro" "$PY_IMAGE" python3 -u /seed/seed_calendar.py
+
 echo "seed: done. SPA: http://localhost:8080  users: alice@example.test / bob@example.test  (oinbox-dev-pass)"

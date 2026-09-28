@@ -29,12 +29,13 @@ After that, each `pnpm build` is live on reload, with no restart needed. The e2e
 * The discovery documents and the session still advertise absolute `http://localhost:8080/...` URLs, so the token exchange, JMAP, EventSource, upload and download are cross-origin from :5173.
 * The plan therefore enables Stalwart's permissive CORS (`Http.usePermissiveCors=true`, `Access-Control-Allow-Origin: *`) for dev.
 
-`seed.sh` needs only Docker. It does four things:
+`seed.sh` needs only Docker. It does five things:
 
 1. Applies `stalwart/plan.ndjson` with `stalwartlabs/cli:1.0.12 apply`. The plan sets up the domain, OAuth clients, Meilisearch, permissive CORS, console logging, relaxed dev SMTP checks and no spam filter. It then creates the users from `stalwart/accounts.ndjson`, **but only if they don't exist yet**. Re-applying an Account re-sets its password, and Stalwart derives OAuth token keys from the password hash, so that would revoke every open session. Re-running `seed.sh` (or the e2e suite) therefore leaves a developer's browser session signed in.
 2. Runs `ReloadSettings`. When the search store has just been switched to Meilisearch, it also restarts Stalwart once.
 3. Runs `seed/seed_mail.py` in `python:3.13.15-alpine` on the compose network. The script sends 30 messages in 7 threads plus single messages. Inbound mail goes over SMTP. Alice's own messages are stored with `Email/import` in her Sent mailbox, and the ones addressed to Bob are sent with `EmailSubmission`. Messages already present are skipped by Message-ID.
-4. Prints the URLs and credentials.
+4. Runs `seed/seed_calendar.py` in the same image. It creates a "Team" calendar next to Alice's default one and seven events in the current week (starting Sunday). The events include an all-day and a multi-day event, one in `Europe/London`, and a weekly series with one occurrence moved (only `start` overridden) and one cancelled. Every run moves the events back into the current week, matched by fixed `uid`s, so nothing is duplicated. It never sends invitations (`sendSchedulingMessages: false`).
+5. Prints the URLs and credentials.
 
 A first run takes about 90 seconds, because messages are spaced 1 second apart so that `receivedAt` order matches the conversation order.
 
