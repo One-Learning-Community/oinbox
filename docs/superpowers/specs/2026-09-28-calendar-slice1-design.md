@@ -17,7 +17,7 @@ Nothing in this slice writes to the server.
 | Data strategy | Fetch the visible date range from the server (approach A). No local mirror and no IndexedDB. | The server expands recurrences and computes UTC times, so the bundle needs no RRULE engine or time-zone database. A warm-start snapshot (approach C) can be added later without a redesign. |
 | Recurrence expansion | `CalendarEvent/query` with `expandRecurrences: true` | Checked by a spike on 2026-09-28. It returns one id per occurrence with `baseEventId`, `recurrenceId`, `utcStart` and `utcEnd`, and it drops cancelled occurrences. Sorting on `start` works. The account limit is `maxExpandedQueryDuration: P52W1D`. |
 | Occurrence data | Merge each occurrence with its base event on the client. Timing is the server's `utcStart` plus the merged `duration`. The server's `utcEnd` is ignored. | Spike result: a moved occurrence contains only the fields that were changed. When only `start` was changed, the occurrence came back **with no `title` and `duration: PT12H59M59S`**, and `utcEnd` was wrong to match. Moved occurrences can also come from other clients (for example Apple Calendar over CalDAV), so the client cannot rely on them being complete. |
-| JSCalendar version | Singular `recurrenceRule` | Stalwart follows the newer JSCalendar draft. It rejects `recurrenceRules` (an array) with `invalidProperties`. |
+| JSCalendar version | The newer JSCalendar draft ("JSCalendar bis"): a singular `recurrenceRule`; participants with `calendarAddress: "mailto:…"`; the organizer as `organizerCalendarAddress` | Probed on 2026-09-28. Stalwart rejects `recurrenceRules` (an array) with `invalidProperties`. It also accepts participants written with the old `email`/`sendTo` fields but **silently drops them**. |
 | Query time zone | The browser's time zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) | All-day and floating events have no time zone of their own. They have to be placed on the viewer's calendar days, not UTC ones. |
 | OAuth scope | Add `urn:ietf:params:oauth:scope:calendars` to the requested scope | Stalwart 0.16.23 does not enforce scopes: a token with only the mail scope read calendars in a test. Asking for the scope protects against future enforcement and signs nobody out. |
 | Component | `@rozie-ui/fullcalendar-solid` 0.1.x, with the `@fullcalendar/*` 6.1 peer packages (core, daygrid, timegrid, interaction; all MIT) | Dogfooding. Gaps go in `docs/rozie-feedback.md`. |
@@ -47,7 +47,7 @@ A range fetch is one JMAP request with three calls that use back-references:
 2. `CalendarEvent/get` with `#ids` from call 1. Properties: `id, baseEventId, recurrenceId, calendarIds, title, start, timeZone, duration, showWithoutTime, utcStart, color`.
 3. `CalendarEvent/get` with `#ids` = the `baseEventId` values from call 2's list. Properties: the same display fields plus `recurrenceOverrides, description, locations, participants`.
 
-Call 3 fetches each base event at most once per range. The server resolves the back-reference path, so duplicate base ids do not become duplicate records. The implementation must confirm this against Stalwart and remove duplicates on the client if the server does not.
+Call 3 fetches each base event once per range. A probe confirmed this: three occurrences of one series returned one base record. The client still stores base events by id, so a duplicate would be harmless.
 
 `calendarIds` is a set. An event is shown under the first of its calendars that the viewer has not hidden.
 
@@ -59,7 +59,7 @@ Each occurrence becomes a display object for FullCalendar:
 - **The effective event** is the base event with `base.recurrenceOverrides[instance.recurrenceId]` applied on top. Only top-level keys are applied. Keys written as JSON paths (such as `participants/abc/participationStatus`) are skipped for display purposes, and they must not throw. Non-recurring events need no special case: the spike showed that the expanded query also returns them as an occurrence id with a `baseEventId`, and call 3 fetches their base.
 - **Timed events:** `start = instance.utcStart` and `end = utcStart + effective.duration` (ISO 8601 duration; a missing duration counts as zero).
 - **All-day events** (`showWithoutTime: true`): `allDay = true`, `start` = the date part of the effective `start`, and `end` = start plus the effective duration in days. FullCalendar treats that end date as exclusive.
-- `title` falls back to "(No title)". `color` is the effective event's `color`, then the calendar's `color`, then the accent colour token.
+- `title` falls back to "(No title)". `color` is the effective event's `color`, then the calendar's `color`, then a `--cal-default` token (`#0b57d0` in both themes). It is not the accent token, because the dark theme's accent is a light blue and white event text on it would be unreadable.
 - `location` is the `name` of the first entry in `locations`.
 
 ### CalendarStore
@@ -87,9 +87,9 @@ Each occurrence becomes a display object for FullCalendar:
   - the time range, formatted in the browser's time zone (all-day events show a date range);
   - the location;
   - the description as plain text;
-  - the participants with their `participationStatus`;
+  - the participants with their `participationStatus` (the address is `calendarAddress` without the `mailto:` prefix);
   - the calendar name.
-- **Loading and empty states:** a thin progress bar while the component's `loading` event is true, and the `noEventsContent` slot for an empty range.
+- **Loading and empty states:** a thin progress bar while the store is fetching (`state.loading`). FullCalendar's own `loading` event only fires for event sources that FullCalendar fetches itself, and its `noEventsContent` slot only renders in list views, so neither applies here. An empty week shows an empty grid.
 - **Theming:** FullCalendar's CSS variables are mapped to the existing tokens in `styles.css`, so light and dark mode follow mail automatically.
 
 ## Seed data (`deploy/seed/seed_calendar.py`)
@@ -102,7 +102,7 @@ Each occurrence becomes a display object for FullCalendar:
 - One event with `timeZone: Europe/London`, to test time-zone conversion.
 - A weekly standup with a `recurrenceRule`. One of its occurrences is **moved by changing only `start`**, which reproduces the spike quirk on every run. Another occurrence is cancelled (`excluded: true`).
 
-Dates are relative to the current week. Each event has a fixed `uid`. On a re-run the script finds each event by `uid` and moves it into the current week with `CalendarEvent/set` `update`, so it never creates duplicates. The "Team" calendar is looked up by name and created only if it is missing. Updating events does not sign anyone out; only a password change does that.
+Dates are relative to the current week, which starts on Sunday to match FullCalendar's default `firstDay`. Each event has a fixed `uid`. Stalwart 0.16 returns nothing for the `uid` filter of `CalendarEvent/query`, so the script lists every event with its `uid` and matches them itself. On a re-run it finds each event by `uid` and moves it into the current week with `CalendarEvent/set` `update`, so it never creates duplicates. The "Team" calendar is looked up by name and created only if it is missing. Updating events does not sign anyone out; only a password change does that.
 
 ## Errors
 
