@@ -102,6 +102,23 @@ describe('MailEngine', () => {
     expect(engine.state.queries[key]!.slots).toEqual(['e5', 'e3', 'e4']);
   });
 
+  it('fully resyncs when the server can no longer calculate type-level changes', async () => {
+    const key = engine.openQuery(inboxSpec);
+    await engine.ensureRange(key, 0, 10);
+    expect(engine.state.queries[key]!.slots).toEqual(['e3', 'e4']);
+
+    // Simulate a stale cursor: the server can no longer diff from our last-known state.
+    server.changesUnsupported = true;
+    server.addEmail({ id: 'e5', threadId: 't3', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { I: true } });
+    await engine.catchUp();
+
+    // A full resync ran (fresh Mailbox/get, not an incremental Email/changes), and the
+    // previously-open query was reloaded from scratch rather than left stale or empty.
+    expect(engine.state.mailboxes.I).toBeDefined();
+    expect(engine.state.queries[key]!.slots).toEqual(['e5', 'e3', 'e4']);
+    expect(engine.state.queries[key]!.queryState).toBeTruthy();
+  });
+
   it('archives optimistically and keeps the change when the server accepts it', async () => {
     const key = engine.openQuery(inboxSpec);
     await engine.ensureRange(key, 0, 10);

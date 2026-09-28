@@ -14,6 +14,8 @@ export class FakeJmap {
   /** Email ids whose updates the server rejects. */
   rejectUpdates = new Set<string>();
   queryChangesUnsupported = false;
+  /** Simulates the server no longer being able to compute type-level /changes (stale cursor). */
+  changesUnsupported = false;
   calls: string[] = [];
 
   addMailbox(id: string, name: string, role: Mailbox['role'] = null) {
@@ -88,6 +90,7 @@ export class FakeJmap {
       case 'Email/changes':
       case 'Thread/changes':
       case 'Mailbox/changes': {
+        if (this.changesUnsupported) return ['error', { type: 'cannotCalculateChanges' }];
         const since = Number(String(args.sinceState).slice(1));
         if (name === 'Mailbox/changes') return [name, { accountId: 'a1', oldState: args.sinceState, newState: 'm1', hasMoreChanges: false, created: [], updated: [], destroyed: [], updatedProperties: null }];
         const entries = this.log.filter((l) => l.state > since);
