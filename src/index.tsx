@@ -1,13 +1,16 @@
 /* @refresh reload */
 import { Navigate, Route, Router } from '@solidjs/router';
+import { lazy } from 'solid-js';
 import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { NotSignedInError, OAuth } from './auth/oauth';
+import { CalendarStore } from './calendar/store';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream } from './jmap/sse';
+import { CALENDARS } from './jmap/types';
 import { MailEngine } from './sync/engine';
 import { createConfirmDialog } from './ui/ConfirmDialog';
 import { MailView, Shell } from './ui/Shell';
@@ -15,6 +18,9 @@ import { SignIn } from './ui/SignIn';
 import { createNav } from './ui/nav';
 import { createToasts } from './ui/Toasts';
 import './ui/styles.css';
+
+// FullCalendar is large: load it on first visit to /calendar.
+const CalendarView = lazy(() => import('./ui/CalendarView').then((m) => ({ default: m.CalendarView })));
 
 const root = document.getElementById('root')!;
 const origin = location.origin;
@@ -48,6 +54,7 @@ async function boot() {
     onUnauthorized: () => auth.renew(),
   });
   const engine = new MailEngine(client);
+  const calendar = new CalendarStore(client, (m, t, a) => toasts.toast(m, t, a));
   const toasts = createToasts();
   const confirmDialog = createConfirmDialog();
 
@@ -78,6 +85,8 @@ async function boot() {
   const app: App = {
     client,
     engine,
+    calendar,
+    hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS],
     auth,
     toast: toasts.toast,
     actions: createActions(engine, toasts.toast, confirmDialog.confirm),
@@ -94,11 +103,16 @@ async function boot() {
     if (cachedSession && cachedSession.username !== session.username) location.reload();
     engine.onPersist = (snap) => void saveSnapshot(session.username, snap);
     await engine.start();
+    void calendar.loadCalendars().catch((e) => onAuthError(e));
     openPushStream(client, {
-      onStateChange: (c) => engine.onStateChange(c),
+      onStateChange: (c) => {
+        engine.onStateChange(c);
+        calendar.onStateChange(c);
+      },
       onConnected: () => {
         engine.setOnline(true);
         void engine.catchUp().catch(() => undefined);
+        calendar.onConnected();
       },
       onUnauthorized: () => signOut(),
     });
@@ -123,6 +137,7 @@ async function boot() {
         <Router root={(p) => <Shell {...p} toasts={toasts.Host} confirmHost={confirmDialog.Host} />}>
           <Route path="/" component={() => <Navigate href="/inbox" />} />
           <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
+          <Route path="/calendar" component={() => (app.hasCalendars() ? <CalendarView /> : <Navigate href="/inbox" />)} />
           <Route path="/search/:q" component={MailView} />
           <Route path="/search/:q/t/:threadId" component={MailView} />
           <Route path="/label/:id" component={MailView} />

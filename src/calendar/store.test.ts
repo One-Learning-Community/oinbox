@@ -132,4 +132,15 @@ describe('CalendarStore', () => {
     store.onStateChange(change('ce5'));
     expect(server.calls.filter((c) => c.startsWith('Calendar'))).toEqual([]);
   });
+
+  it('toggles hidden calendars and persists them', () => {
+    localStorage.clear();
+    const { store } = setup();
+    expect(store.hidden().has('c1')).toBe(false);
+    store.toggleHidden('c1');
+    expect(store.hidden().has('c1')).toBe(true);
+    expect(JSON.parse(localStorage.getItem('oinbox.calendar.hidden')!)).toEqual(['c1']);
+    store.toggleHidden('c1');
+    expect(store.hidden().has('c1')).toBe(false);
+  });
 });

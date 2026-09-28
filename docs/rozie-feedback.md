@@ -84,3 +84,15 @@ app-toggled (`:where(.dark, [data-theme="dark"])`) — the app-toggled selector 
 overrides in `styles.css` still win (public tokens beat the package's internal dark-mode wiring), so
 this was a no-op for us visually, but it means a consumer with *no* theme bridge of their own now
 gets a correct dark mode for free. Nothing open left for this package.
+
+## FullCalendar 0.1.10 (Solid) — adopted for the calendar page; three gaps
+Wanted: a read-only calendar that fills the main pane, fed from a JMAP store.
+1. **`height` is typed `Number` (pixels) only.** FullCalendar itself takes `'auto'`, `'100%'` or any CSS
+   height, and the curated `height` prop always wins over `options.height`, so there is no typed way
+   to say "fill the parent". We measure the host with a `ResizeObserver` and pass pixels
+   (`src/ui/CalendarView.tsx`). Suggest `Number | String`.
+2. **`loading` only reflects FullCalendar-fetched event sources.** With `events` passed as an array
+   (the documented usage) it never fires, so it can't drive a loading bar. Worth a note in the README.
+3. **`noEventsContent` only renders in list views** (a FullCalendar fact). The slot is exposed on
+   a wrapper whose baked-in plugins have no list view, so it can't show without `options.plugins`.
+   Worth a note in the README.

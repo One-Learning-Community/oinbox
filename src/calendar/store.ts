@@ -1,8 +1,10 @@
+import { createSignal, type Accessor } from 'solid-js';
 import { createStore, reconcile, type SetStoreFunction } from 'solid-js/store';
 import type { ToastFn } from '../app/actions';
 import { UnauthorizedError, type JmapClient } from '../jmap/client';
 import { CALENDARS, CORE, type Calendar, type Id, type StateChange } from '../jmap/types';
 import { addRangeCalls, rangeKey, toDisplayEvents, type DisplayEvent, type Range } from './instances';
+import { loadHidden, saveHidden } from './prefs';
 
 export interface CalendarState {
   calendars: Record<Id, Calendar>;
@@ -30,6 +32,9 @@ export class CalendarStore {
   private eventState: string | null = null;
   private calendarState: string | null = null;
   private failing = false;
+  private readonly hiddenSignal = createSignal<ReadonlySet<Id>>(loadHidden());
+  /** Calendars this browser hides (a display preference, not Calendar.isVisible). */
+  readonly hidden: Accessor<ReadonlySet<Id>> = this.hiddenSignal[0];
 
   constructor(
     private readonly client: JmapClient,
@@ -94,6 +99,14 @@ export class CalendarStore {
     if (!this.accountId) return;
     void this.loadCalendars().catch(() => undefined);
     void this.refresh();
+  }
+
+  toggleHidden(id: Id): void {
+    const next = new Set(this.hidden());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.hiddenSignal[1](next);
+    saveHidden(next);
   }
 
   private async fetch(range: Range): Promise<void> {
