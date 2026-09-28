@@ -1,0 +1,135 @@
+import { createRoot } from 'solid-js';
+import { describe, expect, it, vi } from 'vitest';
+import type { CalendarEvent, StateChange } from '../jmap/types';
+import { FakeJmap } from '../sync/fake-jmap';
+import { CalendarStore } from './store';
+
+const WEEK1 = { start: '2026-10-04T00:00:00Z', end: '2026-10-11T00:00:00Z' };
+const WEEK2 = { start: '2026-10-11T00:00:00Z', end: '2026-10-18T00:00:00Z' };
+
+const occ = (id: string, utcStart: string): CalendarEvent => ({
+  id, baseEventId: 'b1', recurrenceId: utcStart.slice(0, 19), calendarIds: { c1: true }, start: utcStart.slice(0, 19), utcStart,
+});
+const change = (CalendarEvent: string): StateChange => ({ '@type': 'StateChange', changed: { a1: { CalendarEvent } } });
+
+function setup() {
+  const server = new FakeJmap();
+  server.calendars.set('c1', { id: 'c1', name: 'Personal', color: '#1a73e8', sortOrder: 0, isDefault: true, isVisible: true });
+  server.baseEvents.set('b1', { id: 'b1', calendarIds: { c1: true }, title: 'Standup', start: '2026-10-05T09:00:00', timeZone: 'UTC', duration: 'PT30M' });
+  server.occurrences.push(occ('o1', '2026-10-05T09:00:00Z'), occ('o2', '2026-10-12T09:00:00Z'));
+  const toast = vi.fn();
+  const client = server.client();
+  const store = createRoot(() => new CalendarStore(client, toast, 'UTC'));
+  const queries = () => server.calls.filter((c) => c === 'CalendarEvent/query').length;
+  return { server, client, store, toast, queries };
+}
+
+describe('CalendarStore', () => {
+  it('loads calendars', async () => {
+    const { store } = setup();
+    await store.loadCalendars();
+    expect(store.state.calendars.c1?.name).toBe('Personal');
+  });
+
+  it('shows the merged events of a range', async () => {
+    const { store } = setup();
+    await store.show(WEEK1);
+    expect(store.state.events.map((e) => [e.id, e.title, e.end])).toEqual([['o1', 'Standup', '2026-10-05T09:30:00.000Z']]);
+    expect(store.state.loading).toBe(false);
+  });
+
+  it('serves a revisited range from the cache', async () => {
+    const { store, queries } = setup();
+    await store.show(WEEK1);
+    await store.show(WEEK2);
+    await store.show(WEEK1);
+    expect(queries()).toBe(2);
+    expect(store.state.events.map((e) => e.id)).toEqual(['o1']);
+  });
+
+  it('applies only the newest request when an older response arrives late', async () => {
+    const { server, store } = setup();
+    let release!: () => void;
+    server.holds.push(new Promise<void>((r) => (release = r)));
+    const slow = store.show(WEEK1);
+    await store.show(WEEK2);
+    release();
+    await slow;
+    expect(store.state.events.map((e) => e.id)).toEqual(['o2']);
+  });
+
+  it('clears the cache and refetches the visible range when CalendarEvent state changes', async () => {
+    const { server, store, queries } = setup();
+    await store.show(WEEK1);
+    server.baseEvents.get('b1')!.title = 'Renamed';
+    server.calendarEventState++;
+    store.onStateChange(change(`ce${server.calendarEventState}`));
+    await vi.waitFor(() => expect(store.state.events[0]?.title).toBe('Renamed'));
+    const before = queries();
+    await store.show(WEEK2);
+    expect(queries()).toBe(before + 1);
+  });
+
+  it('ignores a state change it has already seen', async () => {
+    const { store, queries } = setup();
+    await store.show(WEEK1);
+    store.onStateChange(change('ce0'));
+    await Promise.resolve();
+    expect(queries()).toBe(1);
+  });
+
+  // Review focus 4
+  it('does not cache a response that was in flight when the state changed', async () => {
+    const { server, store, queries } = setup();
+    let release!: () => void;
+    server.holds.push(new Promise<void>((r) => (release = r)));
+    const stale = store.show(WEEK1); // answered with 'Standup', delivered later
+    server.baseEvents.get('b1')!.title = 'Renamed';
+    server.calendarEventState++;
+    store.onStateChange(change('ce1'));
+    await vi.waitFor(() => expect(store.state.events[0]?.title).toBe('Renamed'));
+    release();
+    await stale;
+    expect(store.state.events[0]?.title).toBe('Renamed');
+    await store.show(WEEK2);
+    const before = queries();
+    await store.show(WEEK1); // from cache, and the cache must hold the fresh result
+    expect(queries()).toBe(before);
+    expect(store.state.events[0]?.title).toBe('Renamed');
+  });
+
+  it('refetches after a push reconnect', async () => {
+    const { store, queries } = setup();
+    await store.show(WEEK1);
+    store.onConnected();
+    await vi.waitFor(() => expect(queries()).toBe(2));
+  });
+
+  it('keeps the events on screen and toasts once per failure streak', async () => {
+    const { server, store, toast } = setup();
+    await store.show(WEEK1);
+    server.failCalendarQueries = true;
+    await store.show(WEEK2);
+    await store.show(WEEK2);
+    expect(store.state.events.map((e) => e.id)).toEqual(['o1']);
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.mock.calls[0]![1]).toBe('error');
+    server.failCalendarQueries = false;
+    await store.show(WEEK2);
+    expect(store.state.events.map((e) => e.id)).toEqual(['o2']);
+    server.failCalendarQueries = true;
+    await store.refresh();
+    expect(toast).toHaveBeenCalledTimes(2);
+  });
+
+  // Review focus 5
+  it('does nothing when the session has no calendars account', async () => {
+    const { server, client, store } = setup();
+    client.useSession({ ...client.session, primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1' } });
+    await store.show(WEEK1);
+    await store.loadCalendars();
+    store.onConnected();
+    store.onStateChange(change('ce5'));
+    expect(server.calls.filter((c) => c.startsWith('Calendar'))).toEqual([]);
+  });
+});

@@ -1,8 +1,8 @@
-// A tiny in-memory JMAP server for engine tests: enough of RFC 8620/8621 to
+// A tiny in-memory JMAP server for engine and calendar tests: enough of RFC 8620/8621 to
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import type { Email, Mailbox, Session } from '../jmap/types';
+import type { Calendar, CalendarEvent, Email, Mailbox, Session } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
@@ -17,6 +17,15 @@ export class FakeJmap {
   /** Simulates the server no longer being able to compute type-level /changes (stale cursor). */
   changesUnsupported = false;
   calls: string[] = [];
+  calendars = new Map<string, Calendar>();
+  /** Expanded occurrences served by CalendarEvent/query (filtered by utcStart in [after, before)). */
+  occurrences: CalendarEvent[] = [];
+  /** Base events, served by CalendarEvent/get by id. */
+  baseEvents = new Map<string, CalendarEvent>();
+  calendarEventState = 0;
+  failCalendarQueries = false;
+  /** Each request's response waits for the next promise here, if any (for race tests). */
+  holds: Promise<void>[] = [];
 
   addMailbox(id: string, name: string, role: Mailbox['role'] = null) {
     this.mailboxes.set(id, {
@@ -104,6 +113,19 @@ export class FakeJmap {
         }
         return [name, { accountId: 'a1', oldState: args.sinceState, newState: `e${this.emailState}`, hasMoreChanges: false, created, updated, destroyed }];
       }
+      case 'Calendar/get':
+        return [name, { accountId: 'a1', state: 'cal1', list: [...this.calendars.values()].map((c) => structuredClone(c)), notFound: [] }];
+      case 'CalendarEvent/query': {
+        if (this.failCalendarQueries) return ['error', { type: 'serverFail', description: 'calendar store unavailable' }];
+        const f = (args.filter ?? {}) as { after?: string; before?: string };
+        const inRange = (o: CalendarEvent) => (!f.after || o.utcStart! >= f.after) && (!f.before || o.utcStart! < f.before);
+        return [name, { accountId: 'a1', queryState: `ce${this.calendarEventState}`, canCalculateChanges: false, position: 0, ids: this.occurrences.filter(inRange).map((o) => o.id) }];
+      }
+      case 'CalendarEvent/get': {
+        const all = new Map<string, CalendarEvent>([...this.baseEvents, ...this.occurrences.map((o) => [o.id, o] as const)]);
+        const list = [...new Set(ids ?? [])].map((id) => all.get(id)).filter((e): e is CalendarEvent => !!e).map((e) => structuredClone(e));
+        return [name, { accountId: 'a1', state: `ce${this.calendarEventState}`, list, notFound: [] }];
+      }
       case 'Email/set': {
         const update = (args.update ?? {}) as Record<string, Record<string, unknown>>;
         const updated: Record<string, null> = {};
@@ -151,7 +173,7 @@ export class FakeJmap {
   client(): JmapClient {
     const session: Session = {
       capabilities: {}, accounts: { a1: { name: 'alice', isPersonal: true, isReadOnly: false } },
-      primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1' }, username: 'alice@example.test',
+      primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
     };
     const fetchImpl = async (_url: string, init?: RequestInit) => {
@@ -164,6 +186,9 @@ export class FakeJmap {
         done.set(id, inv);
         responses.push(inv);
       }
+      // Answer from the state at request time, but deliver when the test says so.
+      const hold = this.holds.shift();
+      if (hold) await hold;
       return new Response(JSON.stringify({ methodResponses: responses, sessionState: 's' }), { status: 200 });
     };
     const c = new JmapClient({ sessionUrl: 'http://fake/session', getToken: async () => 't', fetch: fetchImpl as typeof fetch });
