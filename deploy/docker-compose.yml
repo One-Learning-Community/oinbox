@@ -17,6 +17,8 @@ services:
       - stalwart-data:/var/lib/stalwart
     ports:
       - "2525:25"            # SMTP (MTA) for tests to inject mail
+      - "1993:993"           # IMAPS (implicit TLS; Stalwart has no plaintext IMAP listener) for
+                              # tests simulating another client mutating mail out-of-band
     depends_on:
       meilisearch:
         condition: service_healthy

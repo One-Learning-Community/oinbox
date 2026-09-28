@@ -25,6 +25,7 @@ Environment variables:
 | `E2E_RESET=1` | `docker compose down -v && up -d` before seeding: a pristine mailbox, about 2 minutes. |
 | `E2E_SKIP_SEED=1` | Skip `seed.sh` for faster local iterations. |
 | `E2E_BASE_URL`, `E2E_SMTP_PORT` | Override `http://localhost:8080` and `2525`. |
+| `E2E_IMAP_HOST`, `E2E_IMAP_PORT` | Override `localhost` and `1993` (IMAPS) for `support/imap.ts`, which drives a real IMAP client (imapflow) to simulate another mail app (e.g. Thunderbird) mutating mail while oinbox is open. |
 
 Specs share Alice's mailbox, so they run serially (`workers: 1`). Each spec arranges its own preconditions through JMAP (Basic auth) and SMTP in `support/mail.ts`: it marks threads read, puts mail back in the Inbox, or delivers messages with unique subjects and deletes them afterwards. The specs therefore don't depend on run order or on earlier runs.
 
