@@ -55,6 +55,14 @@ test('clicking an event shows its details', async ({ page }) => {
   await expect(card).toHaveCount(0);
 });
 
+test('event details open from the keyboard', async ({ page }) => {
+  await openWeek(page);
+  await event(page, 'Design review').focus();
+  await expect(event(page, 'Design review')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Design review' })).toBeVisible();
+});
+
 test('g then k opens the calendar from the inbox', async ({ page }) => {
   await page.goto('/inbox');
   await expect(rows(page).first()).toBeVisible();
