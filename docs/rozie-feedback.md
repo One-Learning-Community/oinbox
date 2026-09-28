@@ -61,9 +61,21 @@ was asked for.
    too, since there's now a documented moment to act instead of guessing with rAFs.
 2. **FIXED (0.4.0, confirmed still true):** `@tiptap/extension-character-count` stays `optional: true`
    in `peerDependenciesMeta`.
-3. **Still open:** default theme is light-only — no CSS file, no `## Theming` section, no dark
-   default at all in this package (unlike tags-solid, which got exactly this treatment below).
-   oinbox still maps `--rozie-tiptap-*` onto its own tokens as the workaround.
+3. **FIXED, correcting a mistake in this doc:** a real dark-mode default *does* ship in 0.5.0 — a
+   zero-import `@media (prefers-color-scheme: dark)` block baked directly into the component's own
+   compiled bundle (`dist/index.mjs`), not a separate `themes/*.css` file. The earlier "still
+   light-only" entry here was wrong: it only checked for a theme CSS file and a `## Theming` README
+   section, both of which this package genuinely doesn't have — the default is injected inline
+   instead, same `:not(.light):not([data-theme="light"])` opt-out convention as every other
+   package. **Real gap found while verifying this**, though: oinbox's own `--rozie-tiptap-*`
+   overrides in `styles.css` didn't cover every token the dark block sets. Two were live in
+   oinbox's actual UI (`placeholder-color`, used by the reply placeholder; `button-active-border-color`)
+   and left uncovered, meaning they'd silently follow the *browser's* OS-level dark-scheme setting
+   instead of oinbox's own `data-theme` toggle — invisible when the two happen to agree, wrong when
+   they don't (e.g. OS light + oinbox's toggle set to dark). Fixed by adding both to oinbox's own
+   token overrides. Four more (`readonly-bg`, `count-border`, `count-color`, `count-over-color`)
+   are genuinely unused — oinbox doesn't set `readonly` or use the character-count/`maxLength`
+   feature — so left alone rather than overriding dead code paths.
 
 ## Tags 0.1.11
 **FIXED: real dark-mode default**, both OS-driven (`@media (prefers-color-scheme: dark)`) and

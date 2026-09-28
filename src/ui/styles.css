@@ -289,6 +289,7 @@ a { color: var(--accent); }
   --rozie-tiptap-button-hover-bg: var(--hover);
   --rozie-tiptap-button-active-bg: var(--accent-soft);
   --rozie-tiptap-button-active-color: var(--text);
+  --rozie-tiptap-button-active-border-color: transparent;
   --rozie-tiptap-content-padding: 0;
   --rozie-tiptap-toolbar-bg: transparent;
   --rozie-tiptap-toolbar-border: 0;
@@ -301,6 +302,7 @@ a { color: var(--accent); }
   --rozie-tiptap-link-input-border: 1px solid var(--border);
   --rozie-tiptap-link-button-bg: var(--accent-soft);
   --rozie-tiptap-link-button-color: var(--text);
+  --rozie-tiptap-placeholder-color: var(--text-3);
   --rozie-command-palette-bg: var(--surface);
   --rozie-command-palette-color: var(--text);
   --rozie-command-palette-border: 1px solid var(--border);
