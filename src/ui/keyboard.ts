@@ -69,6 +69,8 @@ export function installShortcuts(app: App, nav: Nav, navigate: Navigator, compos
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
     if (isTyping(document.activeElement)) return;
+    // Enter on a focused control activates that control; it doesn't open the cursor thread.
+    if (e.key === 'Enter' && document.activeElement?.closest('button, a[href], [role="button"]')) return;
     if (nav.picker() || nav.helpOpen()) {
       if (e.key === 'Escape') {
         nav.setPicker(null);
