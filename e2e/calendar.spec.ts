@@ -51,8 +51,36 @@ test('clicking an event shows its details', async ({ page }) => {
   await expect(card).toContainText('Walk through the new inbox layout.');
   await expect(card).toContainText('Bob Example');
   await expect(card).toContainText('Awaiting reply');
-  await page.keyboard.press('Escape');
+  // The card sits beside the event it describes, level with its top.
+  const beside = async (title: string) => {
+    const e = (await event(page, title).boundingBox())!;
+    const d = (await page.getByRole('dialog', { name: title }).boundingBox())!;
+    const touches = Math.abs(d.x - (e.x + e.width)) < 12 || Math.abs(d.x + d.width - e.x) < 12;
+    return touches && d.y < e.y + e.height && d.y + d.height > e.y;
+  };
+  await expect.poll(() => beside('Design review')).toBe(true);
+
+  // Another event's click moves the details to it.
+  await event(page, '1:1 with Bob').click();
+  await expect(page.getByRole('dialog', { name: '1:1 with Bob' })).toBeVisible();
   await expect(card).toHaveCount(0);
+  await expect.poll(() => beside('1:1 with Bob')).toBe(true);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('the calendar fills the pane and follows its size', async ({ page }) => {
+  await openWeek(page);
+  const gap = async () => {
+    const host = (await page.locator('.calendar-host').boundingBox())!;
+    const fc = (await page.locator('.calendar-view .fc').boundingBox())!;
+    return Math.round(host.y + host.height - (fc.y + fc.height));
+  };
+  // 16px: the host's bottom padding.
+  await expect.poll(gap).toBe(16);
+  await page.setViewportSize({ width: 1100, height: 560 });
+  await expect.poll(gap).toBe(16);
 });
 
 test('event details open from the keyboard', async ({ page }) => {
