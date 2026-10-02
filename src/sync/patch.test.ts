@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEmailPatch, archivePatch, keywordPatch, movePatch, trashPatch } from './patch';
+import { applyEmailPatch, archivePatch, keywordPatch, movePatch, onlyIn, trashPatch, unlabelPatch } from './patch';
 
 const email = { id: 'e1', keywords: { $seen: true as const }, mailboxIds: { I: true as const, W: true as const } };
 
@@ -38,5 +38,24 @@ describe('patch builders', () => {
 
   it('trashPatch moves everything to Trash', () => {
     expect(trashPatch([email], 'T')).toEqual({ e1: { mailboxIds: { T: true } } });
+  });
+});
+
+describe('unlabelPatch', () => {
+  const both = { id: 'e1', keywords: {}, mailboxIds: { I: true as const, W: true as const } };
+  const only = { id: 'e2', keywords: {}, mailboxIds: { W: true as const } };
+  const other = { id: 'e3', keywords: {}, mailboxIds: { I: true as const } };
+
+  it('removes the label, and sends an email with no other mailbox to Archive', () => {
+    expect(unlabelPatch([both, only, other], 'W', 'A')).toEqual({
+      e1: { 'mailboxIds/W': null },
+      e2: { 'mailboxIds/W': null, 'mailboxIds/A': true },
+    });
+  });
+
+  it('onlyIn is true when the mailbox is the email\'s only one', () => {
+    expect(onlyIn(only, 'W')).toBe(true);
+    expect(onlyIn(both, 'W')).toBe(false);
+    expect(onlyIn(other, 'W')).toBe(false);
   });
 });

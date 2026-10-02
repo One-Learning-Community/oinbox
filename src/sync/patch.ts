@@ -55,6 +55,14 @@ export function archivePatch(emails: MutableEmail[], inboxId: Id, archiveId: Id)
   return out;
 }
 
+/** Take a label off emails. The rule is archive's: an email left in no mailbox goes to Archive. */
+export const unlabelPatch = archivePatch;
+
+/** True when `mailboxId` is the only mailbox the email is in. */
+export function onlyIn(e: MutableEmail, mailboxId: Id): boolean {
+  return !!e.mailboxIds?.[mailboxId] && Object.keys(e.mailboxIds).length === 1;
+}
+
 /** Move from one mailbox (or none: just add) to another. */
 export function movePatch(emails: MutableEmail[], from: Id | null, to: Id): Record<Id, EmailPatch> {
   const out: Record<Id, EmailPatch> = {};

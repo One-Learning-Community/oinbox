@@ -90,6 +90,24 @@ export function labelPath(mb: Mailbox, mailboxes: Record<Id, Mailbox>): string {
   return parts.join('/');
 }
 
+/** A mailbox the user manages as a label: one without a role. */
+export function isLabel(mb: Mailbox): boolean {
+  return !mb.role;
+}
+
+/** How many labels sit below a mailbox, at any depth. */
+export function subLabelCount(id: Id, mailboxes: Record<Id, Mailbox>): number {
+  const all = Object.values(mailboxes);
+  let count = 0;
+  let level = new Set([id]);
+  for (let depth = 0; level.size && depth < 10; depth++) {
+    const next = all.filter((m) => m.parentId && level.has(m.parentId)).map((m) => m.id);
+    count += next.length;
+    level = new Set(next);
+  }
+  return count;
+}
+
 export function hiddenMailboxIds(mailboxes: Record<Id, Mailbox>, viewing: Id | null): Set<Id> {
   const hidden = new Set<Id>();
   for (const m of Object.values(mailboxes)) {

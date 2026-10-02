@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Mailbox } from '../jmap/types';
 import type { EmailRec } from './engine';
-import { resolveView, sidebarMailboxes, threadRow } from './selectors';
+import { isLabel, resolveView, sidebarMailboxes, subLabelCount, threadRow } from './selectors';
 
 const mb = (id: string, name: string, role: Mailbox['role'] = null, parentId: string | null = null): Mailbox => ({
   id, name, role, parentId, sortOrder: 0, totalEmails: 0, unreadEmails: 0, totalThreads: 0, unreadThreads: 0, isSubscribed: true,
@@ -78,5 +78,27 @@ describe('search views', () => {
 
   it('scopes the view to a mailbox when the query is only in:', () => {
     expect(resolveView('search/in%3Asent', mailboxes)!.mailboxId).toBe('S');
+  });
+});
+
+describe('labels', () => {
+  const tree = {
+    I: mb('I', 'Inbox', 'inbox'),
+    C: mb('C', 'Clients'),
+    A: mb('A', 'Acme', null, 'C'),
+    N: mb('N', 'Invoices', null, 'A'),
+    B: mb('B', 'Bolt', null, 'C'),
+    R: mb('R', 'Receipts'),
+  };
+
+  it('isLabel is true only for mailboxes without a role', () => {
+    expect(isLabel(tree.C)).toBe(true);
+    expect(isLabel(tree.I)).toBe(false);
+  });
+
+  it('subLabelCount counts every descendant', () => {
+    expect(subLabelCount('C', tree)).toBe(3);
+    expect(subLabelCount('A', tree)).toBe(1);
+    expect(subLabelCount('R', tree)).toBe(0);
   });
 });
