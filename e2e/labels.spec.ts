@@ -181,10 +181,10 @@ test('a label with a sub-label cannot be deleted; the menu works from the keyboa
 });
 
 test('Tab closes the menu; a closed rename dialog and a cancelled delete give the focus back to "⋯"', async ({ page }) => {
-  const tag = uniqueTag();
+  let tag = uniqueTag();
   await createLabel(tag);
   await openInbox(page);
-  const more = page.getByRole('button', { name: `Options for ${tag}`, exact: true });
+  let more = page.getByRole('button', { name: `Options for ${tag}`, exact: true });
 
   await openMenu(page, tag);
   await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeFocused();
@@ -198,6 +198,19 @@ test('Tab closes the menu; a closed rename dialog and a cancelled delete give th
   await expect(nameField(page)).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'Rename label' })).toBeHidden();
+  await expect(more).toBeFocused();
+
+  // A saved rename too, and still once the server's own push about it has been applied.
+  await waitLive(page);
+  await openMenu(page, tag);
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  await nameField(page).fill(`${tag}-b`);
+  const pushed = page.waitForResponse((r) => r.request().postData()?.includes('"Mailbox/changes"') ?? false);
+  await nameField(page).press('Enter');
+  await pushed;
+  tag = `${tag}-b`;
+  more = page.getByRole('button', { name: `Options for ${tag}`, exact: true });
+  await expect(labelRow(page, tag)).toBeVisible();
   await expect(more).toBeFocused();
 
   await openMenu(page, tag);

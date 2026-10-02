@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Mailbox, Session } from '../jmap/types';
 import { DEFAULT_LIMITS, labelLimits, planLabel } from './labels';
 
@@ -62,6 +62,19 @@ describe('planLabel', () => {
     expect(error(`a${'😀'.repeat(64)}`)).toBe(`'a${'😀'.repeat(29)}…' is too long.`);
     const family = '👨‍👩‍👧';
     expect(error(family.repeat(31))).toBe(`'${family.repeat(30)}…' is too long.`);
+  });
+
+  it('still loads and clips by code point in a browser without Intl.Segmenter', async () => {
+    const segmenter = Intl.Segmenter;
+    (Intl as { Segmenter?: unknown }).Segmenter = undefined;
+    try {
+      vi.resetModules();
+      const fresh = await import('./labels');
+      const r = fresh.planLabel('😀'.repeat(64), boxes, DEFAULT_LIMITS);
+      expect(r).toEqual({ ok: false, error: `'${'😀'.repeat(30)}…' is too long.` });
+    } finally {
+      (Intl as { Segmenter?: unknown }).Segmenter = segmenter;
+    }
   });
 
   it('refuses system mailboxes anywhere in the path', () => {

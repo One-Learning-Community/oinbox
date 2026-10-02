@@ -271,6 +271,15 @@ describe('MailEngine labels: create and rename', () => {
     expect(engine.state.mailboxes.W?.name).toBe('WORK');
   });
 
+  it('updates a mailbox in place, so what is rendered from it is not rebuilt', async () => {
+    const before = engine.state.mailboxes.W;
+    server.mailboxes.get('W')!.name = 'Renamed elsewhere';
+    server.bumpMailbox({ updated: ['W'] });
+    await engine.catchUp();
+    expect(engine.state.mailboxes.W?.name).toBe('Renamed elsewhere');
+    expect(engine.state.mailboxes.W).toBe(before);
+  });
+
   it('picks up a label renamed by another client', async () => {
     server.mailboxes.get('W')!.name = 'Renamed elsewhere';
     server.bumpMailbox({ updated: ['W'] });

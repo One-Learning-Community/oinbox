@@ -33,12 +33,13 @@ export function labelLimits(session: Session): LabelLimits {
 
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const encoder = new TextEncoder();
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-
 /** The first `max` characters as a reader counts them, so the cut never lands inside an emoji. */
 function clip(text: string, max: number): string {
-  const parts = [...graphemes.segment(text)];
-  return parts.length > max ? `${parts.slice(0, max).map((p) => p.segment).join('')}…` : text;
+  // Older browsers (Firefox before 125) have no Segmenter: code points still keep a single emoji whole.
+  const parts = Intl.Segmenter
+    ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((p) => p.segment)
+    : [...text];
+  return parts.length > max ? `${parts.slice(0, max).join('')}…` : text;
 }
 
 /** How many levels of sub-labels hang below a mailbox. */

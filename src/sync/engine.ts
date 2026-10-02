@@ -928,7 +928,14 @@ export class MailEngine {
 
   private mergeMailboxes(list: Mailbox[]): void {
     if (!list.length) return;
-    this.set('mailboxes', produce((m) => list.forEach((mb) => (m[mb.id] = mb))));
+    // In place: a replaced record would make every list rendered from it rebuild its row (and lose focus in it).
+    this.set('mailboxes', produce((m) => {
+      for (const mb of list) {
+        const cur = m[mb.id];
+        if (cur) Object.assign(cur, mb);
+        else m[mb.id] = mb;
+      }
+    }));
   }
 
   // ---- Persistence ---------------------------------------------------------
