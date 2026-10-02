@@ -377,6 +377,8 @@ a { color: var(--accent); }
   --rozie-dialog-padding: 20px 24px;
 }
 
+/* The pickers' Create row: the path stands out as a match would. */
+.picker-create strong { font-weight: 600; }
 /* The palette's base theme sets its tokens on .rozie-command-palette, so re-declare them there. */
 :root .rozie-command-palette {
   --rozie-command-palette-bg: var(--surface);

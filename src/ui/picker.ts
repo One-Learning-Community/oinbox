@@ -1,12 +1,12 @@
 /**
  * Rank a picker row against the typed text; null hides it. Every match scores above 0, so the
  * "Create" row can be pinned last with a score of 0. rozie CommandPalette doesn't export its
- * default scorer and `score` replaces it for all rows (docs/rozie-feedback.md).
+ * default scorer and `score` replaces it for all rows (docs/rozie-feedback.md). The palette
+ * never scores an empty query, so there is no case for one.
  */
 export function pickerScore(label: string, query: string): number | null {
   const l = label.toLowerCase();
   const q = query.trim().toLowerCase();
-  if (!q) return 1;
   if (l === q) return 5;
   if (l.startsWith(q)) return 4;
   const at = l.indexOf(q);

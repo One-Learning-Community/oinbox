@@ -200,7 +200,11 @@ test('the Label picker creates a missing label and applies it', async ({ page })
 
   await page.keyboard.press('l');
   await page.getByPlaceholder('Label as…').fill(tag);
-  await expect(page.getByRole('option', { name: `Create '${tag}'` })).toBeVisible();
+  const createRow = page.getByRole('option', { name: `Create '${tag}'` });
+  await expect(createRow).toBeVisible();
+  // The typed text is what stands out, never letters of the word "Create".
+  await expect(createRow.locator('strong')).toHaveText(tag);
+  await expect(createRow.locator('.rozie-command-palette-option-label-match')).toHaveCount(0);
   await page.keyboard.press('Enter');
 
   await expect(page.locator('.conv-head .chip', { hasText: tag })).toBeVisible();

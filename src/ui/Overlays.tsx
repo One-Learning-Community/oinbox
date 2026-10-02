@@ -16,8 +16,8 @@ interface PickerItem {
   id: string;
   label: string;
   group: string;
-  /** For the Create row: the path to create. */
-  create?: string;
+  /** For the Create row: the text as typed (what is created) and its normalized path (what is shown). */
+  create?: { typed: string; path: string };
 }
 
 /** "Move to" (v) and "Label" (l) pickers, Gmail-style type-to-filter lists. */
@@ -46,7 +46,7 @@ export function MailboxPicker() {
     // Typed text that is a valid new label (so not an existing path) can be created on the spot.
     const typed = query().trim();
     const plan = typed ? labels.validate(typed) : null;
-    if (plan?.ok) list.push({ id: CREATE, label: `Create '${plan.path}'`, group: 'New', create: typed });
+    if (plan?.ok) list.push({ id: CREATE, label: `Create '${plan.path}'`, group: 'New', create: { typed, path: plan.path } });
     return list;
   });
 
@@ -69,6 +69,11 @@ export function MailboxPicker() {
         const [item, q] = args as [PickerItem, string];
         return item.id === CREATE ? 0 : pickerScore(item.label, q);
       }}
+      // The default row highlights the typed letters where they first occur, which here can be inside "Create".
+      optionSlot={(ctx) => {
+        const { create } = ctx.option as PickerItem;
+        return create ? <span class="picker-create">Create '<strong>{create.path}</strong>'</span> : undefined;
+      }}
       onSelect={(...args: unknown[]) => {
         const { item } = args[0] as { item: PickerItem };
         const p = nav.picker();
@@ -80,8 +85,8 @@ export function MailboxPicker() {
           else actions.moveTo(p.threadIds, view, id);
           nav.clearSelection();
         };
-        if (item.create === undefined) apply(item.id);
-        else labels.create(item.create, { quiet: true }).then(apply, (e) => toast(`Couldn't create the label: ${(e as Error).message}`, 'error'));
+        if (!item.create) apply(item.id);
+        else labels.create(item.create.typed, { quiet: true }).then(apply, (e) => toast(`Couldn't create the label: ${(e as Error).message}`, 'error'));
       }}
     />
   );
