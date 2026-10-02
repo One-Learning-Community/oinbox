@@ -98,7 +98,12 @@ gets a correct dark mode for free. Nothing open left for this package.
 payload carries `el`. The event details card now anchors to the clicked event
 (`src/ui/CalendarView.tsx` `EventPopover`: `trigger="manual"`, `strategy="fixed"`,
 `reference={el}`); the fixed-position overlay box and the `closest('.fc-event')` lookup are gone.
-A click on another event moves the card, as the README promises (pinned in `e2e/calendar.spec.ts`).
+A click on another event moves the card, as the README promises (pinned in `e2e/calendar.spec.ts`),
+but only with one long-lived Popover whose `reference` is repointed. Our first version mounted a
+new Popover per click (`<Show keyed>`), and that closes the new card: the outside-click decision is
+deferred with `setTimeout(0)`, the timer is not cancelled when the component is disposed, and the
+disposed instance then calls its `onOpenChange(false)`. It passed locally and failed in CI, so it is
+timing-dependent. Suggest clearing that timer in `onCleanup`.
 One consequence to know: the popover closes when the referenced element leaves the document, and
 FullCalendar re-creates event elements when `events` changes, so a pushed calendar change closes an
 open card. Fine for us; a consumer who wants it to stay can pass a virtual element with a fixed rect.

@@ -5,11 +5,14 @@ import type { ImapFlow } from 'imapflow';
 import { expect, test } from '@playwright/test';
 import { openInbox, rowFor, waitLive } from './support/app';
 import { imapClose, imapConnect, imapDelete, imapMove, imapSetSeen } from './support/imap';
+import { createLabel, destroyLabel } from './support/labels';
 import { ALICE, deliverToAlice, destroyEmails, sendMail, threadEmails, uniqueTag, waitFor } from './support/mail';
 
 const created: string[] = [];
+const labels: string[] = [];
 test.afterEach(async () => {
   await destroyEmails(created.splice(0));
+  for (const id of labels.splice(0)) await destroyLabel(id);
 });
 
 let imap: ImapFlow;
@@ -42,7 +45,10 @@ test('moving a message out of the inbox from another IMAP client removes the row
   await waitLive(page);
   await expect(rowFor(page, msg.threadId)).toBeVisible();
 
-  await imapMove(imap, msg.messageId![0]!, 'Archive');
+  // Its own destination: a new account has no Archive mailbox until something is archived.
+  const folder = uniqueTag();
+  labels.push(await createLabel(folder));
+  await imapMove(imap, msg.messageId![0]!, folder);
 
   await expect(rowFor(page, msg.threadId)).toHaveCount(0, { timeout: 10_000 });
 });

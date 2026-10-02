@@ -19,7 +19,7 @@ export function CalendarView() {
       .filter((e): e is CalendarInput => e !== null),
   );
 
-  const [selected, setSelected] = createSignal<{ event: DisplayEvent; el: HTMLElement } | null>(null);
+  const [selected, setSelected] = createSignal<Selected | null>(null);
 
   return (
     <section class="calendar-view" aria-label="Calendar">
@@ -45,39 +45,55 @@ export function CalendarView() {
           onDatesSet={({ start, end }) => void calendar.show({ start: toUtcDate(start), end: toUtcDate(end) })}
         />
       </div>
-      <Show when={selected()} keyed>
-        {(s) => <EventPopover event={s.event} anchor={s.el} onClose={() => setSelected(null)} />}
-      </Show>
+      <EventPopover selected={selected()} onClose={() => setSelected(null)} />
     </section>
   );
 }
 
-/** Read-only event details, placed beside the clicked event's element. */
-function EventPopover(props: { event: DisplayEvent; anchor: HTMLElement; onClose: () => void }) {
+/** The event whose details are showing, and its element in the calendar. */
+interface Selected {
+  event: DisplayEvent;
+  el: HTMLElement;
+}
+
+/**
+ * Read-only event details, placed beside the clicked event's element. One Popover serves every
+ * event: it decides an outside click a tick after the press, and by then a click on another
+ * event has pointed `reference` at that event, so the card moves there instead of closing.
+ */
+function EventPopover(props: { selected: Selected | null; onClose: () => void }) {
+  return (
+    <Popover open={!!props.selected} bare onOpenChange={(open) => !open && props.onClose()} trigger="manual" strategy="fixed" placement="right-start" reference={props.selected?.el ?? null}>
+      <Show when={props.selected?.event} keyed>
+        {(event) => <EventCard event={event} />}
+      </Show>
+    </Popover>
+  );
+}
+
+function EventCard(props: { event: DisplayEvent }) {
   const { calendar } = useApp();
   const calendarName = () =>
     props.event.calendarIds.map((id) => calendar.state.calendars[id]?.name).find((n) => n) ?? '';
   return (
-    <Popover open bare onOpenChange={(open) => !open && props.onClose()} trigger="manual" strategy="fixed" placement="right-start" reference={props.anchor}>
-      <div class="event-card" role="dialog" aria-label={props.event.title}>
-        <h3>{props.event.title}</h3>
-        <p class="when">{formatWhen(props.event)}</p>
-        <Show when={props.event.location}>{(l) => <p class="where">{l()}</p>}</Show>
-        <Show when={props.event.description}>{(d) => <p class="description">{d()}</p>}</Show>
-        <Show when={props.event.participants.length}>
-          <ul class="participants">
-            <For each={props.event.participants}>
-              {(p) => (
-                <li>
-                  <span class="who" title={p.address}>{p.name}</span>
-                  <span class="rsvp">{STATUS_LABELS[p.status] ?? p.status}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-        </Show>
-        <p class="calendar-name">{calendarName()}</p>
-      </div>
-    </Popover>
+    <div class="event-card" role="dialog" aria-label={props.event.title}>
+      <h3>{props.event.title}</h3>
+      <p class="when">{formatWhen(props.event)}</p>
+      <Show when={props.event.location}>{(l) => <p class="where">{l()}</p>}</Show>
+      <Show when={props.event.description}>{(d) => <p class="description">{d()}</p>}</Show>
+      <Show when={props.event.participants.length}>
+        <ul class="participants">
+          <For each={props.event.participants}>
+            {(p) => (
+              <li>
+                <span class="who" title={p.address}>{p.name}</span>
+                <span class="rsvp">{STATUS_LABELS[p.status] ?? p.status}</span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <p class="calendar-name">{calendarName()}</p>
+    </div>
   );
 }

@@ -36,6 +36,9 @@ pnpm test        # unit: JMAP client, sync engine (against an in-memory JMAP fak
 pnpm e2e         # Playwright against the Docker Compose stack
 ```
 
+GitHub Actions runs both on every push (`.github/workflows/ci.yml`); the end-to-end job builds the
+web image and starts the stack from scratch, so it also catches what a long-lived local stack hides.
+
 ## Layout
 
 | Path | What |
@@ -58,5 +61,8 @@ Found while building against Stalwart 0.16.23:
 - An unauthenticated `/jmap/session` returns 200 with no accounts; the client treats that as signed out.
 - 401 responses carry `WWW-Authenticate: Basic`, which makes browsers hold `fetch()` open for a
   native prompt; Caddy strips the header.
+- The default inbound SMTP throttles (25 messages an hour per sender and recipient) are restored at
+  startup whenever none exist, so deleting them lasts only until the next restart. The dev stack
+  keeps one disabled throttle instead (`deploy/stalwart/plan.ndjson`).
 - There's no Archive mailbox by default; archiving creates one on first use, since JMAP has no
   "All Mail" and an email must stay in at least one mailbox.

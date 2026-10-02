@@ -55,7 +55,9 @@ export async function imapMove(client: ImapFlow, messageId: string, toMailbox: s
   const lock = await client.getMailboxLock(fromMailbox);
   try {
     const uid = await findUid(client, messageId);
-    await client.messageMove([uid], toMailbox, { uid: true });
+    // imapflow reports a refused move (e.g. no such mailbox) by returning false.
+    const moved = await client.messageMove([uid], toMailbox, { uid: true });
+    if (!moved) throw new Error(`IMAP could not move ${messageId} to ${toMailbox}`);
   } finally {
     lock.release();
   }
