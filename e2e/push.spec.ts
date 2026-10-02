@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { destroyEmails, emailsBySubject, sendMail, waitFor, ALICE, uniqueTag } from './support/mail';
+import { destroyEmails, emailsBySubject, sendMail, threadEmails, waitFor, ALICE, uniqueTag } from './support/mail';
 import { openInbox, rows, visibleThreadOrder, waitLive } from './support/app';
 
 const created: string[] = [];
@@ -48,4 +48,26 @@ test('new mail delivered over SMTP appears at the TOP of the inbox', async ({ pa
   const { row } = await deliverWhileOpen(page);
   const tid = await row.getAttribute('data-thread-id');
   await expect.poll(async () => (await visibleThreadOrder(page))[0], { timeout: 10_000 }).toBe(tid);
+});
+
+test('a reply delivered while its conversation is open appears as the newest message', async ({ page }) => {
+  const subject = `Push test ${uniqueTag()}`;
+  const firstId = await sendMail({ from: 'Pusher <pusher@partner.test>', to: [ALICE], subject, text: 'First message.' });
+  const first = await waitFor(async () => (await emailsBySubject(subject)).find((e) => e.messageId?.includes(firstId)), 15_000, 'first message');
+  created.push(first.id);
+
+  await page.goto(`/inbox/t/${first.threadId}`);
+  await expect(page.locator('article.msg')).toHaveCount(1);
+  await waitLive(page);
+
+  const replyId = await sendMail({ from: 'Pusher <pusher@partner.test>', to: [ALICE], subject, text: 'Second message.', inReplyTo: firstId });
+  try {
+    const messages = page.locator('article.msg');
+    await expect(messages).toHaveCount(2);
+    await expect(messages.last()).not.toHaveClass(/\bcollapsed\b/);
+    await expect(messages.last().locator('iframe').contentFrame().locator('body')).toContainText('Second message.');
+  } finally {
+    const reply = await waitFor(async () => (await threadEmails(first.threadId)).find((e) => e.messageId?.includes(replyId)), 10_000, 'the reply');
+    created.push(reply.id);
+  }
 });

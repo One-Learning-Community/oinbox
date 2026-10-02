@@ -29,6 +29,13 @@ export function Conversation(props: { view: View; threadId: Id }) {
     }),
   );
 
+  // Messages that join the thread while it's open (a reply sent or received) sync without
+  // bodies: fetch them, or they'd stay invisible until the conversation is reopened.
+  createEffect(() => {
+    const t = engine.state.threads[props.threadId];
+    if (loaded() && t?.emailIds.some((id) => !engine.state.bodies[id])) void engine.loadThread(props.threadId).catch(() => undefined);
+  });
+
   const [showDeleted, setShowDeleted] = createSignal(false);
   const [showOlder, setShowOlder] = createSignal(false);
   const [expanded, setExpanded] = createSignal(new Set<Id>());
@@ -51,7 +58,11 @@ export function Conversation(props: { view: View; threadId: Id }) {
     if (unread.length) void actions.markRead([tid]);
   }));
   const deletedCount = createMemo(() => all().filter((e) => isHidden(e, hidden())).length);
-  const messages = createMemo(() => (showDeleted() ? all() : all().filter((e) => !isHidden(e, hidden()))));
+  /** The draft behind an open composer shows as that composer, not also as a message. */
+  const beingEdited = createMemo(() => new Set(composers.list().map((c) => c.draftId())));
+  const messages = createMemo(() =>
+    all().filter((e) => !beingEdited().has(e.id) && (showDeleted() || !isHidden(e, hidden()))),
+  );
 
   // Reset per-thread UI state.
   createEffect(on(() => props.threadId, () => {

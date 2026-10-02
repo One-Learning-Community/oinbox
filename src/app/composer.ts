@@ -26,7 +26,7 @@ export interface Composer {
   attach: (files: FileList | File[]) => Promise<void>;
   removeAttachment: (blobId: string) => void;
   /** Id of the saved draft email, if any. */
-  draftId: () => Id | null;
+  draftId: Accessor<Id | null>;
 }
 
 /** Open composers plus the delayed-send queue. */
@@ -60,7 +60,7 @@ export function createComposers(engine: MailEngine, client: JmapClient, toast: T
     const [identityId, setIdentityId] = createSignal<Id | null>(restore?.identityId ?? defaultIdentity(original));
     const [status, setStatus] = createSignal<SaveStatus>(restore ? 'saved' : 'idle');
     const [uploading, setUploading] = createSignal(0);
-    let draftId: Id | null = restore?.draftId ?? null;
+    const [draftId, setDraftId] = createSignal<Id | null>(restore?.draftId ?? null);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let saving: Promise<void> = Promise.resolve();
 
@@ -70,8 +70,8 @@ export function createComposers(engine: MailEngine, client: JmapClient, toast: T
       if (!identity || !drafts) return;
       setStatus('saving');
       try {
-        const saved = await engine.saveDraft(buildEmailCreate(draft(), { name: identity.name || null, email: identity.email }, drafts), draftId);
-        draftId = saved.id;
+        const saved = await engine.saveDraft(buildEmailCreate(draft(), { name: identity.name || null, email: identity.email }, drafts), draftId());
+        setDraftId(saved.id);
         if (status() === 'saving') setStatus('saved');
       } catch (e) {
         setStatus('error');
@@ -128,7 +128,7 @@ export function createComposers(engine: MailEngine, client: JmapClient, toast: T
         setDraft({ ...draft(), attachments: draft().attachments.filter((a) => a.blobId !== blobId) });
         scheduleSave();
       },
-      draftId: () => draftId,
+      draftId,
       save,
       cancelAutosave: () => clearTimeout(timer),
     };
