@@ -5,7 +5,8 @@ import { archivePatch, keywordPatch, movePatch, trashPatch, type EmailPatch } fr
 import type { View } from '../sync/selectors';
 
 export interface ToastFn {
-  (message: string, type?: 'info' | 'success' | 'error', action?: { label: string; run: () => void }): void;
+  /** `action.forMs`: how long the action stays on offer, when it is tied to a deadline (undo send). */
+  (message: string, type?: 'info' | 'success' | 'error', action?: { label: string; run: () => void; forMs?: number }): void;
 }
 
 /** Thread-level triage actions, Gmail semantics. Archive/trash/spam confirm first; the rest are optimistic with Undo. */

@@ -214,6 +214,7 @@ export function createComposers(engine: MailEngine, client: JmapClient, toast: T
 
     toast('Sending…', 'info', {
       label: 'Undo',
+      forMs: UNDO_SEND_MS,
       run: () => {
         cancelled = true;
         clearTimeout(timer);

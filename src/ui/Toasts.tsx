@@ -14,7 +14,7 @@ export function createToasts() {
   const toast: ToastFn = (message, type = 'info', action) => {
     const id = `oinbox-${++seq}`;
     if (action) actions.set(id, action);
-    handle?.show({ id, message, type, duration: action ? 8000 : 5000 });
+    handle?.show({ id, message, type, duration: action ? (action.forMs ?? 8000) : 5000 });
   };
 
   const Host = () => (
