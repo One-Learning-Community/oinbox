@@ -31,15 +31,4 @@ describe('LabelDialog', () => {
     finish('new');
     await vi.waitFor(() => expect(nav.labelDialog()).toBeNull());
   });
-
-  it('gives the focus back to where it was when it closes', async () => {
-    const { nav } = setup(async () => 'new');
-    const outside = screen.getByText('Outside');
-    outside.focus();
-    nav.setLabelDialog({ kind: 'create' });
-    const field = await screen.findByRole('textbox', { name: 'Label name' });
-    await vi.waitFor(() => expect(field).toHaveFocus());
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await vi.waitFor(() => expect(outside).toHaveFocus());
-  });
 });

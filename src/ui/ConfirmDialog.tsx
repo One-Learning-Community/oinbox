@@ -1,6 +1,5 @@
 import { Dialog } from '@rozie-ui/dialog-solid';
 import { createSignal, Show, type JSX } from 'solid-js';
-import { restoreFocus } from './focus';
 
 export interface ConfirmOptions {
   title: string;
@@ -48,7 +47,6 @@ export function createConfirmDialog(): { confirm: ConfirmFn; Host: () => JSX.Ele
   const Host = () => (
     <Show when={pending()}>
       {(p) => {
-        restoreFocus();
         const message = () => {
           const m = p().opts.message;
           return typeof m === 'function' ? m() : m;

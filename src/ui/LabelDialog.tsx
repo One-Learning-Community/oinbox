@@ -2,7 +2,6 @@ import { Dialog } from '@rozie-ui/dialog-solid';
 import { createEffect, createSignal, onMount, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { labelPath } from '../sync/selectors';
-import { restoreFocus } from './focus';
 import type { LabelDialogState } from './nav';
 
 /** Create and rename share one dialog: a single path field, checked by the same rules. */
@@ -16,7 +15,6 @@ export function LabelDialog() {
 }
 
 function LabelForm(props: { state: LabelDialogState }) {
-  restoreFocus();
   const { engine, labels, nav } = useApp();
   const renaming = props.state.kind === 'rename' ? props.state.id : undefined;
   const current = renaming ? engine.state.mailboxes[renaming] : undefined;
@@ -25,11 +23,8 @@ function LabelForm(props: { state: LabelDialogState }) {
   const [busy, setBusy] = createSignal(false);
   let input: HTMLInputElement | undefined;
 
-  // rozie Dialog opens its <dialog> in its own onMount, which runs after this one.
-  onMount(() => queueMicrotask(() => {
-    input?.focus();
-    input?.select();
-  }));
+  // The dialog focuses its first field as it opens; a name being renamed starts selected.
+  onMount(() => input?.select());
 
   // The label was deleted elsewhere while its rename dialog was open.
   createEffect(() => {

@@ -82,6 +82,8 @@ test('renaming the label being viewed changes the title and sidebar, not the URL
   const dialog = page.getByRole('dialog', { name: 'Rename label' });
   await expect(nameField(page)).toHaveValue(tag);
   await expect(nameField(page)).toBeFocused();
+  // The whole name is selected, ready to be typed over.
+  expect(await nameField(page).evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, tag.length]);
   await nameField(page).fill(`${tag}-renamed`);
   await nameField(page).press('Enter');
 
