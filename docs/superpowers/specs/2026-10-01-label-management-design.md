@@ -43,7 +43,6 @@ src/
   ui/LabelDialog.tsx      new. One dialog for create and rename (rozie Dialog)
   ui/Shell.tsx            Labels heading "+", dead-label redirect
   ui/LabelMenu.tsx        row "⋯" menu (rozie Popover)
-  ui/focus.ts             gives focus back when a dialog goes away
   ui/Overlays.tsx         "Create …" row in the Move and Label pickers
   ui/picker.ts            new. Ranks picker rows
   ui/Conversation.tsx     "×" on label chips
@@ -219,7 +218,7 @@ Opened through `nav.labelDialog()`, which is `{ kind: 'create' } | { kind: 'rena
 - The error is linked to the field with `aria-describedby` and announced with `role="alert"`.
 - After a create from the sidebar the dialog closes and the view does not change.
 - If the label being renamed disappears while the dialog is open, the dialog closes.
-- When the dialog goes away, focus returns to the element that had it before (`src/ui/focus.ts`; the confirm dialog does the same).
+- When the dialog goes away, focus returns to the element that had it before (rozie Dialog does this since 0.2.0; the confirm dialog does the same).
 
 ### Confirm dialog (`src/ui/ConfirmDialog.tsx`)
 

@@ -138,6 +138,19 @@ Done on 2026-10-01 by reading the Combobox 0.6.0 source while writing the plan. 
 | No list when nothing matches | The list opens on focus and shows "No results" | Hides a list that has no options with CSS. `aria-expanded` stays `true` while the field has focus. |
 | Escape with no list showing | Always consumed while the field has focus | The field tells the composer whether a list was really showing. |
 
+**Amended 2026-10-02, on Combobox 0.7.0.** The field now uses the component's own props for every row above but paste:
+
+| Behaviour | Combobox 0.7.0 | What the field does |
+|---|---|---|
+| `,` and `;` commit the typed text | `delimiters`, gated by `validate` | Converts the committed text to an address in `onChange`. |
+| Pasting several addresses adds them all | Splits on the delimiters, which breaks `"Roe, Sam" <sam@x>` and replaces half-typed text | Still handles `paste` itself, in the capture phase, and keeps the event from Combobox. |
+| Tab picks the highlighted option | `selectOnTab` | Nothing. |
+| No list when nothing matches | `hideEmpty`, `disableOpenOnFocus` | Nothing. `aria-expanded` is `false` while no list shows. |
+| Escape with no list showing | Left to the host | Tells the composer when Combobox used the key (`defaultPrevented`). |
+| Fill the row, chips and input on one line | `block`, `chipLayout="inline"` | Sets tokens only. |
+| Leaving the field commits a complete address | Not supported | Handles `focusout`. |
+| Ctrl/Cmd+Enter with a suggestion highlighted | Not handled (the key is left to the host) | Adds the highlighted person through `activeOption()` and holds the send. |
+
 Each row that needs a workaround is written to `docs/rozie-feedback.md`. `@rozie-ui/tags-solid` is removed from `package.json`, since nothing else imports it.
 
 ## Testing
