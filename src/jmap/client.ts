@@ -34,7 +34,9 @@ export class BatchResult {
     responses: Invocation[],
     readonly sessionChanged: boolean,
   ) {
-    for (const r of responses) this.byId.set(r[2], r);
+    // A call's own response comes first; implicit calls the server adds (e.g. the Email/set
+    // behind onSuccessUpdateEmail) reuse its id and must not replace it.
+    for (const r of responses) if (!this.byId.has(r[2])) this.byId.set(r[2], r);
   }
 
   /** Error body for a call, if it failed. */

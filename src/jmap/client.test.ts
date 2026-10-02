@@ -104,6 +104,31 @@ describe('JmapClient', () => {
     expect(res.error(qc)?.type).toBe('cannotCalculateChanges');
   });
 
+  it('returns the call\'s own result when the server adds an implicit call under the same id', async () => {
+    // RFC 8621 §7.5: onSuccessUpdateEmail makes the server run an Email/set and answer it with
+    // the EmailSubmission/set's method call id.
+    const f = vi.fn(async (url: string) => {
+      if (url.endsWith('/.well-known/jmap')) return json(session);
+      return json({
+        sessionState: 's1',
+        methodResponses: [
+          ['EmailSubmission/set', { accountId: 'a1', newState: 's2', created: { send: { id: 'sub1' } } }, '0'],
+          ['Email/set', { accountId: 'a1', oldState: 'e1', newState: 'e2', updated: { m1: null } }, '0'],
+        ],
+      });
+    });
+    const c = makeClient(f as unknown as typeof fetch);
+    await c.loadSession();
+    const b = c.batch();
+    const s = b.call('EmailSubmission/set', {
+      accountId: 'a1',
+      create: { send: { identityId: 'i1', emailId: 'm1' } },
+      onSuccessUpdateEmail: { '#send': { 'keywords/$draft': null } },
+    });
+    const res = await c.send(b);
+    expect(res.get(s).created?.send?.id).toBe('sub1');
+  });
+
   it('reports sessionState changes so callers can reload the session', async () => {
     const f = vi.fn(async (url: string) => {
       if (url.endsWith('/.well-known/jmap')) return json(session);
