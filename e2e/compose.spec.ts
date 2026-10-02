@@ -1,0 +1,182 @@
+import { expect, test } from '@playwright/test';
+import { emailsBySubject, mailboxByRole, sendMail, threadEmails, waitFor, ALICE, BOB, uniqueTag } from './support/mail';
+import { openInbox, rows, waitLive } from './support/app';
+import {
+  addRecipient,
+  bodyEditor,
+  composeNew,
+  deliveredCopy,
+  destroyBySubject,
+  emailDetails,
+  floatingComposer,
+  inlineComposer,
+  recipientChips,
+  saveStatus,
+  sendAndWait,
+  subjectInput,
+  toast,
+  typeBody,
+  UNDO_SEND_MS,
+} from './support/compose';
+
+// Every message a test creates carries its own subject, so cleanup is by subject in both mailboxes.
+const subjects: string[] = [];
+const newSubject = () => {
+  const s = `Compose test ${uniqueTag()}`;
+  subjects.push(s);
+  return s;
+};
+test.afterEach(async () => {
+  for (const s of subjects.splice(0)) await destroyBySubject(s);
+});
+
+test('a new message reaches bob and lands in alice\'s Sent', async ({ page }) => {
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Hello from the composer.' });
+  await sendAndWait(page, c);
+  await expect(c).toHaveCount(0);
+
+  const received = await deliveredCopy(subject, BOB, await mailboxByRole('inbox', BOB));
+  expect(received.from?.[0]?.email).toBe(ALICE);
+  const details = await emailDetails(received.id, BOB);
+  expect(details.to?.map((a) => a.email)).toEqual([BOB]);
+  expect(details.preview).toContain('Hello from the composer.');
+
+  // Alice keeps exactly one copy: in Sent, no longer a draft.
+  const sent = await deliveredCopy(subject, ALICE, await mailboxByRole('sent'));
+  const mine = await emailsBySubject(subject);
+  expect(mine.map((e) => e.id)).toEqual([sent.id]);
+  expect(sent.mailboxIds[await mailboxByRole('drafts')]).toBeFalsy();
+});
+
+test('an inline reply joins the conversation as the newest message and reaches the sender', async ({ page }) => {
+  const subject = newSubject();
+  const messageId = await sendMail({ from: 'Bob Example <bob@example.test>', to: [ALICE], subject, text: 'Can you confirm?' });
+  const original = await waitFor(async () => (await emailsBySubject(subject)).find((e) => e.messageId?.includes(messageId)), 15_000, 'the original');
+
+  await page.goto(`/inbox/t/${original.threadId}`);
+  await expect(page.locator('article.msg')).toHaveCount(1);
+  await page.locator('.reply-bar').getByRole('button', { name: 'Reply', exact: true }).click();
+
+  const c = inlineComposer(page);
+  await expect(c).toBeVisible();
+  await expect(recipientChips(c)).toHaveCount(1);
+  await expect(recipientChips(c)).toContainText(BOB);
+  await typeBody(c, 'Confirmed, see you there.');
+  await sendAndWait(page, c);
+
+  // The reply is the second, newest message, shown as sent by "me" and no longer a draft.
+  const messages = page.locator('article.msg');
+  await expect(messages).toHaveCount(2);
+  await expect(messages.last().locator('.from')).toHaveText('me');
+  await expect(messages.last().locator('.draft-tag')).toHaveCount(0);
+
+  const thread = await threadEmails(original.threadId);
+  expect(thread.map((e) => e.id)).toHaveLength(2);
+  expect(thread[1]!.subject).toBe(`Re: ${subject}`);
+
+  const received = await deliveredCopy(subject, BOB, await mailboxByRole('inbox', BOB));
+  const details = await emailDetails(received.id, BOB);
+  expect(details.inReplyTo).toEqual([messageId]);
+  expect(details.preview).toContain('Confirmed, see you there.');
+});
+
+test('Undo late in the send window reopens the draft and nothing is delivered; Discard deletes it', async ({ page }) => {
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Not ready to go yet.' });
+
+  await c.getByRole('button', { name: 'Send', exact: true }).click();
+  const sending = toast(page, 'Sending…');
+  await expect(sending).toBeVisible();
+  await expect(c).toHaveCount(0);
+  // Undo must stay on offer for the whole window, so take it in the last second.
+  await page.waitForTimeout(UNDO_SEND_MS - 1000);
+  await sending.getByRole('button', { name: 'Undo' }).click();
+  await expect(toast(page, 'Sending undone.')).toBeVisible();
+
+  // The composer is back with what was written.
+  const reopened = floatingComposer(page);
+  await expect(reopened).toBeVisible();
+  await expect(subjectInput(reopened)).toHaveValue(subject);
+  await expect(recipientChips(reopened)).toContainText(BOB);
+  await expect(bodyEditor(reopened)).toContainText('Not ready to go yet.');
+
+  // Past the window: still a draft on alice's side, nothing on bob's.
+  await page.waitForTimeout(3000);
+  await expect(toast(page, 'Message sent.')).toHaveCount(0);
+  expect(await emailsBySubject(subject, BOB)).toEqual([]);
+  const mine = await emailsBySubject(subject);
+  expect(mine).toHaveLength(1);
+  expect(mine[0]!.keywords.$draft).toBe(true);
+
+  await reopened.getByRole('button', { name: 'Discard draft' }).click();
+  const dialog = page.getByRole('dialog', { name: /discard/i });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Discard' }).click();
+  await expect(reopened).toHaveCount(0);
+  await expect.poll(async () => (await emailsBySubject(subject)).length).toBe(0);
+});
+
+test('a draft autosaves and reopens from Drafts after a reload', async ({ page }) => {
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Half-written thought.' });
+  await expect(saveStatus(c)).toHaveText('Draft saved');
+
+  await page.goto('/drafts');
+  await expect(floatingComposer(page)).toHaveCount(0);
+  const row = rows(page).filter({ has: page.locator('.subject', { hasText: subject }) });
+  await expect(row).toBeVisible();
+  await row.click();
+
+  const reopened = floatingComposer(page);
+  await expect(reopened).toBeVisible();
+  await expect(page).toHaveURL(/\/drafts$/);
+  await expect(subjectInput(reopened)).toHaveValue(subject);
+  await expect(recipientChips(reopened)).toContainText(BOB);
+  await expect(bodyEditor(reopened)).toContainText('Half-written thought.');
+});
+
+test('an attached file is uploaded, sent, and arrives intact', async ({ page }) => {
+  const subject = newSubject();
+  const content = `attachment body ${uniqueTag()}\n`;
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'File attached.' });
+  await c.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from(content) });
+  await expect(c.locator('.compose-attachments .attachment', { hasText: 'notes.txt' })).toBeVisible();
+  await expect(c.locator('.compose-attachments')).not.toContainText('Uploading');
+  await sendAndWait(page, c);
+
+  const received = await deliveredCopy(subject, BOB, await mailboxByRole('inbox', BOB));
+  const { attachments } = await emailDetails(received.id, BOB);
+  expect(attachments.map((a) => ({ name: a.name, type: a.type, size: a.size }))).toEqual([
+    { name: 'notes.txt', type: 'text/plain', size: Buffer.byteLength(content) },
+  ]);
+});
+
+test('c opens the composer, shortcut keys typed into it stay text, Ctrl+Enter sends', async ({ page }) => {
+  const subject = newSubject();
+  await openInbox(page);
+  await waitLive(page);
+  await page.keyboard.press('c');
+  const c = floatingComposer(page);
+  await expect(c).toBeVisible();
+
+  await addRecipient(c, BOB);
+  await subjectInput(c).fill(subject);
+  // j/x/e/#/! would move the cursor, select, archive, delete and report spam from the list.
+  await typeBody(c, 'jxe#!');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(rows(page).locator('.row-check input:checked')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/inbox$/);
+
+  await page.keyboard.press('Control+Enter');
+  const sending = toast(page, 'Sending…');
+  await expect(sending).toBeVisible();
+  await expect(c).toHaveCount(0);
+  // Undo rather than wait out the window; delivery is covered above.
+  await sending.getByRole('button', { name: 'Undo' }).click();
+  await expect(floatingComposer(page)).toBeVisible();
+});

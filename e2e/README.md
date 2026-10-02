@@ -40,15 +40,19 @@ The `setup` project signs Alice in once through the real OAuth flow and saves `e
 | `login.spec.ts` | "Sign in" card → Stalwart `/login` (client_id `oinbox`, PKCE S256, redirect `/auth/callback`) → token exchange with refresh token → `/inbox` with the seeded threads. |
 | `conversation.spec.ts` | The "Q3 planning offsite" thread shows all 5 messages, including Alice's Sent copy (shown as "me"), oldest → newest. The latest is expanded and the older read ones are collapsed; the "older messages" pill is expanded first. |
 | `html-message.spec.ts` | Erin's HTML reply: `.images-banner` shown and no `img[src=http…]`. The quote is folded behind `button.oinbox-quote-toggle` inside the iframe and toggles open and closed. No request reaches `picsum.photos` or `tracker.design.test`. |
-| `push.spec.ts` | SMTP delivery while the inbox is open → a new unread row appears live (about 50 ms), with no navigation or reload. |
+| `push.spec.ts` | SMTP delivery while the inbox is open → a new unread row appears live (about 50 ms), with no navigation or reload. A reply delivered while its conversation is open appears as the newest message, expanded. |
+| `compose.spec.ts` | The composer end to end, Alice → Bob: a new message arrives and is filed in Sent; an inline reply joins the open conversation and carries `In-Reply-To`; Undo in the last second of the 10 s window reopens the draft and nothing is delivered; Discard deletes the draft; a draft autosaves and reopens from Drafts after a reload; an attachment arrives intact; `c` opens the composer, shortcut keys typed into it stay text, Ctrl+Enter sends. |
 | `search.spec.ts` | `from:bob` (deep link) returns only Bob's threads, including "Lunch Friday?". A free-text search for "zeppelin" from the search box hits the Q3 thread with `<mark>` highlights. |
 | `keyboard.spec.ts` | `j` then `e` prompts a confirm dialog before archiving the cursor thread; Cancel keeps it, confirming removes it (row disappears, server confirms). Also `o` opens a thread, `u` goes back, `?` opens the shortcuts dialog and Escape closes it. |
 | `imap-sync.spec.ts` | A real IMAP client (simulating another mail app) mutates mail while oinbox is open: marking a message seen, moving it out of the inbox, and deleting one message of an open thread all update the UI live via push, with no reload. |
 
 ## Regression tests for fixed bugs
 
-These three started as `test.fixme` and now pass:
+The first three started as `test.fixme`; the rest were found by new specs. All pass now:
 
 1. **Pushed thread at the top of the inbox** (`push.spec.ts`). Stalwart sends `StateChange` up to ~100 ms before a new email sorts into place, so `MailEngine` re-reads the visible window once more 500 ms after a push (`settleDelayMs`).
 2. **Operator searches typed into the search box** (`search.spec.ts`). The route param was encoded twice; `MailView` now decodes it before building the slug.
 3. **Open message keeps its iframe across updates** (`html-message.spec.ts`). `Conversation` keys its `<For>` by email id, so starring or a pushed change no longer re-mounts the message.
+4. **A successful send was reported as failed** (`compose.spec.ts`). Stalwart answers `onSuccessUpdateEmail`'s implicit `Email/set` under the `EmailSubmission/set` call id, and `BatchResult` kept the last response per id. It now keeps the first.
+5. **Messages joining an open conversation never appeared** (`push.spec.ts`, `compose.spec.ts`). Pushed emails sync without bodies and the conversation only shows emails with bodies; `Conversation` now loads the thread again when it gains an email.
+6. **Undo disappeared 2 s before the send** (`compose.spec.ts`). The "Sending…" toast now stays for the whole undo window.
