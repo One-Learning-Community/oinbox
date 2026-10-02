@@ -5,7 +5,7 @@ import { useApp } from '../app/context';
 import { formatAddress } from '../mail/compose';
 import { fileSize } from '../mail/format';
 import { Icon } from './icons';
-import { closedSuggestions, RecipientField } from './RecipientField';
+import { closedSuggestions, pickedSuggestion, RecipientField } from './RecipientField';
 
 export function ComposerView(props: { composer: Composer; inline: boolean }) {
   const { composers } = useApp();
@@ -34,7 +34,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault();
-          void composers.send(c);
+          if (!pickedSuggestion(e)) void composers.send(c);
         } else if (e.key === 'Escape' && !props.inline && !closedSuggestions(e)) {
           void composers.close(c);
         }

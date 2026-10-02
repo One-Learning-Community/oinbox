@@ -3,7 +3,7 @@ import { createMemo, createSignal, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import type { EmailAddress } from '../jmap/types';
 import { formatAddress, parseAddressList } from '../mail/compose';
-import { addUnique, completeAddress, toAddress, type Recipient } from '../mail/recipients';
+import { addUnique, completeAddress, offer, toAddress, type Recipient } from '../mail/recipients';
 
 interface Option {
   value: string;
@@ -14,6 +14,10 @@ interface Option {
 const listEscapes = new WeakSet<Event>();
 /** Whether this Escape keypress was used up closing a suggestion list. */
 export const closedSuggestions = (e: Event): boolean => listEscapes.has(e);
+
+const heldSends = new WeakSet<Event>();
+/** Whether this keypress just added a suggestion the user hadn't typed out, so it must not also send. */
+export const pickedSuggestion = (e: Event): boolean => heldSends.has(e);
 
 /**
  * To/Cc/Bcc: chips plus a text input that suggests people from mail history.
@@ -34,9 +38,11 @@ export function RecipientField(props: {
   const [dismissed, setDismissed] = createSignal(false);
   let handle: ComboboxHandle | undefined;
   let root: HTMLDivElement | undefined;
+  /** Set when Combobox picks someone other than the address typed in full; read by the same keypress. */
+  let pickedOther = false;
 
   const taken = () => new Set([...props.value, ...props.others].map((a) => a.email.toLowerCase()));
-  const found = createMemo(() => (dismissed() ? [] : recipients.suggest(text(), taken())));
+  const found = createMemo(() => (dismissed() ? [] : offer(recipients.suggest(text(), taken()), text())));
   const options = createMemo<Option[]>(() =>
     found().map((r) => ({ value: r.email, label: r.name ? `${r.name} ${r.email}` : r.email, recipient: r })),
   );
@@ -65,7 +71,10 @@ export function RecipientField(props: {
         listEscapes.add(e);
       }
     } else if (e.defaultPrevented) {
-      // Combobox picked the highlighted suggestion (Enter).
+      // Combobox picked the highlighted suggestion (Enter). With Ctrl/Cmd held the composer
+      // would send in the same keypress, to someone the user has only just seen added.
+      if (e.key === 'Enter' && pickedOther) heldSends.add(e);
+      pickedOther = false;
     } else if (e.key === 'Enter') {
       commitTyped();
     } else if (e.key === 'Tab' && !e.shiftKey && found().length) {
@@ -117,7 +126,10 @@ export function RecipientField(props: {
           }}
           onChange={(...args: unknown[]) => {
             const e = args[0] as { value: string[]; option: Option | null; selected: boolean };
-            if (e.selected && e.option) addAll([toAddress(e.option.recipient)]);
+            if (e.selected && e.option) {
+              pickedOther = completeAddress(text())?.email.toLowerCase() !== e.option.value.toLowerCase();
+              addAll([toAddress(e.option.recipient)]);
+            }
             else props.onChange(props.value.filter((a) => e.value.includes(a.email)));
           }}
           chipSlot={(chip) => (
@@ -130,7 +142,11 @@ export function RecipientField(props: {
                     class="rcpt-chip-remove"
                     aria-label={`Remove ${formatAddress(a())}`}
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => chip.remove()}
+                    onClick={() => {
+                      chip.remove();
+                      // The button is gone: keep the keyboard in the field, not on the page's shortcuts.
+                      handle?.focus();
+                    }}
                   >
                     ×
                   </button>

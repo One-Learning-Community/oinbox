@@ -244,7 +244,8 @@ test('Tab picks the highlighted suggestion; Escape closes the list first and the
   const c = await openComposer(page, newSubject());
   const to = recipientInput(c);
   await to.pressSequentially('bo');
-  await expect(suggestions(c).filter({ hasText: BOB })).toBeVisible();
+  // Bob leads only once the Sent scan has landed; before that "CI Bot" (most recent sender) does.
+  await expect(suggestions(c).first()).toContainText(BOB);
   await to.press('Tab');
   await expect(recipientChips(c)).toContainText(BOB);
   await expect(to).toBeFocused();
@@ -299,7 +300,47 @@ test('free text still works: a comma commits, a pasted list adds everyone, Backs
   await expect(recipientChips(c)).toHaveCount(2);
 
   await to.pressSequentially('yan@nowhere.test');
-  await subjectInput(c).click();
+  // Leave the field without touching the list, which now offers the typed address and covers the row below.
+  await c.locator('.composer-title span').click();
   await expect(recipientChips(c)).toHaveCount(3);
   await expect(recipientChips(c).nth(2)).toContainText('yan@nowhere.test');
 });
+
+test('a full address typed by hand is kept, even when it is the start of a known one', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  const to = recipientInput(c);
+  await to.pressSequentially('bob@example.te');
+  // What was typed is offered first; the known bob@example.test comes second.
+  await expect(suggestions(c).nth(1).locator('.rcpt-option')).toHaveAttribute('data-email', BOB);
+  await expect(suggestions(c).first().locator('.rcpt-option')).toHaveAttribute('data-email', 'bob@example.te');
+  await to.press('Enter');
+  await expect(recipientChips(c)).toHaveCount(1);
+  await expect(recipientChips(c).locator('.rcpt-chip-label')).toHaveText('bob@example.te');
+});
+
+test('Ctrl+Enter with a suggestion highlighted adds the person without sending; the next one sends', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  await recipientInput(c).pressSequentially('bo');
+  await expect(suggestions(c).first()).toContainText(BOB);
+  await page.keyboard.press('Control+Enter');
+  await expect(recipientChips(c)).toContainText(BOB);
+  await page.waitForTimeout(500);
+  await expect(toast(page, 'Sending…')).toHaveCount(0);
+  await expect(c).toBeVisible();
+
+  await page.keyboard.press('Control+Enter');
+  const sending = toast(page, 'Sending…');
+  await expect(sending).toBeVisible();
+  await sending.getByRole('button', { name: 'Undo' }).click();
+  await expect(floatingComposer(page)).toBeVisible();
+});
+
+test('removing a recipient from the keyboard keeps focus in the field', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  await addRecipient(c, BOB);
+  await c.getByRole('button', { name: /^Remove / }).focus();
+  await page.keyboard.press('Enter');
+  await expect(recipientChips(c)).toHaveCount(0);
+  await expect(recipientInput(c)).toBeFocused();
+});
+

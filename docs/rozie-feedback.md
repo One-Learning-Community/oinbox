@@ -146,8 +146,11 @@ out of the box. Everything below is added from outside in `src/ui/RecipientField
 4. **The list opens on focus and can't stay closed when there is nothing to show.** With
    `disableFilter` and no options it renders "No results". We hide a list that has no options with
    CSS (`:not(:has(.rozie-combobox-option))`), which leaves `aria-expanded="true"` on the input
-   while nothing is shown. Suggest `openOnFocus={false}` and not opening while `options` is empty
-   and there is no `empty` slot content.
+   while nothing is shown. An `empty` slot that renders nothing doesn't help: the fallback is
+   `slot() ?? "No results"`, so a null slot still shows the text. Our "no list" behaviour therefore
+   depends on Combobox's internal class names, as Tab-to-pick (item 3) depends on its option id
+   format. Suggest `openOnFocus={false}` and not opening while `options` is empty and there is no
+   `empty` slot content.
 5. **Escape is consumed whenever the input has focus**, because the popup counts as open even when
    it shows nothing, so a host can't tell "closed the list" from "nothing to close". We track it
    ourselves so the first Escape closes the list and the second closes the composer. Follows from 4.

@@ -112,6 +112,21 @@ export function completeAddress(text: string): EmailAddress | null {
   return parsed.length === 1 ? parsed[0]! : null;
 }
 
+/**
+ * What a field offers for `text`: the ranked suggestions, led by the address the user has typed
+ * in full. Matching is by prefix, so without this "ann@corp.co" would offer only ann@corp.com
+ * and Enter would send to someone the user didn't type.
+ */
+export function offer(suggestions: Recipient[], text: string): Recipient[] {
+  const typed = completeAddress(text);
+  // A dotted domain with a top-level label: an address someone has finished typing.
+  if (!typed || !/@[^@\s]+\.[^@\s.]{2,}$/.test(typed.email)) return suggestions;
+  const key = typed.email.toLowerCase();
+  const exact = suggestions.find((r) => r.email.toLowerCase() === key);
+  const first = exact ?? { email: typed.email, name: typed.name ?? '', sent: 0, received: 0, last: '' };
+  return [first, ...suggestions.filter((r) => r !== exact)];
+}
+
 /** `list` followed by the people in `more` it doesn't hold yet (addresses compared without case). */
 export function addUnique(list: EmailAddress[], more: EmailAddress[]): EmailAddress[] {
   const seen = new Set(list.map((a) => a.email.toLowerCase()));

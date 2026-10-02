@@ -105,6 +105,8 @@ Behaviour, the same for To, Cc and Bcc:
 
 | Input | Result |
 |---|---|
+| Typing a full address (one with a dotted domain) | The list leads with exactly that address: the known person who has it, or else the address as typed. Prefix matches follow. Enter therefore keeps what was typed. |
+| Ctrl/Cmd+Enter while a suggestion other than the typed address is highlighted | Adds the suggestion and does not send; the next Ctrl/Cmd+Enter sends. |
 | Typing text that matches | A list of up to 6 suggestions opens under the field. Each row shows the name, then the address; a row with no name shows the address only. The first row is highlighted. |
 | ArrowDown / ArrowUp | Moves the highlight. |
 | Enter or Tab, list showing | Adds the highlighted suggestion and clears the typed text. |
@@ -117,7 +119,7 @@ Behaviour, the same for To, Cc and Bcc:
 | Backspace in an empty field | Removes the last recipient, as today. |
 | Typing text that matches nothing | No list. |
 
-Enter and Tab prefer the list over the typed text because the address parser accepts `bob@ex` as complete; a rule that preferred "complete" typed text would add that instead of the highlighted Bob. A full address of someone unknown matches nothing, so no list shows and the typed text is added.
+Enter and Tab prefer the list over the typed text because the address parser accepts `bob@ex` as complete; a rule that preferred "complete" typed text would add that instead of the highlighted Bob. Matching is by prefix, so a full address can still match someone else (`ann@corp.co` against a known `ann@corp.com`). To keep Enter from swapping in the known person, a full typed address is always the first row of the list (found in review, 2026-10-01).
 
 The draft model does not change: each field still holds `EmailAddress[]`. A picked suggestion becomes `{ name: name || null, email }`.
 

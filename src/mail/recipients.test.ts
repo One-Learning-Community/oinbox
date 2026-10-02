@@ -4,6 +4,7 @@ import {
   addUnique,
   completeAddress,
   isRobot,
+  offer,
   parseRecipientCache,
   suggest,
   toAddress,
@@ -155,5 +156,32 @@ describe('field helpers', () => {
   it('addUnique returns a new array', () => {
     const before = [bob];
     expect(addUnique(before, [])).not.toBe(before);
+  });
+});
+
+describe('offer', () => {
+  const ann = person('ann@corp.com', 'Ann Lee', 2, 0, '2026-09-10T00:00:00Z');
+  const anna = person('anna@corp.com', 'Anna Poe', 1, 0, '2026-09-12T00:00:00Z');
+
+  it('leaves the suggestions alone while the text is not a full address', () => {
+    expect(offer([ann], 'an')).toEqual([ann]);
+    expect(offer([ann], 'ann@corp')).toEqual([ann]);
+    expect(offer([ann], 'ann@corp.c')).toEqual([ann]);
+    expect(offer([], '')).toEqual([]);
+  });
+
+  it('puts a full typed address first when nobody known has exactly it', () => {
+    // ann@corp.co is somebody else: it must not turn into ann@corp.com on Enter.
+    expect(emails(offer([ann], 'ann@corp.co'))).toEqual(['ann@corp.co', 'ann@corp.com']);
+    expect(offer([ann], 'ann@corp.co')[0]).toEqual({ email: 'ann@corp.co', name: '', sent: 0, received: 0, last: '' });
+    expect(emails(offer([], 'new@nowhere.test'))).toEqual(['new@nowhere.test']);
+  });
+
+  it('keeps a typed display name', () => {
+    expect(offer([], 'Sam Roe <sam@nowhere.test>')[0]).toMatchObject({ email: 'sam@nowhere.test', name: 'Sam Roe' });
+  });
+
+  it('puts the person whose address was typed in full first, whatever their rank and letter case', () => {
+    expect(offer([anna, ann], 'ANN@corp.com')).toEqual([ann, anna]);
   });
 });
