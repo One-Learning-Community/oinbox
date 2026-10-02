@@ -78,6 +78,13 @@ export interface Snapshot {
 
 export const DEFAULT_SORT: Comparator[] = [{ property: 'receivedAt', isAscending: false }];
 
+/** Thrown by `destroyLabel` before anything is changed, when the server has sub-labels of the label. */
+export class LabelHasSubLabelsError extends Error {
+  constructor() {
+    super('This label has sub-labels');
+  }
+}
+
 export function queryKey(spec: QuerySpec): string {
   return JSON.stringify([spec.filter, spec.sort, spec.collapseThreads, !!spec.snippets]);
 }
@@ -495,12 +502,18 @@ export class MailEngine {
     // Stalwart refuses a creation reference inside an update, so missing ancestors go first.
     const made = plan.ancestors.length ? await this.createMailboxChain(plan.parentId, plan.ancestors) : [];
     const parentId = made.length ? made[made.length - 1]! : plan.parentId;
-    const b = this.client.batch();
-    const call = b.call('Mailbox/set', { accountId: this.accountId, update: { [id]: { name: plan.name, parentId } } });
-    const err = (await this.client.send(b)).get(call).notUpdated?.[id];
-    if (err) throw new Error(err.description ?? err.type);
-    if (this.state.mailboxes[id]) this.set('mailboxes', id, { name: plan.name, parentId });
+    const rename = async (name: string) => {
+      const b = this.client.batch();
+      const call = b.call('Mailbox/set', { accountId: this.accountId, update: { [id]: { name, parentId } } });
+      const err = (await this.client.send(b)).get(call).notUpdated?.[id];
+      if (!err && this.state.mailboxes[id]) this.set('mailboxes', id, { name, parentId });
+      return err;
+    };
+    let err = await rename(plan.name);
+    // Stalwart refuses a change of letter case alone as a clash with the mailbox itself: go by way of another name.
+    if (err?.type === 'alreadyExists' && err.existingId === id) err = (await rename(`${plan.name} (${id})`)) ?? (await rename(plan.name));
     this.persistSoon();
+    if (err) throw new Error(err.description ?? err.type);
   }
 
   /** How many emails are in this mailbox and no other. */
@@ -522,6 +535,14 @@ export class MailEngine {
    * emails, so a failure midway leaves the label in place with less mail in it.
    */
   async destroyLabel(id: Id): Promise<void> {
+    // The store can lag the server. A sub-label it hasn't seen would block the destroy after
+    // the label was already taken off all its mail, so ask the server first.
+    const b = this.client.batch();
+    const all = b.call('Mailbox/get', { accountId: this.accountId, ids: null, properties: ['parentId'] });
+    if ((await this.client.send(b)).get(all).list.some((m) => m.parentId === id)) {
+      void this.catchUp().catch(() => undefined);
+      throw new LabelHasSubLabelsError();
+    }
     try {
       await this.sweepLabel(id);
       if (await this.destroyEmptyMailbox(id)) {

@@ -1,6 +1,6 @@
 import type { Id } from '../jmap/types';
 import { planLabel, type LabelLimits, type PlanResult } from '../mail/labels';
-import type { MailEngine } from '../sync/engine';
+import { LabelHasSubLabelsError, type MailEngine } from '../sync/engine';
 import { labelPath, subLabelCount } from '../sync/selectors';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
@@ -69,7 +69,8 @@ export function createLabels(engine: MailEngine, toast: ToastFn, confirm: Confir
         });
         if (!ok) return false;
       } catch (e) {
-        toast(`Couldn't finish deleting '${path}'. Some conversations may already have been removed from it; try again. (${(e as Error).message})`, 'error');
+        if (e instanceof LabelHasSubLabelsError) toast(`Couldn't delete '${path}': it has sub-labels. Delete those first.`, 'error');
+        else toast(`Couldn't finish deleting '${path}'. Some conversations may already have been removed from it; try again. (${(e as Error).message})`, 'error');
         return false;
       }
       toast(`Deleted '${path}'.`, 'success');

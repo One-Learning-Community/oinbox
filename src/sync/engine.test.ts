@@ -263,6 +263,12 @@ describe('MailEngine labels: create and rename', () => {
     expect(engine.state.mailboxes.W?.name).toBe('Work');
   });
 
+  it('changes only the letter case of a name, which Stalwart refuses as a clash with itself', async () => {
+    await engine.updateLabel('W', { parentId: null, ancestors: [], name: 'WORK' });
+    expect(server.mailboxes.get('W')?.name).toBe('WORK');
+    expect(engine.state.mailboxes.W?.name).toBe('WORK');
+  });
+
   it('picks up a label renamed by another client', async () => {
     server.mailboxes.get('W')!.name = 'Renamed elsewhere';
     server.bumpMailbox({ updated: ['W'] });
@@ -390,9 +396,13 @@ describe('MailEngine labels: delete', () => {
     expect(engine.state.mailboxes.W).toBeUndefined();
   });
 
-  it('surfaces mailboxHasChild from the server', async () => {
+  it('refuses before touching any mail when the server has a sub-label the store has not seen', async () => {
     server.addMailbox('K', 'Kid', null, 'W');
-    await expect(engine.destroyLabel('W')).rejects.toThrow('Mailbox has at least one children.');
+    server.calls = [];
+    await expect(engine.destroyLabel('W')).rejects.toThrow('sub-labels');
+    expect(server.calls).not.toContain('Email/set');
+    expect(server.emails.get('x1')?.mailboxIds).toEqual({ W: true });
+    expect(server.mailboxes.has('W')).toBe(true);
   });
 
   it('drops a label destroyed by another client, with its live query', async () => {

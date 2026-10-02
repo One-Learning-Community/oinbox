@@ -230,6 +230,8 @@ export interface SetError {
   type: string;
   description?: string;
   properties?: string[];
+  /** With `alreadyExists`: the record in the way. */
+  existingId?: Id;
 }
 export interface SetResult<T> {
   accountId: Id;

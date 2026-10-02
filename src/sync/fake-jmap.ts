@@ -217,7 +217,7 @@ export class FakeJmap {
         }
 
         const updated: Record<string, null> = {};
-        const notUpdated: Record<string, { type: string; description?: string }> = {};
+        const notUpdated: Record<string, { type: string; description?: string; existingId?: string }> = {};
         for (const [id, patch] of Object.entries(update)) {
           const m = this.mailboxes.get(id);
           if (!m) {
@@ -226,8 +226,10 @@ export class FakeJmap {
           }
           const mbName = patch.name ?? m.name;
           const parentId = patch.parentId === undefined ? m.parentId : patch.parentId;
-          if (clash(parentId, mbName, id)) {
-            notUpdated[id] = exists(mbName);
+          // Stalwart counts the mailbox itself as a clash when only the letter case of its name changes.
+          const hit = all().find((o) => (o.id !== id || mbName !== m.name) && (o.parentId ?? null) === parentId && o.name.toLowerCase() === mbName.toLowerCase());
+          if (hit && (hit.id !== id || parentId === m.parentId)) {
+            notUpdated[id] = { ...exists(mbName), existingId: hit.id };
             continue;
           }
           m.name = mbName;

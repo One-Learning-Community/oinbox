@@ -138,6 +138,13 @@ describe('createLabels', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
+  it('says so plainly when the server has a sub-label this session has not seen, and removes nothing', async () => {
+    server.addMailbox('N', 'New elsewhere', null, 'W');
+    expect(await labels.remove('W')).toBe(false);
+    expect(server.emails.get('w1')?.mailboxIds).toEqual({ W: true });
+    expect(toast).toHaveBeenCalledWith("Couldn't delete 'Work': it has sub-labels. Delete those first.", 'error');
+  });
+
   it('reports a delete that stopped halfway', async () => {
     server.rejectUpdates.add('w1');
     expect(await labels.remove('W')).toBe(false);

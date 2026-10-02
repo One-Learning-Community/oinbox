@@ -138,10 +138,13 @@ Checked by writing probe labels (removed afterwards) on the same day:
 - A parent and its child can be created in one `Mailbox/set`, the child with `parentId: "#<creation id>"`, in either order.
 - A creation reference inside `update` is refused with a method-level `invalidResultReference`, and nothing in the call is applied. This is why `updateLabel` creates missing ancestors in a request of their own. If the update then fails, the new ancestors stay, which is harmless: a retry reuses them.
 - A sibling with the same name in another letter case is refused with `alreadyExists`.
+- A rename that changes only the letter case of a mailbox's own name is refused the same way, with `existingId` naming the mailbox itself. `updateLabel` then renames by way of a temporary name (`<name> (<id>)`), so `receipts` can become `Receipts`.
+- `Email/query` for a destroyed mailbox returns no ids, and destroying it again answers `notFound`. Deleting a label that another client has just deleted therefore resolves.
 - Destroy refusals are `mailboxHasChild` and `mailboxHasEmail`.
 
 ### The delete sweep (`destroyLabel`)
 
+0. `Mailbox/get` of every mailbox's `parentId`. If the server has a sub-label of this label, stop with `LabelHasSubLabelsError` before any email is touched. The local check can be stale (push down, or a sub-label made a moment ago), and the server would refuse the destroy only after the label had been taken off all its mail.
 1. One batch: `Email/query` with `{ inMailbox: id }`, `collapseThreads: false`, `limit: 500`; then `Email/get` of those ids by back-reference, property `mailboxIds`.
 2. If the query returned nothing, go to step 5.
 3. If any email of the page has no other mailbox, `ensureMailbox('archive', 'Archive')`.
@@ -153,7 +156,7 @@ Guarantees and failure:
 
 - No path sends `onDestroyRemoveEmails: true`, so no path destroys mail.
 - A failure midway leaves the label in place with less mail in it. Nothing is lost and a retry finishes the job.
-- A sub-label that appears from another client after the app's own check makes the server answer `mailboxHasChild`, which is thrown like any other refusal.
+- A sub-label the store hasn't seen is caught by step 0, and the user is told "Couldn't delete '<path>': it has sub-labels. Delete those first.". One that appears during the sweep still makes the server answer `mailboxHasChild`, which is thrown like any other refusal.
 - There is no Undo. The confirm dialog is the safety net, as for Trash.
 
 ### Changes from another client

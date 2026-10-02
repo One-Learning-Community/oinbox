@@ -195,3 +195,10 @@ keys, focus-first-item and Escape-returns-focus are ours (`LabelMenu` in `src/ui
 The create/rename label dialog needed nothing extra. One note: Dialog calls `showModal()` in its
 own `onMount`, which runs after the parent's, so a parent that wants to focus and select its input
 has to wait a microtask. An `initialFocus` prop (element or selector) would make that explicit.
+
+## Dialog 0.1.3 — scroll lock is not released when unmounted while open
+Found in review: `applyScrollLock(false)` runs only when `open` goes false. A dialog rendered
+inside `<Show>` and removed while open (our ConfirmDialog and LabelDialog both do this) never
+decrements the lock count, so `<html>` keeps `overflow: hidden`. oinbox doesn't scroll the
+document, so nothing shows, but an app that does would be stuck. Suggest releasing the lock in
+`onCleanup`.

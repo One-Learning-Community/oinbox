@@ -24,6 +24,10 @@ async function openMenu(page: Page, path: string) {
 test('"+" creates a label that appears in the sidebar; a double submit creates it once', async ({ page }) => {
   const tag = uniqueTag();
   await openInbox(page);
+  let creates = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.postData()?.includes('"Mailbox/set"')) creates++;
+  });
   await page.getByRole('button', { name: 'New label' }).click();
   await expect(createDialog(page)).toBeVisible();
   await expect(nameField(page)).toBeFocused();
@@ -39,6 +43,7 @@ test('"+" creates a label that appears in the sidebar; a double submit creates i
   await expect(toast(page, `Created '${tag}'.`)).toBeVisible();
   await expect(toast(page, 'already exists')).toHaveCount(0);
   expect(await labelByPath(tag)).toBeDefined();
+  expect(creates).toBe(1);
 });
 
 test('a path creates the parent too; a duplicate and an empty segment are refused inline', async ({ page }) => {
@@ -86,6 +91,19 @@ test('renaming the label being viewed changes the title and sidebar, not the URL
   await expect(labelRow(page, tag)).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`/label/${id}$`));
   expect((await labelByPath(`${tag}-renamed`))?.id).toBe(id);
+});
+
+test('a rename that only changes letter case works', async ({ page }) => {
+  const tag = uniqueTag();
+  const id = await createLabel(`${tag}-case`);
+  await openInbox(page);
+  await openMenu(page, `${tag}-case`);
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  await nameField(page).fill(`${tag}-CASE`);
+  await nameField(page).press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Rename label' })).toBeHidden();
+  await expect(labelRow(page, `${tag}-CASE`)).toBeVisible();
+  expect((await labelByPath(`${tag}-CASE`))?.id).toBe(id);
 });
 
 test('renaming to another parent moves the label', async ({ page }) => {
