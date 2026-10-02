@@ -280,7 +280,7 @@ export class FakeJmap {
         for (const [id, patch] of Object.entries(update)) {
           const e = this.emails.get(id);
           if (!e || this.rejectUpdates.has(id)) {
-            notUpdated[id] = { type: 'forbidden' };
+            notUpdated[id] = { type: e ? 'forbidden' : 'notFound' };
             continue;
           }
           for (const [path, v] of Object.entries(patch)) {

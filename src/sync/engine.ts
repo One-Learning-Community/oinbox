@@ -499,6 +499,7 @@ export class MailEngine {
 
   /** Rename a label and/or move it under another parent. */
   async updateLabel(id: Id, plan: LabelPlan): Promise<void> {
+    this.assertLabel(id);
     // Stalwart refuses a creation reference inside an update, so missing ancestors go first.
     const made = plan.ancestors.length ? await this.createMailboxChain(plan.parentId, plan.ancestors) : [];
     const parentId = made.length ? made[made.length - 1]! : plan.parentId;
@@ -535,11 +536,15 @@ export class MailEngine {
    * emails, so a failure midway leaves the label in place with less mail in it.
    */
   async destroyLabel(id: Id): Promise<void> {
+    this.assertLabel(id);
     // The store can lag the server. A sub-label it hasn't seen would block the destroy after
     // the label was already taken off all its mail, so ask the server first.
     const b = this.client.batch();
-    const all = b.call('Mailbox/get', { accountId: this.accountId, ids: null, properties: ['parentId'] });
-    if ((await this.client.send(b)).get(all).list.some((m) => m.parentId === id)) {
+    const all = b.call('Mailbox/get', { accountId: this.accountId, ids: null, properties: ['name', 'parentId', 'role'] });
+    const onServer = (await this.client.send(b)).get(all).list;
+    const self = onServer.find((m) => m.id === id);
+    if (self?.role) throw new Error(`'${self.name}' is a system mailbox.`);
+    if (onServer.some((m) => m.parentId === id)) {
       void this.catchUp().catch(() => undefined);
       throw new LabelHasSubLabelsError();
     }
@@ -550,6 +555,10 @@ export class MailEngine {
         await this.sweepLabel(id);
         if (await this.destroyEmptyMailbox(id)) throw new Error('New mail keeps arriving in this label');
       }
+    } catch (e) {
+      // What was swept before the failure is changed on the server: don't leave the store waiting for a push.
+      await this.catchUp().catch(() => undefined);
+      throw e;
     } finally {
       this.persistSoon();
     }
@@ -584,7 +593,8 @@ export class MailEngine {
       const patches = unlabelPatch(page, id, archive);
       const sb = this.client.batch();
       const call = sb.call('Email/set', { accountId, update: patches });
-      const failed = Object.values((await this.client.send(sb)).get(call).notUpdated ?? {})[0];
+      // notFound: deleted elsewhere since the query, so it no longer carries the label.
+      const failed = Object.values((await this.client.send(sb)).get(call).notUpdated ?? {}).find((e) => e.type !== 'notFound');
       if (failed) throw new Error(failed.description ?? failed.type);
       this.set('emails', produce((m) => {
         for (const [eid, patch] of Object.entries(patches)) {
@@ -593,6 +603,12 @@ export class MailEngine {
         }
       }));
     }
+  }
+
+  /** A label is a mailbox without a role. The UI checks too; this is the check that can't be skipped. */
+  private assertLabel(id: Id): void {
+    const mb = this.state.mailboxes[id];
+    if (mb?.role) throw new Error(`'${mb.name}' is a system mailbox.`);
   }
 
   /** Drop mailboxes from the store, and with them the live queries that list them. */

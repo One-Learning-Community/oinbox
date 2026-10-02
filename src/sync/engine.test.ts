@@ -405,6 +405,41 @@ describe('MailEngine labels: delete', () => {
     expect(server.mailboxes.has('W')).toBe(true);
   });
 
+  it('brings the store in line with the server when the sweep stops halfway', async () => {
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    server.rejectUpdates.add('x1');
+    await expect(engine.destroyLabel('W')).rejects.toThrow('forbidden');
+    // x2 did lose the label on the server: the store must not wait for a push to say so.
+    expect(server.emails.get('x2')?.mailboxIds).toEqual({ I: true });
+    expect(engine.state.emails.x2?.mailboxIds).toEqual({ I: true });
+    expect(engine.state.queries[key]!.slots).toEqual(['x1']);
+  });
+
+  it('carries on when an email of the page was deleted elsewhere in the meantime', async () => {
+    server.onCall = (name) => {
+      if (name === 'Email/set' && server.emails.delete('x1')) server.bump({ destroyed: ['x1'] });
+    };
+    await engine.destroyLabel('W');
+    expect(server.mailboxes.has('W')).toBe(false);
+    expect(server.emails.get('x2')?.mailboxIds).toEqual({ I: true });
+  });
+
+  it('refuses to rename or delete a system mailbox, sending nothing', async () => {
+    server.calls = [];
+    await expect(engine.updateLabel('I', { parentId: null, ancestors: [], name: 'Mine' })).rejects.toThrow("'Inbox' is a system mailbox.");
+    await expect(engine.destroyLabel('I')).rejects.toThrow("'Inbox' is a system mailbox.");
+    expect(server.calls).toEqual([]);
+  });
+
+  it('refuses to delete a mailbox the server has since given a role, before touching its mail', async () => {
+    server.mailboxes.get('W')!.role = 'junk';
+    server.calls = [];
+    await expect(engine.destroyLabel('W')).rejects.toThrow("'Work' is a system mailbox.");
+    expect(server.calls).not.toContain('Email/set');
+    expect(server.emails.get('x1')?.mailboxIds).toEqual({ W: true });
+  });
+
   it('drops a label destroyed by another client, with its live query', async () => {
     const key = engine.openQuery(workSpec);
     await engine.ensureRange(key, 0, 10);
