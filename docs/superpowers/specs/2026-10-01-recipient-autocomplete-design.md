@@ -19,8 +19,8 @@ Typing or pasting a full address keeps working exactly as it does today.
 | Sent scan | One request per session, after the inbox has loaded: the newest 500 messages of the Sent mailbox, properties `to`, `cc`, `bcc`, `receivedAt` | 500 small records are cheap, and recent correspondents are the ones worth suggesting. |
 | Senders | Taken from every email the engine merges, through a callback | These emails are already synced, so this costs no request. |
 | Ranking | People Alice has written to come first; then the most recent contact; then the most frequent | "Sent to" is the strongest signal that an address is wanted again. The order is deterministic, so it can be tested. |
-| Component | `@rozie-ui/combobox-solid` in `multiple` + `creatable` mode, replacing `@rozie-ui/tags-solid` in the recipient fields, **if** the checks in "Component check" pass | Dogfooding: Combobox already has the popup, keyboard navigation and chips. Tags has no suggestion support and no way to clear its typed text from outside. |
-| Fallback component | Keep Tags and add our own `role="listbox"` popup, positioned with `@floating-ui/dom` | Certain to work. Used only if Combobox fails a check that its public API cannot work around. |
+| Component | `@rozie-ui/combobox-solid` in `multiple` mode with `disableFilter`, replacing `@rozie-ui/tags-solid` in the recipient fields | Dogfooding: Combobox already has the popup, keyboard navigation and chips. Tags has no suggestion support and no way to clear its typed text from outside. See "Component check". |
+| Fallback component | Keep Tags and add our own `role="listbox"` popup, positioned with `@floating-ui/dom` | The retreat if building the field shows a blocker that reading the Combobox source missed. Switching to it is a decision for the user, not the implementer. |
 | rozie gaps | Logged in `docs/rozie-feedback.md`, whichever component wins | Project rule. |
 
 ## Architecture
@@ -81,11 +81,11 @@ Sorted by, in order: `sent > 0` before `sent === 0`; newer `last` first; higher 
 
 ## The store (`src/app/recipients.ts`)
 
-`createRecipients(engine, username)` returns `{ suggest(query, exclude), recordSent(emailId, addresses), start() }`.
+`createRecipients(engine)` returns `{ suggest(query, exclude), recordSent(emailId, addresses), start(username), scanSent() }`. It is created right after the engine, before the warm-start snapshot is applied, so it sees every email.
 
-1. **Warm start.** `start()` loads `recipients:<username>` from IndexedDB into memory. The stored value holds the index and the set of counted email ids.
-2. **Senders.** The engine calls `onEmails(emails)` whenever it merges emails. For each email with a `from` and a `receivedAt` that has not been counted, and that is not a draft and not from one of Alice's own addresses, the store adds `from` as `received`.
-3. **Sent scan.** After `engine.start()` resolves, the store calls `engine.sentRecipients(500)` once. For each returned email not yet counted, it adds `to`, `cc` and `bcc` as `sent`. If there is no Sent mailbox, the scan is skipped.
+1. **Warm start.** `start(username)` loads `recipients:<username>` from IndexedDB into memory. The stored value holds the index and the set of counted email ids. Emails reported before `start()` has finished are held back and counted afterwards, so the loaded ids stop them being counted twice. A stored value of the wrong shape is ignored.
+2. **Senders.** The engine calls `onEmails(emails)` whenever it merges emails or applies a snapshot. For each email with a `from` and a `receivedAt` that has not been counted, and that is not a draft and not from one of Alice's own addresses, the store adds `from` as `received`.
+3. **Sent scan.** After `engine.start()` resolves, `index.tsx` calls `scanSent()` once, which calls `engine.sentRecipients(500)`. For each returned email not yet counted, it adds `to`, `cc` and `bcc` as `sent`. If there is no Sent mailbox, the scan is skipped.
 4. **Sending.** `composer.send()` calls `recordSent()` with the sent email's id and its To, Cc and Bcc addresses when the send succeeds. The id is marked as counted, so the next Sent scan doesn't count it again.
 5. **Saving.** Changes are written back to IndexedDB at most once every 5 seconds. Before saving, the index is cut to the 2,000 best-ranked entries and the counted-id set to the 5,000 most recently added ids, so neither grows without bound.
 6. **Sign-out.** `clearCache()` deletes the stored value.
@@ -96,8 +96,8 @@ Sorted by, in order: `sent > 0` before `sent === 0`; newer `last` first; higher 
 
 Suggestions are a convenience and never block writing mail.
 
-- A failed scan or a failed cache read or write is swallowed. The field then suggests from whatever the index holds, possibly nothing.
-- An auth failure in the scan goes through the app's existing `onAuthError` path, like the calendar load does.
+- A failed cache read or write is swallowed.
+- `scanSent()` rejects when the scan fails and leaves the store usable. `index.tsx` passes the error to the app's existing `onAuthError`, like the calendar load does, and otherwise drops it. The field then suggests from whatever the index holds, possibly nothing.
 
 ## The recipient field (`src/ui/ComposerView.tsx`)
 
@@ -107,8 +107,9 @@ Behaviour, the same for To, Cc and Bcc:
 |---|---|
 | Typing text that matches | A list of up to 6 suggestions opens under the field. Each row shows the name, then the address; a row with no name shows the address only. The first row is highlighted. |
 | ArrowDown / ArrowUp | Moves the highlight. |
-| Enter or Tab, list open, typed text is **not** a complete address | Adds the highlighted suggestion and clears the typed text. |
-| Enter or Tab, typed text **is** a complete address | Adds the typed address, as today. |
+| Enter or Tab, list showing | Adds the highlighted suggestion and clears the typed text. |
+| Enter, no list | Adds the typed text if it is a complete address, as today. |
+| The field loses focus (Tab with no list, or a click elsewhere) | Adds the typed text if it is a complete address, as today. |
 | `,` or `;` | Adds the typed text if it is a complete address, as today. Never picks a suggestion. |
 | Click on a row | Adds that suggestion and keeps focus in the field. |
 | Escape, list open | Closes the list and leaves the composer open. A second Escape closes a floating composer, as today. |
@@ -116,19 +117,26 @@ Behaviour, the same for To, Cc and Bcc:
 | Backspace in an empty field | Removes the last recipient, as today. |
 | Typing text that matches nothing | No list. |
 
+Enter and Tab prefer the list over the typed text because the address parser accepts `bob@ex` as complete; a rule that preferred "complete" typed text would add that instead of the highlighted Bob. A full address of someone unknown matches nothing, so no list shows and the typed text is added.
+
 The draft model does not change: each field still holds `EmailAddress[]`. A picked suggestion becomes `{ name: name || null, email }`.
 
-Accessibility: the input is a `combobox` with `aria-expanded`, `aria-controls` and `aria-activedescendant`; the list is a `listbox` of `option`s. The accessible names stay "To", "Cc" and "Bcc", so the existing tests and screen-reader announcements keep working.
+Accessibility: the input is a `combobox` with `aria-expanded`, `aria-controls` and `aria-activedescendant`; the list is a `listbox` of `option`s. The accessible names stay "To", "Cc" and "Bcc".
 
 ### Component check
 
-The first task of the plan checks Combobox (`multiple`, `creatable`, `disableFilter`, the `search` and `create` events, the `chip` and `option` slots) against the table above. Three behaviours are not documented and decide the choice:
+Done on 2026-10-01 by reading the Combobox 0.6.0 source while writing the plan. The field is built on Combobox (`multiple`, `disableFilter`; `creatable` is not needed).
 
-1. `,` and `;` commit the typed text;
-2. pasting several addresses adds them all;
-3. Backspace in an empty input removes the last chip.
+| Behaviour | Combobox 0.6.0 | What the field does |
+|---|---|---|
+| Backspace in an empty input removes the last chip | Built in | Nothing. |
+| `,` and `;` commit the typed text | Not supported | Handles the keys on a wrapper element and clears the input with the `seedQuery('')` handle method. |
+| Pasting several addresses adds them all | Not supported | Handles `paste` on the wrapper. |
+| Tab picks the highlighted option | Not supported, and the active option is not exposed | Reads the input's `aria-activedescendant`. |
+| No list when nothing matches | The list opens on focus and shows "No results" | Hides a list that has no options with CSS. `aria-expanded` stays `true` while the field has focus. |
+| Escape with no list showing | Always consumed while the field has focus | The field tells the composer whether a list was really showing. |
 
-If each one works, or can be added from outside through documented props, events, slots or the handle, the field is built on Combobox. If any one cannot, the field keeps Tags and gets its own popup. Either way the result of each check is written to `docs/rozie-feedback.md`, and the unused package is removed from `package.json` only if nothing else imports it.
+Each row that needs a workaround is written to `docs/rozie-feedback.md`. `@rozie-ui/tags-solid` is removed from `package.json`, since nothing else imports it.
 
 ## Testing
 
@@ -143,7 +151,10 @@ If each one works, or can be added from outside through documented props, events
 - Typing "bo" in To lists Bob (the seed has mail from Alice to Bob); Enter adds him as a recipient; the message sends and reaches Bob.
 - ArrowDown then Enter picks the second suggestion.
 - A suggestion already in To is not offered in Cc.
-- The six existing composer tests pass unchanged. They enter addresses as free text, so they guard that path.
+- Tab picks the highlighted suggestion; Escape closes the list and a second Escape closes the composer.
+- A recipient of a message sent in this session is suggested straight away (a plus-address of Bob, which Stalwart delivers to Bob).
+- Free text still works: `,` commits, pasting two addresses adds both, Backspace removes the last.
+- The six existing composer tests pass unchanged. They enter addresses as free text, so they guard that path. Only the locators in `e2e/support/compose.ts` change: the input's role becomes `combobox` and the chips get Combobox's class.
 
 ## Out of scope
 
