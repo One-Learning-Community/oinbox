@@ -41,9 +41,6 @@ importers:
       '@rozie-ui/popover-solid':
         specifier: ^0.2.4
         version: 0.2.4(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
-      '@rozie-ui/tags-solid':
-        specifier: ^0.1.11
-        version: 0.1.11(solid-js@1.9.15)
       '@rozie-ui/tiptap-solid':
         specifier: ^0.5.0
         version: 0.5.0(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)
@@ -466,11 +463,6 @@ packages:
     resolution: {integrity: sha512-pso2zh7AH2JliweqpUSAg97WIG0/8vl6+GA+vVJwvhbNSzEmD7iBYULvbbpxbMml6o8BTi3m/ZvGS202dE0PeQ==}
     peerDependencies:
       '@floating-ui/dom': ^1.7.2
-      solid-js: ^1.8
-
-  '@rozie-ui/tags-solid@0.1.11':
-    resolution: {integrity: sha512-xp/4B66/Q0XOs6cGiuZRx4G2mg8bC0H/0OkTvb0gw3Bgl28Qf1NzbrozNNb8RoID7jmGqCBO0WILp7F7E8RUxQ==}
-    peerDependencies:
       solid-js: ^1.8
 
   '@rozie-ui/tiptap-solid@0.5.0':
@@ -1771,12 +1763,6 @@ snapshots:
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@rozie/runtime-solid': 0.7.5(solid-js@1.9.15)
-      solid-js: 1.9.15
-
-  '@rozie-ui/tags-solid@0.1.11(solid-js@1.9.15)':
-    dependencies:
-      '@rozie/runtime-solid': 0.7.5(solid-js@1.9.15)
-      '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
       solid-js: 1.9.15
 
   '@rozie-ui/tiptap-solid@0.5.0(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)':

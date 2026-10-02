@@ -8,9 +8,11 @@ export const UNDO_SEND_MS = 10_000;
 export const floatingComposer = (page: Page) => page.locator('.compose-dock .composer');
 export const inlineComposer = (page: Page) => page.locator('.conv .composer.inline');
 
-export const recipientInput = (c: Locator, field: 'To' | 'Cc' | 'Bcc' = 'To') => c.getByRole('textbox', { name: field, exact: true });
+export const recipientInput = (c: Locator, field: 'To' | 'Cc' | 'Bcc' = 'To') => c.getByRole('combobox', { name: field, exact: true });
 export const recipientChips = (c: Locator, field: 'To' | 'Cc' | 'Bcc' = 'To') =>
-  c.getByRole('group', { name: field, exact: true }).locator('.rozie-tags-chip');
+  c.getByRole('group', { name: field, exact: true }).locator('.rozie-combobox-chip');
+/** The visible suggestion rows (only the field being typed in shows a list). */
+export const suggestions = (c: Locator) => c.getByRole('option');
 export const subjectInput = (c: Locator) => c.getByLabel('Subject');
 export const bodyEditor = (c: Locator) => c.locator('[contenteditable="true"]');
 export const saveStatus = (c: Locator) => c.locator('.compose-status');

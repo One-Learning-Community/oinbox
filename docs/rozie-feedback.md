@@ -124,3 +124,45 @@ Found while wiring the calendar page; none blocked us, all cost a workaround or 
    (`Event (no id)` without one). For server-backed data that id is internal (Stalwart ids look like
    `h1jfdmaaaaap`). oinbox always sends a title (`(No title)`), so we don't hit it. Suggest an empty
    title or a `untitledLabel` prop.
+
+## Tags 0.1.11 — dropped from the recipient fields: no suggestions, no way to clear the draft
+Wanted: To/Cc/Bcc that suggest people as you type. Tags has no suggestion list, no event for its
+typed text, and no handle method to commit or clear that text after a suggestion is picked, so a
+host can't add one beside it. oinbox moved the recipient fields to Combobox (below) and removed the
+package. Suggest a `draft`/`input` event and `commit()`/`clearDraft()` on the handle, or an
+`options` prop.
+
+## Combobox 0.6.0 — adopted for recipient fields (`multiple` + `disableFilter`); eight gaps for a token input
+Wanted: a Gmail-style recipient field: chips, a suggestion list fed by the host, free text for
+addresses nobody has suggested. Chips, the list, arrow keys, Enter and Backspace-to-remove work
+out of the box. Everything below is added from outside in `src/ui/RecipientField.tsx`.
+1. **No commit keys.** `,` and `;` should commit the typed text. We handle `keydown` on a wrapper
+   and clear the input with `seedQuery('')`. Suggest `commitKeys` (Tags has `delimiters`).
+2. **No paste-to-add.** Pasting `a@x, b@y` should add both. We handle `paste` on the wrapper.
+   Tags has this.
+3. **Tab doesn't pick, and the active option isn't exposed.** We read the input's
+   `aria-activedescendant` and map the index back to our options. Suggest Tab-to-select as an
+   option, or the active option on the handle or in an event.
+4. **The list opens on focus and can't stay closed when there is nothing to show.** With
+   `disableFilter` and no options it renders "No results". We hide a list that has no options with
+   CSS (`:not(:has(.rozie-combobox-option))`), which leaves `aria-expanded="true"` on the input
+   while nothing is shown. Suggest `openOnFocus={false}` and not opening while `options` is empty
+   and there is no `empty` slot content.
+5. **Escape is consumed whenever the input has focus**, because the popup counts as open even when
+   it shows nothing, so a host can't tell "closed the list" from "nothing to close". We track it
+   ourselves so the first Escape closes the list and the second closes the composer. Follows from 4.
+6. **Free text needs `creatable`'s "Create …" row or host code.** A recipient field wants "commit
+   what I typed if it validates" without a row in the list. We do it in the host; Tags' `validate`
+   is the shape we'd want here.
+7. **It can't fill its container.** `.rozie-combobox` is `inline-block` and the input's width is the
+   `--rozie-combobox-width` token (16rem), which the source notes must not be a percentage because
+   the popover anchor is shrink-to-fit. So `--rozie-combobox-width: 100%` collapses the input to its
+   intrinsic size, and the list (`matchWidth`) with it. Suggest a block/fill mode.
+8. **Chips sit on their own row above the input** (`ul.rozie-combobox-chips` is a block sibling of
+   the input), where a token input flows chips and input on one wrapping row, as Tags does.
+   For 7 and 8 we re-lay out the internals from `styles.css` through class names
+   (`.rozie-popover-anchor` as a wrapping flex row, `.rozie-combobox-chips` as `display: contents`,
+   the input as `flex: 1`), with extra specificity to beat the scoped styles. It works, but it
+   depends on internal markup and will break if those classes change.
+Also: `on*` props are `(...args: unknown[]) => void` and slot contexts are loosely typed, the same
+finding as FullCalendar and DataTable.

@@ -8,7 +8,7 @@ Frontend only: a static SolidJS app served on the same origin as Stalwart.
 - **Thread list**: one row per conversation, virtualized and paged from the server, kept live over push.
 - **Search**: Gmail operators (`from: to: cc: bcc: subject: has:attachment is: in: label: before: after:
   older_than: newer_than: larger: smaller:`, `-`, `OR`, `{…}`, `(…)`) → JMAP filters, with highlighted snippets.
-- **Compose**: inline reply / reply-all / forward, identities, draft autosave, attachments, 10 s undo send.
+- **Compose**: inline reply / reply-all / forward, recipient suggestions from your mail history, identities, draft autosave, attachments, 10 s undo send.
 - **Triage**: archive, delete, spam, read/unread, star, move, label; optimistic with rollback and Undo.
 - **Keyboard**: Gmail defaults (`j k o u x e # ! s I U v l c r a f / g+i ?`).
 - **Safety**: sanitized HTML in a script-less sandboxed iframe with its own CSP; remote images blocked
@@ -45,7 +45,7 @@ pnpm e2e         # Playwright against the Docker Compose stack
 | `src/mail/` | Pure mail logic: search parser, sanitizer, quote folding, compose, participants |
 | `src/cache/` | IndexedDB warm-start snapshot |
 | `src/auth/` | OAuth 2 authorization code + PKCE (public client) |
-| `src/ui/` | Solid components (rozie.js: Toast, CommandPalette, TipTap, Tags) |
+| `src/ui/` | Solid components (rozie.js: Toast, CommandPalette, TipTap, Combobox, Dialog, FullCalendar, Popover) |
 | `docs/` | Design spec and rozie.js dogfooding feedback |
 
 ## Stalwart notes

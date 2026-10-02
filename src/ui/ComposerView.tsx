@@ -1,33 +1,11 @@
-import { Tags } from '@rozie-ui/tags-solid';
 import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
 import { createSignal, For, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
-import type { EmailAddress } from '../jmap/types';
-import { formatAddress, parseAddressList } from '../mail/compose';
+import { formatAddress } from '../mail/compose';
 import { fileSize } from '../mail/format';
 import { Icon } from './icons';
-
-function RecipientField(props: { label: string; value: EmailAddress[]; onChange: (v: EmailAddress[]) => void; autofocus?: boolean }) {
-  // Tags holds formatted strings; the draft holds parsed addresses.
-  const validate = (candidate: string) => {
-    const parsed = parseAddressList(candidate);
-    return parsed.length === 1 ? formatAddress(parsed[0]!) : false;
-  };
-  return (
-    <div class="compose-field">
-      <span class="compose-label">{props.label}</span>
-      <Tags
-        modelValue={props.value.map(formatAddress)}
-        onModelValueChange={(tags: string[]) => props.onChange(tags.flatMap((t) => parseAddressList(t)))}
-        delimiters={[',', ';', 'Enter', 'Tab']}
-        validate={validate}
-        ariaLabel={props.label}
-        placeholder=""
-      />
-    </div>
-  );
-}
+import { closedSuggestions, RecipientField } from './RecipientField';
 
 export function ComposerView(props: { composer: Composer; inline: boolean }) {
   const { composers } = useApp();
@@ -57,7 +35,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault();
           void composers.send(c);
-        } else if (e.key === 'Escape' && !props.inline) {
+        } else if (e.key === 'Escape' && !props.inline && !closedSuggestions(e)) {
           void composers.close(c);
         }
         e.stopPropagation(); // keep Gmail shortcuts out of the composer
@@ -95,7 +73,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
         </div>
       </Show>
 
-      <RecipientField label="To" value={d().to} onChange={(to) => c.update({ to })} />
+      <RecipientField id={`rcpt-${c.id}-to`} label="To" value={d().to} others={[...d().cc, ...d().bcc]} onChange={(to) => c.update({ to })} />
       <Show
         when={showCc()}
         fallback={
@@ -104,8 +82,8 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
           </button>
         }
       >
-        <RecipientField label="Cc" value={d().cc} onChange={(cc) => c.update({ cc })} />
-        <RecipientField label="Bcc" value={d().bcc} onChange={(bcc) => c.update({ bcc })} />
+        <RecipientField id={`rcpt-${c.id}-cc`} label="Cc" value={d().cc} others={[...d().to, ...d().bcc]} onChange={(cc) => c.update({ cc })} />
+        <RecipientField id={`rcpt-${c.id}-bcc`} label="Bcc" value={d().bcc} others={[...d().to, ...d().cc]} onChange={(bcc) => c.update({ bcc })} />
       </Show>
       <Show when={c.mode === 'new' || c.mode === 'forward'}>
         <div class="compose-field">

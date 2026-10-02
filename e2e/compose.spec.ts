@@ -11,9 +11,11 @@ import {
   floatingComposer,
   inlineComposer,
   recipientChips,
+  recipientInput,
   saveStatus,
   sendAndWait,
   subjectInput,
+  suggestions,
   toast,
   typeBody,
   UNDO_SEND_MS,
@@ -179,4 +181,125 @@ test('c opens the composer, shortcut keys typed into it stay text, Ctrl+Enter se
   // Undo rather than wait out the window; delivery is covered above.
   await sending.getByRole('button', { name: 'Undo' }).click();
   await expect(floatingComposer(page)).toBeVisible();
+});
+
+/** A floating composer with only the subject filled in. */
+async function openComposer(page: import('@playwright/test').Page, subject: string) {
+  await openInbox(page);
+  await page.getByRole('button', { name: 'Compose' }).click();
+  const c = floatingComposer(page);
+  await expect(c).toBeVisible();
+  await subjectInput(c).fill(subject);
+  return c;
+}
+
+test('typing part of a name suggests a correspondent; Enter adds them and the message arrives', async ({ page }) => {
+  const subject = newSubject();
+  const c = await openComposer(page, subject);
+  const to = recipientInput(c);
+  await to.pressSequentially('bo');
+  const bob = suggestions(c).filter({ hasText: BOB });
+  await expect(bob).toBeVisible();
+  await expect(bob).toContainText('Bob Example');
+  // Alice has written to Bob, so he outranks "CI Bot", who has only written to her.
+  await expect(suggestions(c).first()).toContainText(BOB);
+
+  await to.press('Enter');
+  await expect(recipientChips(c)).toHaveCount(1);
+  await expect(recipientChips(c)).toContainText(`Bob Example <${BOB}>`);
+  await expect(to).toHaveValue('');
+  await expect(suggestions(c)).toHaveCount(0);
+
+  await typeBody(c, 'Picked from the list.');
+  await sendAndWait(page, c);
+  const received = await deliveredCopy(subject, BOB, await mailboxByRole('inbox', BOB));
+  expect((await emailDetails(received.id, BOB)).to).toEqual([{ name: 'Bob Example', email: BOB }]);
+});
+
+test('people alice has written to rank first; ArrowDown and Enter pick the second; a chosen person is not offered again', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  const to = recipientInput(c);
+  await to.pressSequentially('partner');
+  // The seed has five people at partner.test; alice has written to Carol and Dave only.
+  await expect(suggestions(c)).toHaveCount(5);
+  const listed = () => suggestions(c).locator('.rcpt-option').evaluateAll((els) => els.map((el) => el.getAttribute('data-email')!));
+  // Poll: senders are known as soon as the inbox has loaded, the Sent scan lands a moment later.
+  await expect.poll(async () => (await listed()).slice(0, 2).sort()).toEqual(['carol@partner.test', 'dave@partner.test']);
+  const order = await listed();
+  expect(order.slice(2).sort()).toEqual(['frank@partner.test', 'grace@partner.test', 'heidi@partner.test']);
+
+  await to.press('ArrowDown');
+  await to.press('Enter');
+  await expect(recipientChips(c)).toHaveCount(1);
+  await expect(recipientChips(c)).toContainText(order[1]!);
+
+  await c.getByRole('button', { name: 'Cc/Bcc' }).click();
+  const cc = recipientInput(c, 'Cc');
+  await cc.pressSequentially('partner');
+  await expect(suggestions(c)).toHaveCount(4);
+  expect(await listed()).not.toContain(order[1]);
+});
+
+test('Tab picks the highlighted suggestion; Escape closes the list first and the composer second', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  const to = recipientInput(c);
+  await to.pressSequentially('bo');
+  await expect(suggestions(c).filter({ hasText: BOB })).toBeVisible();
+  await to.press('Tab');
+  await expect(recipientChips(c)).toContainText(BOB);
+  await expect(to).toBeFocused();
+  await expect(to).toHaveValue('');
+
+  await to.pressSequentially('car');
+  await expect(suggestions(c).filter({ hasText: 'carol@partner.test' })).toBeVisible();
+  await to.press('Escape');
+  await expect(suggestions(c)).toHaveCount(0);
+  await expect(c).toBeVisible();
+  await expect(to).toHaveValue('car');
+
+  await to.press('Escape');
+  await expect(c).toHaveCount(0);
+});
+
+test('someone alice just wrote to is suggested straight away', async ({ page }) => {
+  // Stalwart delivers bob+anything@ to Bob, so this is a brand-new address that still arrives.
+  const tag = uniqueTag('plus').replace(/[^a-z0-9]/g, '');
+  const address = `bob+${tag}@example.test`;
+  const first = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: address, subject: first, body: 'First contact.' });
+  await sendAndWait(page, c);
+  await deliveredCopy(first, BOB, await mailboxByRole('inbox', BOB));
+
+  // The Sent scan ran once at page load, before this send: only recording the send can know the address.
+  const again = await openComposer(page, newSubject());
+  await recipientInput(again).pressSequentially(tag);
+  await expect(suggestions(again)).toHaveCount(1);
+  await expect(suggestions(again)).toContainText(address);
+});
+
+test('free text still works: a comma commits, a pasted list adds everyone, Backspace removes the last, leaving the field commits', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  const to = recipientInput(c);
+  await to.pressSequentially('zed@nowhere.test,');
+  await expect(recipientChips(c)).toHaveCount(1);
+  await expect(recipientChips(c)).toContainText('zed@nowhere.test');
+  await expect(to).toHaveValue('');
+
+  await to.evaluate((el, text) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', text);
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, 'Ann Lee <ann@nowhere.test>; "Roe, Sam" <sam@nowhere.test>');
+  await expect(recipientChips(c)).toHaveCount(3);
+  // A name with a comma stays one person.
+  await expect(recipientChips(c).nth(2)).toContainText('Roe, Sam <sam@nowhere.test>');
+
+  await to.press('Backspace');
+  await expect(recipientChips(c)).toHaveCount(2);
+
+  await to.pressSequentially('yan@nowhere.test');
+  await subjectInput(c).click();
+  await expect(recipientChips(c)).toHaveCount(3);
+  await expect(recipientChips(c).nth(2)).toContainText('yan@nowhere.test');
 });
