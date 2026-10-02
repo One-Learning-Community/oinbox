@@ -4,12 +4,25 @@ import { Dialog } from '@rozie-ui/dialog-solid';
 import { useLocation } from '@solidjs/router';
 import { createMemo, createSignal, For } from 'solid-js';
 import { useApp } from '../app/context';
+import type { Id } from '../jmap/types';
 import { labelPath, resolveView } from '../sync/selectors';
 import { SHORTCUTS } from './keyboard';
+import { pickerScore } from './picker';
+
+/** The id of the picker row that creates the typed label. */
+const CREATE = '\u0000create';
+
+interface PickerItem {
+  id: string;
+  label: string;
+  group: string;
+  /** For the Create row: the path to create. */
+  create?: string;
+}
 
 /** "Move to" (v) and "Label" (l) pickers, Gmail-style type-to-filter lists. */
 export function MailboxPicker() {
-  const { engine, nav, actions } = useApp();
+  const { engine, nav, actions, labels, toast } = useApp();
   const location = useLocation();
   const [query, setQuery] = createSignal('');
 
@@ -18,11 +31,11 @@ export function MailboxPicker() {
     return m ? resolveView(decodeURIComponent(m[1]!), engine.state.mailboxes) : null;
   };
 
-  const items = createMemo(() => {
+  const items = createMemo<PickerItem[]>(() => {
     const p = nav.picker();
     if (!p) return [];
     const exclude = new Set(['drafts', 'flagged', ...(p.kind === 'label' ? ['inbox', 'sent', 'trash', 'junk', 'archive'] : ['sent'])]);
-    return Object.values(engine.state.mailboxes)
+    const list: PickerItem[] = Object.values(engine.state.mailboxes)
       .filter((m) => !(m.role && exclude.has(m.role)) && m.id !== current()?.mailboxId)
       .map((m) => ({
         id: m.id,
@@ -30,6 +43,11 @@ export function MailboxPicker() {
         group: m.role ? 'System' : 'Labels',
       }))
       .sort((a, b) => (a.group === b.group ? a.label.localeCompare(b.label) : a.group === 'System' ? -1 : 1));
+    // Typed text that is a valid new label (so not an existing path) can be created on the spot.
+    const typed = query().trim();
+    const plan = typed ? labels.validate(typed) : null;
+    if (plan?.ok) list.push({ id: CREATE, label: `Create '${plan.path}'`, group: 'New', create: typed });
+    return list;
   });
 
   const close = () => {
@@ -47,16 +65,23 @@ export function MailboxPicker() {
       placeholder={nav.picker()?.kind === 'label' ? 'Label as…' : 'Move to…'}
       ariaLabel={nav.picker()?.kind === 'label' ? 'Label conversation' : 'Move conversation'}
       emptyText="No matching mailboxes"
+      score={(...args: unknown[]) => {
+        const [item, q] = args as [PickerItem, string];
+        return item.id === CREATE ? 0 : pickerScore(item.label, q);
+      }}
       onSelect={(...args: unknown[]) => {
-        const e = args[0] as { item: { id: string } };
+        const { item } = args[0] as { item: PickerItem };
         const p = nav.picker();
         const view = current();
-        if (p && view) {
-          if (p.kind === 'label') actions.addLabel(p.threadIds, e.item.id);
-          else actions.moveTo(p.threadIds, view, e.item.id);
-          nav.clearSelection();
-        }
         close();
+        if (!p || !view) return;
+        const apply = (id: Id) => {
+          if (p.kind === 'label') actions.addLabel(p.threadIds, id);
+          else actions.moveTo(p.threadIds, view, id);
+          nav.clearSelection();
+        };
+        if (item.create === undefined) apply(item.id);
+        else labels.create(item.create, { quiet: true }).then(apply, (e) => toast(`Couldn't create the label: ${(e as Error).message}`, 'error'));
       }}
     />
   );

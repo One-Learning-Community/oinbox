@@ -172,3 +172,40 @@ test('a label deleted by another client while it is being viewed sends the view 
   await expect(page).toHaveURL(/\/inbox$/);
   await expect(rows(page).first()).toBeVisible();
 });
+
+test('the Label picker creates a missing label and applies it', async ({ page }) => {
+  const tag = uniqueTag();
+  const mail = await deliverToAlice({ from: 'Picker <picker@partner.test>', subject: `Label test ${tag} picker`, text: 'label me' });
+  created.push(mail.id);
+  await page.goto(`/inbox/t/${mail.threadId}`);
+  await expect(page.locator('article.msg').first()).toBeVisible();
+
+  await page.keyboard.press('l');
+  await page.getByPlaceholder('Label as…').fill(tag);
+  await expect(page.getByRole('option', { name: `Create '${tag}'` })).toBeVisible();
+  await page.keyboard.press('Enter');
+
+  await expect(page.locator('.conv-head .chip', { hasText: tag })).toBeVisible();
+  await expect(toast(page, 'Labeled')).toBeVisible();
+  await expect(toast(page, 'Created')).toHaveCount(0);
+  await expect(labelRow(page, tag)).toBeVisible();
+  const label = await labelByPath(tag);
+  expect(label).toBeDefined();
+  await expect.poll(async () => (await threadEmails(mail.threadId))[0]?.mailboxIds[label!.id] ?? false).toBe(true);
+});
+
+test('the pickers offer no Create row for an existing label or a system mailbox', async ({ page }) => {
+  const tag = uniqueTag();
+  await createLabel(tag);
+  const mail = await deliverToAlice({ from: 'Picker <picker@partner.test>', subject: `Label test ${tag} nocreate`, text: 'x' });
+  created.push(mail.id);
+  await page.goto(`/inbox/t/${mail.threadId}`);
+  await expect(page.locator('article.msg').first()).toBeVisible();
+
+  await page.keyboard.press('l');
+  await page.getByPlaceholder('Label as…').fill(tag.toUpperCase());
+  await expect(page.getByRole('option', { name: tag, exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: /^Create / })).toHaveCount(0);
+  await page.getByPlaceholder('Label as…').fill('Inbox');
+  await expect(page.getByRole('option', { name: /^Create / })).toHaveCount(0);
+});
