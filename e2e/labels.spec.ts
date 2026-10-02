@@ -209,3 +209,39 @@ test('the pickers offer no Create row for an existing label or a system mailbox'
   await page.getByPlaceholder('Label as…').fill('Inbox');
   await expect(page.getByRole('option', { name: /^Create / })).toHaveCount(0);
 });
+
+test('the "×" on a conversation chip removes the label, and Undo restores it', async ({ page }) => {
+  const tag = uniqueTag();
+  const id = await createLabel(tag);
+  const mail = await deliverToAlice({ from: 'Chip <chip@partner.test>', subject: `Label test ${tag} chip`, text: 'unlabel me' });
+  created.push(mail.id);
+  await updateEmails({ [mail.id]: { [`mailboxIds/${id}`]: true } });
+  const inLabel = async () => (await threadEmails(mail.threadId))[0]?.mailboxIds[id] ?? false;
+
+  await page.goto(`/inbox/t/${mail.threadId}`);
+  const chip = page.locator('.conv-head .chip', { hasText: tag });
+  await expect(chip).toBeVisible();
+  await expect(page.locator('.conv-head .chip', { hasText: 'Inbox' }).getByRole('button')).toHaveCount(0);
+
+  await page.getByRole('button', { name: `Remove label ${tag}` }).click();
+  await expect(chip).toHaveCount(0);
+  await expect(toast(page, `Removed '${tag}'.`)).toBeVisible();
+  await expect.poll(inLabel).toBe(false);
+
+  await toast(page, `Removed '${tag}'.`).getByRole('button', { name: 'Undo' }).click();
+  await expect(chip).toBeVisible();
+  await expect.poll(inLabel).toBe(true);
+});
+
+test('removing the label being viewed closes the conversation back to the label\'s list', async ({ page }) => {
+  const tag = uniqueTag();
+  const id = await createLabel(tag);
+  const mail = await deliverToAlice({ from: 'Chip <chip@partner.test>', subject: `Label test ${tag} viewed`, text: 'unlabel me here' });
+  created.push(mail.id);
+  await updateEmails({ [mail.id]: { [`mailboxIds/${id}`]: true } });
+
+  await page.goto(`/label/${id}/t/${mail.threadId}`);
+  await page.getByRole('button', { name: `Remove label ${tag}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/label/${id}$`));
+  await expect(rows(page)).toHaveCount(0);
+});

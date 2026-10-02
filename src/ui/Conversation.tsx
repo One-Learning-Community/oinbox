@@ -1,11 +1,11 @@
 import { useNavigate } from '@solidjs/router';
 import { createEffect, createMemo, createResource, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack } from 'solid-js';
 import { useApp, type App } from '../app/context';
-import type { EmailAddress, EmailBodyPart, Id } from '../jmap/types';
+import type { EmailAddress, EmailBodyPart, Id, Mailbox } from '../jmap/types';
 import { avatarColor, fileSize, fullDate, listDate } from '../mail/format';
 import { displayName } from '../mail/participants';
 import type { EmailRec } from '../sync/engine';
-import { hiddenMailboxIds, isHidden, type View } from '../sync/selectors';
+import { hiddenMailboxIds, isHidden, isLabel, type View } from '../sync/selectors';
 import { Icon } from './icons';
 import { MessageBody } from './MessageBody';
 
@@ -126,9 +126,15 @@ export function Conversation(props: { view: View; threadId: Id }) {
     for (const e of messages()) for (const id of Object.keys(e.mailboxIds ?? {})) ids.add(id);
     return [...ids]
       .map((id) => engine.state.mailboxes[id])
-      .filter((m) => m && (!m.role || m.role === 'inbox'))
-      .map((m) => (m!.role === 'inbox' ? 'Inbox' : m!.name));
+      .filter((m): m is Mailbox => !!m && (!m.role || m.role === 'inbox'))
+      .map((m) => ({ id: m.id, name: m.role === 'inbox' ? 'Inbox' : m.name, removable: isLabel(m) }));
   });
+
+  const removeLabel = (id: Id) => {
+    void actions.removeLabel([props.threadId], id);
+    // Without the label the conversation no longer belongs to this view.
+    if (props.view.mailboxId === id) navigate(`/${props.view.slug}`);
+  };
 
   return (
     <section class="conv-pane" style={{ display: 'flex', 'flex-direction': 'column', flex: '1', 'min-height': '0' }}>
@@ -169,7 +175,18 @@ export function Conversation(props: { view: View; threadId: Id }) {
             <div class="conv-head">
               <h1>
                 {subject()}
-                <For each={labels()}>{(l) => <span class="chip">{l}</span>}</For>
+                <For each={labels()}>
+                  {(l) => (
+                    <span class="chip">
+                      {l.name}
+                      <Show when={l.removable}>
+                        <button type="button" class="chip-x" aria-label={`Remove label ${l.name}`} title="Remove label" onClick={() => removeLabel(l.id)}>
+                          ×
+                        </button>
+                      </Show>
+                    </span>
+                  )}
+                </For>
               </h1>
             </div>
             <For each={items()}>
