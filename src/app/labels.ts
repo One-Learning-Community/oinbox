@@ -1,3 +1,4 @@
+import { createSignal } from 'solid-js';
 import type { Id } from '../jmap/types';
 import { planLabel, type LabelLimits, type PlanResult } from '../mail/labels';
 import { LabelHasSubLabelsError, type MailEngine } from '../sync/engine';
@@ -5,10 +6,10 @@ import { labelPath, subLabelCount } from '../sync/selectors';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
 
-/** The confirm text for deleting a label. `orphans` is null when the count couldn't be fetched. */
-export function deleteMessage(totalEmails: number, totalThreads: number, orphans: number | null): string {
-  if (totalEmails === 0) return 'This label is empty.';
-  const kept = `Its ${totalThreads} conversation${totalThreads === 1 ? ' stays' : 's stay'} in your mail.`;
+/** The confirm text for deleting a label, counted in messages. `orphans` is null while the count isn't known. */
+export function deleteMessage(total: number, orphans: number | null): string {
+  if (total === 0) return 'This label is empty.';
+  const kept = `Its ${total} message${total === 1 ? ' stays' : 's stay'} in your mail.`;
   if (orphans === null) return `${kept} Any that are only in this label move to Archive.`;
   if (orphans === 0) return kept;
   return `${kept} ${orphans} that ${orphans === 1 ? 'is' : 'are'} only in this label move${orphans === 1 ? 's' : ''} to Archive.`;
@@ -36,6 +37,9 @@ export function createLabels(engine: MailEngine, toast: ToastFn, confirm: Confir
 
     /** Throws the validation or server message. */
     async rename(id: Id, path: string): Promise<void> {
+      const mb = engine.state.mailboxes[id];
+      if (!mb) throw new Error('That label no longer exists.');
+      if (mb.role) throw new Error(`'${mb.name}' is a system mailbox.`);
       const r = validate(path, id);
       if (!r.ok) throw new Error(r.error);
       if (r.noop) return;
@@ -48,15 +52,20 @@ export function createLabels(engine: MailEngine, toast: ToastFn, confirm: Confir
       const mb = engine.state.mailboxes[id];
       if (!mb || mb.role || subLabelCount(id, engine.state.mailboxes) > 0) return false;
       const path = labelPath(mb, engine.state.mailboxes);
-      // The count only improves the wording.
-      const orphans = await engine.countOrphans(id).catch(() => null);
+      const total = mb.totalEmails;
+      // The count only improves the wording: the dialog opens without it and fills it in.
+      const [orphans, setOrphans] = createSignal<number | null>(null);
+      let started = false;
+      void engine.countOrphans(id).then((n) => !started && setOrphans(n), () => undefined);
       try {
         const ok = await confirm({
           title: `Delete '${path}'?`,
-          message: deleteMessage(mb.totalEmails, mb.totalThreads, orphans),
+          message: () => deleteMessage(total, orphans()),
           confirmLabel: 'Delete',
           pendingLabel: 'Deleting…',
           run: async () => {
+            // From here the count would describe a label that is already being emptied.
+            started = true;
             // Before the store drops the mailbox, so its view knows why it disappeared.
             deleted.add(id);
             try {

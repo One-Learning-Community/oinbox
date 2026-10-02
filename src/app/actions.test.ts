@@ -49,4 +49,12 @@ describe('actions.removeLabel', () => {
     expect(archive).toBeDefined();
     expect(server.emails.get('w1')?.mailboxIds).toEqual({ [archive!.id]: true });
   });
+
+  it('does nothing for a system mailbox', async () => {
+    server.calls = [];
+    await actions.removeLabel(['t1'], 'I');
+    expect(server.calls).toEqual([]);
+    expect(server.emails.get('w2')?.mailboxIds).toEqual({ W: true, I: true });
+    expect(toast).not.toHaveBeenCalled();
+  });
 });

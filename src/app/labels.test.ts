@@ -9,20 +9,20 @@ import { createLabels, deleteMessage } from './labels';
 
 describe('deleteMessage', () => {
   it('says an empty label is empty', () => {
-    expect(deleteMessage(0, 0, 0)).toBe('This label is empty.');
+    expect(deleteMessage(0, 0)).toBe('This label is empty.');
   });
 
-  it('says how many conversations stay and how many move to Archive', () => {
-    expect(deleteMessage(14, 12, 5)).toBe('Its 12 conversations stay in your mail. 5 that are only in this label move to Archive.');
-    expect(deleteMessage(1, 1, 1)).toBe('Its 1 conversation stays in your mail. 1 that is only in this label moves to Archive.');
+  it('counts messages on both sides', () => {
+    expect(deleteMessage(14, 5)).toBe('Its 14 messages stay in your mail. 5 that are only in this label move to Archive.');
+    expect(deleteMessage(1, 1)).toBe('Its 1 message stays in your mail. 1 that is only in this label moves to Archive.');
   });
 
   it('leaves the Archive sentence out when nothing is only in the label', () => {
-    expect(deleteMessage(3, 3, 0)).toBe('Its 3 conversations stay in your mail.');
+    expect(deleteMessage(3, 0)).toBe('Its 3 messages stay in your mail.');
   });
 
-  it('stays general when the count is unknown', () => {
-    expect(deleteMessage(3, 3, null)).toBe('Its 3 conversations stay in your mail. Any that are only in this label move to Archive.');
+  it('stays general while the count is unknown', () => {
+    expect(deleteMessage(3, null)).toBe('Its 3 messages stay in your mail. Any that are only in this label move to Archive.');
   });
 });
 
@@ -33,6 +33,17 @@ describe('createLabels', () => {
   let asked: ConfirmOptions | null;
   let answer: boolean;
   let labels: ReturnType<typeof createLabels>;
+  const message = () => {
+    const m = asked!.message;
+    return typeof m === 'function' ? m() : m;
+  };
+  const general = 'Its 2 messages stay in your mail. Any that are only in this label move to Archive.';
+  const counted = 'Its 2 messages stay in your mail. 1 that is only in this label moves to Archive.';
+  const holdNextRequest = () => {
+    let release!: () => void;
+    server.holds.push(new Promise<void>((r) => (release = r)));
+    return release;
+  };
 
   beforeEach(async () => {
     server = new FakeJmap();
@@ -99,17 +110,41 @@ describe('createLabels', () => {
   });
 
   it('asks with the counts, deletes, and says so', async () => {
+    answer = false;
+    expect(await labels.remove('W')).toBe(false);
+    await vi.waitFor(() => expect(message()).toBe(counted));
+    answer = true;
     expect(await labels.remove('W')).toBe(true);
-    expect(asked).toMatchObject({
-      title: "Delete 'Work'?",
-      message: 'Its 2 conversations stay in your mail. 1 that is only in this label moves to Archive.',
-      confirmLabel: 'Delete',
-      pendingLabel: 'Deleting…',
-    });
+    expect(asked).toMatchObject({ title: "Delete 'Work'?", confirmLabel: 'Delete', pendingLabel: 'Deleting…' });
     expect(server.mailboxes.has('W')).toBe(false);
     expect(server.emails.get('w1')?.mailboxIds).toEqual({ A: true });
     expect(labels.deletedHere('W')).toBe(true);
     expect(toast).toHaveBeenCalledWith("Deleted 'Work'.", 'success');
+  });
+
+  it('opens the confirm without waiting for the count, then fills it in', async () => {
+    const release = holdNextRequest();
+    answer = false;
+    const done = labels.remove('W');
+    expect(message()).toBe(general);
+    release();
+    await done;
+    await vi.waitFor(() => expect(message()).toBe(counted));
+  });
+
+  it('stops filling in the count once the delete has started', async () => {
+    const release = holdNextRequest();
+    expect(await labels.remove('W')).toBe(true);
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(message()).toBe(general);
+  });
+
+  it('refuses to rename a system mailbox or a label that is gone, sending nothing', async () => {
+    server.calls = [];
+    await expect(labels.rename('I', 'Mine')).rejects.toThrow("'Inbox' is a system mailbox.");
+    await expect(labels.rename('gone', 'Mine')).rejects.toThrow('That label no longer exists.');
+    expect(server.calls).toEqual([]);
   });
 
   it('marks the label as deleted here before the store drops it', async () => {
@@ -126,7 +161,7 @@ describe('createLabels', () => {
       if (name === 'Email/query' && args.limit === 1) throw new Error('boom');
     };
     await labels.remove('W');
-    expect(asked?.message).toBe('Its 2 conversations stay in your mail. Any that are only in this label move to Archive.');
+    expect(message()).toBe(general);
     expect(server.mailboxes.has('W')).toBe(false);
   });
 

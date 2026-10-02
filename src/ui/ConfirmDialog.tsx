@@ -3,7 +3,8 @@ import { createSignal, Show, type JSX } from 'solid-js';
 
 export interface ConfirmOptions {
   title: string;
-  message: string;
+  /** A function is read reactively, so the text can change while the dialog is open. */
+  message: string | (() => string);
   confirmLabel?: string;
   /** Work to do on confirm. The dialog stays open, showing `pendingLabel`, until it settles. */
   run?: () => Promise<void>;
@@ -48,7 +49,7 @@ export function createConfirmDialog(): { confirm: ConfirmFn; Host: () => JSX.Ele
       {(p) => (
         <Dialog open onOpenChange={(open) => !open && finish(false)} ariaLabelledby="confirm-title">
           <h2 id="confirm-title">{p().opts.title}</h2>
-          <p>{p().opts.message}</p>
+          <p>{typeof p().opts.message === 'function' ? (p().opts.message as () => string)() : (p().opts.message as string)}</p>
           <div class="dialog-actions">
             <button disabled={busy()} onClick={() => finish(false)}>Cancel</button>
             <button class="danger" disabled={busy()} onClick={() => finish(true)} autofocus>

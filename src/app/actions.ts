@@ -2,7 +2,7 @@ import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { Id } from '../jmap/types';
 import type { EmailRec, MailEngine } from '../sync/engine';
 import { archivePatch, keywordPatch, movePatch, onlyIn, trashPatch, unlabelPatch, type EmailPatch } from '../sync/patch';
-import type { View } from '../sync/selectors';
+import { isLabel, type View } from '../sync/selectors';
 
 export interface ToastFn {
   /** `action.forMs`: how long the action stays on offer, when it is tied to a deadline (undo send). */
@@ -112,6 +112,8 @@ export function createActions(engine: MailEngine, toast: ToastFn, confirm: Confi
 
     /** Take a label off conversations. A message left in no mailbox goes to Archive. */
     async removeLabel(threadIds: Id[], label: Id) {
+      const mb = engine.state.mailboxes[label];
+      if (!mb || !isLabel(mb)) return;
       const emails = engine.threadEmails(threadIds);
       let archive = role('archive') ?? '';
       if (!archive && emails.some((e) => onlyIn(e, label))) {
@@ -122,8 +124,7 @@ export function createActions(engine: MailEngine, toast: ToastFn, confirm: Confi
           return;
         }
       }
-      const name = engine.state.mailboxes[label]?.name ?? 'label';
-      await moveWithUndo(emails, unlabelPatch(emails, label, archive), `Removed '${name}'.`);
+      await moveWithUndo(emails, unlabelPatch(emails, label, archive), `Removed '${mb.name}'.`);
     },
 
     markRead: (threadIds: Id[]) => keywords(threadIds, '$seen', true),
