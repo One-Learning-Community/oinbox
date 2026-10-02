@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
+import { createRecipients } from './app/recipients';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
@@ -54,6 +55,8 @@ async function boot() {
     onUnauthorized: () => auth.renew(),
   });
   const engine = new MailEngine(client);
+  // Before the warm-start snapshot is applied, so it sees every email.
+  const recipients = createRecipients(engine);
   const calendar = new CalendarStore(client, (m, t, a) => toasts.toast(m, t, a));
   const toasts = createToasts();
   const confirmDialog = createConfirmDialog();
@@ -61,6 +64,7 @@ async function boot() {
   const signOut = () => {
     const user = client.hasSession ? client.session.username : null;
     auth.signOut();
+    recipients.stop();
     void (user ? clearCache(user) : Promise.resolve()).finally(() => location.assign('/'));
   };
   const onAuthError = (e: unknown) => {
@@ -91,7 +95,8 @@ async function boot() {
     toast: toasts.toast,
     actions: createActions(engine, toasts.toast, confirmDialog.confirm),
     nav: createNav(),
-    composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm),
+    composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm, recipients.recordSent),
+    recipients,
     images: await createImagePrefs(),
     ...theme,
     signOut,
@@ -102,8 +107,11 @@ async function boot() {
     saveCachedSession(session);
     if (cachedSession && cachedSession.username !== session.username) location.reload();
     engine.onPersist = (snap) => void saveSnapshot(session.username, snap);
+    void recipients.start(session.username);
     await engine.start();
     void calendar.loadCalendars().catch((e) => onAuthError(e));
+    // Suggestions are a convenience: a failed scan is dropped unless it is an auth failure.
+    void recipients.scanSent().catch((e) => onAuthError(e));
     openPushStream(client, {
       onStateChange: (c) => {
         engine.onStateChange(c);

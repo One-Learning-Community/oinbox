@@ -1,6 +1,6 @@
 import { createSignal, type Accessor } from 'solid-js';
 import type { JmapClient } from '../jmap/client';
-import type { Id, Identity } from '../jmap/types';
+import type { EmailAddress, Id, Identity } from '../jmap/types';
 import { buildEmailCreate, initialDraft, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
 import type { EmailRec, MailEngine } from '../sync/engine';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
@@ -30,7 +30,14 @@ export interface Composer {
 }
 
 /** Open composers plus the delayed-send queue. */
-export function createComposers(engine: MailEngine, client: JmapClient, toast: ToastFn, confirm: ConfirmFn) {
+export function createComposers(
+  engine: MailEngine,
+  client: JmapClient,
+  toast: ToastFn,
+  confirm: ConfirmFn,
+  /** Called once a message has been submitted, with everyone it went to. */
+  onSent: (emailId: Id, recipients: EmailAddress[]) => void,
+) {
   const [list, setList] = createSignal<Composer[]>([]);
   let seq = 0;
   /** Sends waiting out the undo window, so we can warn before the tab closes. */
@@ -206,6 +213,7 @@ export function createComposers(engine: MailEngine, client: JmapClient, toast: T
       if (cancelled) return;
       try {
         await engine.sendDraft(draftId, identityId);
+        onSent(draftId, [...d.to, ...d.cc, ...d.bcc]);
         toast('Message sent.', 'success');
       } catch (e) {
         toast(`Sending failed: ${(e as Error).message}. The message is in Drafts.`, 'error');

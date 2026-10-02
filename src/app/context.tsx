@@ -1,6 +1,7 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
+import type { Recipients } from './recipients';
 import type { OAuth } from '../auth/oauth';
 import type { CalendarStore } from '../calendar/store';
 import { loadImageAllowList, saveImageAllowList } from '../cache/persist';
@@ -21,6 +22,7 @@ export interface App {
   actions: Actions;
   nav: Nav;
   composers: Composers;
+  recipients: Recipients;
   images: ImagePrefs;
   theme: Accessor<Theme>;
   setTheme: (t: Theme) => void;
