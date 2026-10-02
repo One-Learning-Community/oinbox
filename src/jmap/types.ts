@@ -10,7 +10,7 @@ export const CALENDARS = 'urn:ietf:params:jmap:calendars';
 
 export interface Session {
   capabilities: Record<string, unknown>;
-  accounts: Record<Id, { name: string; isPersonal: boolean; isReadOnly: boolean }>;
+  accounts: Record<Id, { name: string; isPersonal: boolean; isReadOnly: boolean; accountCapabilities?: Record<string, Record<string, unknown>> }>;
   primaryAccounts: Record<string, Id>;
   username: string;
   apiUrl: string;
