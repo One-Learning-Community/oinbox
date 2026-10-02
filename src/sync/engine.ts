@@ -3,6 +3,7 @@ import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
 import type { BatchResult, JmapClient } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
 import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, MailboxRole, SetError, StateChange, Thread } from '../jmap/types';
+import type { LabelPlan } from '../mail/labels';
 import { applyEmailPatch, type EmailPatch } from './patch';
 import { applyQueryChanges, missingPages, type Slots } from './window';
 
@@ -472,12 +473,52 @@ export class MailEngine {
       throw new Error(`Couldn't create the ${name} mailbox: ${err?.description ?? err?.type ?? 'unknown error'}`);
     }
     // The server returns only the properties it set; fill in the ones we sent.
-    const defaults: Mailbox = {
-      id: '', name, role, parentId: null, sortOrder: 0, totalEmails: 0, unreadEmails: 0, totalThreads: 0, unreadThreads: 0, isSubscribed: true,
-    };
-    const mb: Mailbox = Object.assign(defaults, created);
+    const mb: Mailbox = { ...blankMailbox(name, null, role), ...created };
     this.mergeMailboxes([mb]);
     return mb.id;
+  }
+
+  /** Create a label and its missing ancestors. Returns the label's id. */
+  async createLabel(plan: LabelPlan): Promise<Id> {
+    const ids = await this.createMailboxChain(plan.parentId, [...plan.ancestors, plan.name]);
+    return ids[ids.length - 1]!;
+  }
+
+  /** Rename a label and/or move it under another parent. */
+  async updateLabel(id: Id, plan: LabelPlan): Promise<void> {
+    // Stalwart refuses a creation reference inside an update, so missing ancestors go first.
+    const made = plan.ancestors.length ? await this.createMailboxChain(plan.parentId, plan.ancestors) : [];
+    const parentId = made.length ? made[made.length - 1]! : plan.parentId;
+    const b = this.client.batch();
+    const call = b.call('Mailbox/set', { accountId: this.accountId, update: { [id]: { name: plan.name, parentId } } });
+    const err = (await this.client.send(b)).get(call).notUpdated?.[id];
+    if (err) throw new Error(err.description ?? err.type);
+    if (this.state.mailboxes[id]) this.set('mailboxes', id, { name: plan.name, parentId });
+    this.persistSoon();
+  }
+
+  /** Create nested mailboxes in one Mailbox/set, each child naming its parent by creation id. */
+  private async createMailboxChain(parentId: Id | null, names: string[]): Promise<Id[]> {
+    const create: Record<string, Partial<Mailbox>> = {};
+    names.forEach((name, i) => {
+      create[`c${i}`] = { name, parentId: i === 0 ? parentId : `#c${i - 1}`, isSubscribed: true };
+    });
+    const b = this.client.batch();
+    const call = b.call('Mailbox/set', { accountId: this.accountId, create });
+    const r = (await this.client.send(b)).get(call);
+    const made: Mailbox[] = [];
+    for (let i = 0; i < names.length; i++) {
+      const created = r.created?.[`c${i}`];
+      if (!created) break;
+      made.push({ ...blankMailbox(names[i]!, i === 0 ? parentId : made[i - 1]!.id), ...created });
+    }
+    this.mergeMailboxes(made);
+    this.persistSoon();
+    if (made.length < names.length) {
+      const err = r.notCreated?.[`c${made.length}`];
+      throw new Error(err?.description ?? err?.type ?? 'The label was not created');
+    }
+    return made.map((m) => m.id);
   }
 
   /** Remove rows of mailbox/starred views whose thread no longer belongs there. */
@@ -804,6 +845,11 @@ function stripBodies(e: EmailRec): EmailRec {
   const out: Record<string, unknown> = {};
   for (const k of LIST_PROPS) if (k in e) out[k] = JSON.parse(JSON.stringify((e as Record<string, unknown>)[k] ?? null));
   return out as EmailRec;
+}
+
+/** A mailbox as the server makes it, for filling in what a Mailbox/set response leaves out. */
+function blankMailbox(name: string, parentId: Id | null, role: MailboxRole | null = null): Mailbox {
+  return { id: '', name, role, parentId, sortOrder: 0, totalEmails: 0, unreadEmails: 0, totalThreads: 0, unreadThreads: 0, isSubscribed: true };
 }
 
 function byId<T extends { id: Id }>(list: T[]): Record<Id, T> {

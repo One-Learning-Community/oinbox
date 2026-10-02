@@ -211,3 +211,62 @@ describe('MailEngine', () => {
     expect(bare.calls).toEqual([]);
   });
 });
+
+describe('MailEngine labels: create and rename', () => {
+  let server: FakeJmap;
+  let engine: MailEngine;
+  beforeEach(async () => {
+    server = new FakeJmap();
+    server.addMailbox('I', 'Inbox', 'inbox');
+    server.addMailbox('A', 'Archive', 'archive');
+    server.addMailbox('W', 'Work');
+    engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+  });
+
+  it('creates a label and its missing ancestors in one Mailbox/set', async () => {
+    server.calls = [];
+    const id = await engine.createLabel({ parentId: 'W', ancestors: ['Clients'], name: 'Acme' });
+    expect(server.calls).toEqual(['Mailbox/set']);
+    const acme = engine.state.mailboxes[id]!;
+    const clients = engine.state.mailboxes[acme.parentId!]!;
+    expect([clients.name, clients.parentId, acme.name]).toEqual(['Clients', 'W', 'Acme']);
+    expect(acme).toMatchObject({ role: null, isSubscribed: true, totalEmails: 0 });
+    expect(server.mailboxes.get(id)).toMatchObject({ name: 'Acme', parentId: clients.id, isSubscribed: true });
+  });
+
+  it('throws the server\'s message when a create is refused', async () => {
+    await expect(engine.createLabel({ parentId: null, ancestors: [], name: 'work' })).rejects.toThrow("A mailbox with name 'work' already exists.");
+    expect(Object.keys(engine.state.mailboxes).sort()).toEqual(['A', 'I', 'W']);
+  });
+
+  it('renames a label in place with one request', async () => {
+    server.calls = [];
+    await engine.updateLabel('W', { parentId: null, ancestors: [], name: 'Jobs' });
+    expect(server.calls).toEqual(['Mailbox/set']);
+    expect(engine.state.mailboxes.W).toMatchObject({ name: 'Jobs', parentId: null });
+    expect(server.mailboxes.get('W')?.name).toBe('Jobs');
+  });
+
+  it('moves a label under new ancestors, creating them first', async () => {
+    server.calls = [];
+    await engine.updateLabel('W', { parentId: null, ancestors: ['Old', '2025'], name: 'Work' });
+    expect(server.calls).toEqual(['Mailbox/set', 'Mailbox/set']);
+    const year = engine.state.mailboxes[engine.state.mailboxes.W!.parentId!]!;
+    const old = engine.state.mailboxes[year.parentId!]!;
+    expect([old.name, old.parentId, year.name]).toEqual(['Old', null, '2025']);
+    expect(server.mailboxes.get('W')?.parentId).toBe(year.id);
+  });
+
+  it('throws the server\'s message when a rename is refused, leaving the store alone', async () => {
+    await expect(engine.updateLabel('W', { parentId: null, ancestors: [], name: 'Archive' })).rejects.toThrow('already exists');
+    expect(engine.state.mailboxes.W?.name).toBe('Work');
+  });
+
+  it('picks up a label renamed by another client', async () => {
+    server.mailboxes.get('W')!.name = 'Renamed elsewhere';
+    server.bumpMailbox({ updated: ['W'] });
+    await engine.catchUp();
+    expect(engine.state.mailboxes.W?.name).toBe('Renamed elsewhere');
+  });
+});

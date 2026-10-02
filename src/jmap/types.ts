@@ -223,6 +223,9 @@ export interface SetArgs<T> {
   update?: Record<Id, Record<string, unknown>>;
   destroy?: Id[];
 }
+export interface MailboxSetArgs extends SetArgs<Mailbox> {
+  onDestroyRemoveEmails?: boolean;
+}
 export interface SetError {
   type: string;
   description?: string;
@@ -327,7 +330,7 @@ export interface CalendarEventQueryArgs extends QueryArgs<CalendarEventFilter> {
 export interface Methods {
   'Mailbox/get': { args: GetArgs; result: GetResult<Mailbox> };
   'Mailbox/changes': { args: ChangesArgs; result: MailboxChangesResult };
-  'Mailbox/set': { args: SetArgs<Mailbox>; result: SetResult<Mailbox> };
+  'Mailbox/set': { args: MailboxSetArgs; result: SetResult<Mailbox> };
   'Email/get': { args: EmailGetArgs; result: GetResult<Email> };
   'Email/changes': { args: ChangesArgs; result: ChangesResult };
   'Email/query': { args: EmailQueryArgs; result: QueryResult };
