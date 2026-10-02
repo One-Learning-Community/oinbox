@@ -1330,8 +1330,6 @@ git commit -m "Pickers: emphasize the path in the Create row, not letters of 'Cr
 
 - [ ] **Step 1: Extend the e2e spec**
 
-Add the import: `import { floatingComposer } from './support/compose';`
-
 In the delete test, replace the dialog text assertion:
 
 ```ts
@@ -1342,8 +1340,8 @@ In `'a label with a sub-label cannot be deleted; the menu works from the keyboar
 
 ```ts
   // The app's single-key shortcuts stay quiet while the menu has the focus.
-  await page.keyboard.press('c');
-  await expect(floatingComposer(page)).toHaveCount(0);
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
   await page.keyboard.press('End');
   await expect(del).toBeFocused();
   await page.keyboard.press('Home');

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import { openInbox, rows, threadList, waitLive } from './support/app';
 import { createLabel, destroyE2eLabels, destroyLabel, labelByPath } from './support/labels';
 import { deliverToAlice, destroyEmails, mailboxByRole, threadEmails, uniqueTag, updateEmails } from './support/mail';
@@ -138,7 +138,7 @@ test('deleting a label keeps its mail: shared mail loses the label, mail only th
   await openMenu(page, tag);
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   const dialog = page.getByRole('dialog', { name: `Delete '${tag}'?` });
-  await expect(dialog).toContainText('Its 2 conversations stay in your mail. 1 that is only in this label moves to Archive.');
+  await expect(dialog).toContainText('Its 2 messages stay in your mail. 1 that is only in this label moves to Archive.');
   await dialog.getByRole('button', { name: 'Delete' }).click();
 
   await expect(page).toHaveURL(/\/inbox$/);
@@ -161,6 +161,13 @@ test('a label with a sub-label cannot be deleted; the menu works from the keyboa
   const rename = page.getByRole('menuitem', { name: 'Rename' });
   const del = page.getByRole('menuitem', { name: 'Delete (has 1 sub-label)' });
   await expect(rename).toBeFocused();
+  // The app's single-key shortcuts stay quiet while the menu has the focus.
+  await page.keyboard.press('?');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
+  await page.keyboard.press('End');
+  await expect(del).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(rename).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(del).toBeFocused();
   await expect(del).toHaveAttribute('aria-disabled', 'true');
@@ -171,6 +178,54 @@ test('a label with a sub-label cannot be deleted; the menu works from the keyboa
   await expect(del).toHaveCount(0);
   await expect(page.getByRole('button', { name: `Options for ${tag}`, exact: true })).toBeFocused();
   expect(await labelByPath(tag)).toBeDefined();
+});
+
+test('Tab closes the menu; a closed rename dialog and a cancelled delete give the focus back to "⋯"', async ({ page }) => {
+  const tag = uniqueTag();
+  await createLabel(tag);
+  await openInbox(page);
+  const more = page.getByRole('button', { name: `Options for ${tag}`, exact: true });
+
+  await openMenu(page, tag);
+  await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(more).not.toBeFocused();
+  await expect(page.locator(':focus')).toHaveCount(1);
+
+  await openMenu(page, tag);
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  await expect(nameField(page)).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Rename label' })).toBeHidden();
+  await expect(more).toBeFocused();
+
+  await openMenu(page, tag);
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  const confirm = page.getByRole('dialog', { name: `Delete '${tag}'?` });
+  await expect(confirm).toContainText('This label is empty.');
+  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(confirm).toBeHidden();
+  await expect(more).toBeFocused();
+  expect(await labelByPath(tag)).toBeDefined();
+});
+
+test('on a touch screen the label buttons are at least 44px', async ({ browser }) => {
+  const tag = uniqueTag();
+  await createLabel(tag);
+  const context = await browser.newContext({ ...devices['Pixel 7'], storageState: 'e2e/.auth/alice.json' });
+  const page = await context.newPage();
+  try {
+    await openInbox(page);
+    await page.getByRole('button', { name: 'Menu' }).click();
+    for (const name of ['New label', `Options for ${tag}`]) {
+      const box = await page.getByRole('button', { name, exact: true }).boundingBox();
+      expect(box!.width, name).toBeGreaterThanOrEqual(44);
+      expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    }
+  } finally {
+    await context.close();
+  }
 });
 
 test('a label deleted by another client while it is being viewed sends the view to the Inbox', async ({ page }) => {

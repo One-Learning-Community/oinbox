@@ -23,7 +23,7 @@ When a colleague's other mail client renames or deletes a label she is looking a
 | Removing a label from a conversation | Included in a minimal form: an "×" on the label chips of the conversation header. | Nothing in the UI removes a label today, and deleting labels makes that gap obvious. |
 | What counts as a label | A mailbox with `role === null`. | Stalwart 0.16.23 reports `mayDelete` and `mayRename` as true for Inbox and Trash too, so `myRights` cannot be the guard. |
 | Duplicates | Sibling names are compared case-insensitively. | Stricter than IMAP, but two labels differing only in case are a trap in a picker. |
-| Labels under system mailboxes | Not creatable: `Inbox/Foo` is rejected. Existing ones still display and can be renamed out or deleted. | Keeps "label" and "system mailbox" separate. |
+| Labels under system mailboxes | Not creatable: `Inbox/Foo` is rejected. Existing ones still display, and can be renamed where they are, renamed out, or deleted. | Keeps "label" and "system mailbox" separate. |
 | rozie gaps | Logged in `docs/rozie-feedback.md`. A component that blocks the work pauses it for the user to fix upstream. | Project rule. |
 
 ## Architecture
@@ -41,7 +41,9 @@ src/
   app/context.tsx         + labels on App
   ui/nav.ts               + labelDialog state
   ui/LabelDialog.tsx      new. One dialog for create and rename (rozie Dialog)
-  ui/Shell.tsx            Labels heading "+", row "⋯" menu (rozie Popover), dead-label redirect
+  ui/Shell.tsx            Labels heading "+", dead-label redirect
+  ui/LabelMenu.tsx        row "⋯" menu (rozie Popover)
+  ui/focus.ts             gives focus back when a dialog goes away
   ui/Overlays.tsx         "Create …" row in the Move and Label pickers
   ui/picker.ts            new. Ranks picker rows
   ui/Conversation.tsx     "×" on label chips
@@ -92,8 +94,8 @@ The first failing rule gives the message, in this order:
 |---|---|
 | Empty text, or an empty segment (`a//b`, `/a`, `a/`) | "A label name can't be empty." |
 | A control character (U+0000 to U+001F, U+007F) in a segment | "Label names can't contain control characters." |
-| A segment longer than `maxNameBytes` bytes in UTF-8 | "'<segment>' is too long." (the segment cut to 30 characters) |
-| Any segment resolves to a mailbox with a role, including the leaf (`Inbox/Foo`, or a top-level `Sent Items`) | "'<name>' is a system mailbox." |
+| A segment longer than `maxNameBytes` bytes in UTF-8 | "'<segment>' is too long." (the segment cut to 30 characters as a reader counts them, so never inside an emoji) |
+| Any segment resolves to a mailbox with a role, including the leaf (`Inbox/Foo`, or a top-level `Sent Items`). Exception: renaming a label that is already under a system mailbox without changing its parent (`Inbox/Sub` to `Inbox/Sub 2`). | "'<name>' is a system mailbox." |
 | The full path resolves to an existing mailbox other than `renaming` | "A label named '<path>' already exists." |
 | More segments than `maxDepth` | "Labels can be nested at most <maxDepth> deep." |
 | Rename: the new parent is `renaming` or one of its descendants | "A label can't be moved inside itself." |
@@ -118,7 +120,7 @@ A mailbox whose name already contains `/` (possible from another JMAP client) di
 
 ## Engine (`src/sync/engine.ts`)
 
-Each method throws an `Error` carrying the server's description, as `ensureMailbox` does. `ensureMailbox` itself is unchanged.
+Each method throws an `Error` carrying the server's description, as `ensureMailbox` does. `ensureMailbox` itself is unchanged. `updateLabel` and `destroyLabel` refuse a mailbox with a role ("'<name>' is a system mailbox.") before sending anything; the UI's check is not the only one.
 
 | Method | Request | On success |
 |---|---|---|
@@ -144,24 +146,24 @@ Checked by writing probe labels (removed afterwards) on the same day:
 
 ### The delete sweep (`destroyLabel`)
 
-0. `Mailbox/get` of every mailbox's `parentId`. If the server has a sub-label of this label, stop with `LabelHasSubLabelsError` before any email is touched. The local check can be stale (push down, or a sub-label made a moment ago), and the server would refuse the destroy only after the label had been taken off all its mail.
+0. `Mailbox/get` of every mailbox's `name`, `parentId` and `role`. If the server says this mailbox has a role, stop with the system-mailbox error. If the server has a sub-label of this label, stop with `LabelHasSubLabelsError` before any email is touched. The local check can be stale (push down, or a sub-label made a moment ago), and the server would refuse the destroy only after the label had been taken off all its mail.
 1. One batch: `Email/query` with `{ inMailbox: id }`, `collapseThreads: false`, `limit: 500`; then `Email/get` of those ids by back-reference, property `mailboxIds`.
 2. If the query returned nothing, go to step 5.
 3. If any email of the page has no other mailbox, `ensureMailbox('archive', 'Archive')`.
-4. `Email/set` update for the page: `mailboxIds/<id>: null` for each email, plus `mailboxIds/<archive>: true` for each email that had no other mailbox. The same patches are applied to the emails held in the store. An entry in `notUpdated` stops the sweep with an error. Go to step 1.
+4. `Email/set` update for the page: `mailboxIds/<id>: null` for each email, plus `mailboxIds/<archive>: true` for each email that had no other mailbox. The same patches are applied to the emails held in the store. An entry in `notUpdated` stops the sweep with an error, except `notFound`: that email was deleted elsewhere since the query and no longer carries the label. Go to step 1.
 5. `Mailbox/set` with `destroy: [id]` and `onDestroyRemoveEmails: false`.
 6. If the server answers `mailboxHasEmail` (mail arrived during the sweep), run steps 1 to 5 once more. A second `mailboxHasEmail` is an error.
 
 Guarantees and failure:
 
 - No path sends `onDestroyRemoveEmails: true`, so no path destroys mail.
-- A failure midway leaves the label in place with less mail in it. Nothing is lost and a retry finishes the job.
+- A failure midway leaves the label in place with less mail in it. Nothing is lost and a retry finishes the job. Before reporting the failure the engine runs `catchUp()`, so the store shows what was already swept without waiting for a push.
 - A sub-label the store hasn't seen is caught by step 0, and the user is told "Couldn't delete '<path>': it has sub-labels. Delete those first.". One that appears during the sweep still makes the server answer `mailboxHasChild`, which is thrown like any other refusal.
 - There is no Undo. The confirm dialog is the safety net, as for Trash.
 
 ### Changes from another client
 
-`Mailbox/changes` handling already merges created and updated mailboxes and deletes destroyed ones. One addition: when a mailbox leaves the store, through push or a local delete, the engine drops every live query whose filter is exactly `{ inMailbox: <that id> }`, and its remembered range. A dead query is then neither refetched nor written to the snapshot.
+`Mailbox/changes` handling already merges created and updated mailboxes and deletes destroyed ones. One addition: when a mailbox leaves the store, through push or a local delete, the engine drops every live query whose filter is exactly `{ inMailbox: <that id> }`, and its remembered range. A dead query is then neither refetched nor written to the snapshot. The full reset after a type-level `cannotCalculateChanges` drops the same queries for labels that are no longer there. No path writes to a query that has been dropped or closed while its request was in flight.
 
 `labelPath` is derived from the store, so a rename or move made elsewhere re-renders the sidebar, pickers and chips with no extra work.
 
@@ -171,23 +173,23 @@ Guarantees and failure:
 
 - `validate(path, renaming?)`: `planLabel` with the engine's mailboxes and the session's limits.
 - `create(path, opts?: { quiet?: boolean }): Promise<Id>`: validates, calls `engine.createLabel`, toasts "Created '<path>'." unless `quiet`, and returns the id. Throws the validation or server message for the dialog to show inline. The pickers pass `quiet`, so the only toast there is the "Labeled" or "moved" one.
-- `rename(id, path): Promise<void>`: validates, returns at once for a no-op, otherwise calls `engine.updateLabel` and toasts "Renamed to '<path>'.".
+- `rename(id, path): Promise<void>`: refuses a mailbox with a role, or one that is gone ("That label no longer exists."); validates, returns at once for a no-op, otherwise calls `engine.updateLabel` and toasts "Renamed to '<path>'.".
 - `remove(id): Promise<boolean>`: see below. Resolves whether the label was deleted.
 - `deletedHere(id): boolean`: true for a label this session deleted, so its view can close without the "no longer exists" notice.
 
 ### Delete
 
 1. If `subLabelCount(id) > 0`, return. The menu item is already disabled; this is the guard.
-2. Call `countOrphans(id)`. A failure is swallowed and changes only the wording.
+2. Start `countOrphans(id)` without waiting for it: the confirm opens at once and fills the count in when it arrives. A failure is swallowed and changes only the wording.
 3. Confirm, titled "Delete '<path>'?", confirm button "Delete", with the message:
 
 | Case | Message |
 |---|---|
 | `totalEmails === 0` | "This label is empty." |
-| Count known | "Its <n> conversation(s) stay in your mail. <m> that are only in this label move to Archive." With `m === 0`: "Its <n> conversation(s) stay in your mail." |
-| Count failed | "Its <n> conversation(s) stay in your mail. Any that are only in this label move to Archive." |
+| Count known | "Its <n> message(s) stay in your mail. <m> that are only in this label move to Archive." With `m === 0`: "Its <n> message(s) stay in your mail." |
+| Count unknown (not yet arrived, or failed) | "Its <n> message(s) stay in your mail. Any that are only in this label move to Archive." |
 
-   `<n>` is the mailbox's `totalThreads`; `<m>` is the orphan count, which counts messages.
+   Both numbers count messages: `<n>` is the mailbox's `totalEmails`, `<m>` the orphan count. Once the delete has started the text no longer changes.
 4. On confirm, the dialog stays open with its button reading "Deleting…" while `engine.destroyLabel(id)` runs.
 5. On success: toast "Deleted '<path>'.". The id is recorded for `deletedHere` before the engine drops the mailbox; a view of that label then leaves for the Inbox by the redirect below.
 6. On failure: an error toast, "Couldn't finish deleting '<path>'. Some conversations may already have been removed from it; try again. (<server message>)".
@@ -200,7 +202,10 @@ Guarantees and failure:
 - Each row for which `isLabel` is true gets a "⋯" button, accessible name "Options for <path>". It is a sibling of the row's link, not inside it. It is visible on hover and on keyboard focus within the row, and always visible on touch screens (`@media (hover: none)`).
 - The button opens a rozie Popover holding a `role="menu"` with two `menuitem` buttons: "Rename" and "Delete".
 - With sub-labels, Delete is disabled (`aria-disabled`) and reads "Delete (has <k> sub-label(s))".
-- Menu keyboard: opening focuses the first item; ArrowDown and ArrowUp move between items; Escape closes and returns focus to the "⋯" button; choosing an item closes the menu.
+- Menu keyboard: opening focuses the first item; ArrowDown and ArrowUp move between items, Home and End go to the first and last; Escape closes and returns focus to the "⋯" button; Tab closes the menu and moves on from the "⋯" button; choosing an item closes the menu.
+- The app's single-key shortcuts are off while the focus is in the menu.
+- Closing the rename dialog, or cancelling the delete, returns focus to the "⋯" button.
+- On coarse pointers (touch screens) the sidebar rows, "+" and "⋯" are 44px.
 
 ### Create and rename dialog (`src/ui/LabelDialog.tsx`)
 
@@ -210,20 +215,21 @@ Opened through `nav.labelDialog()`, which is `{ kind: 'create' } | { kind: 'rena
 - The field has focus when the dialog opens. Rename pre-fills the label's full path, selected.
 - A hint under the field: "Use / to nest, e.g. Clients/Acme".
 - Validation runs on submit, and then on every change once an error is showing, so the user isn't corrected mid-typing.
-- Enter or the primary button submits. While the request runs the button is disabled and reads "Creating…" or "Saving…". A server refusal appears as the inline error and the dialog stays open.
+- Enter or the primary button submits. While the request runs both buttons are disabled and the primary one reads "Creating…" or "Saving…". A server refusal appears as the inline error and the dialog stays open.
 - The error is linked to the field with `aria-describedby` and announced with `role="alert"`.
 - After a create from the sidebar the dialog closes and the view does not change.
 - If the label being renamed disappears while the dialog is open, the dialog closes.
+- When the dialog goes away, focus returns to the element that had it before (`src/ui/focus.ts`; the confirm dialog does the same).
 
 ### Confirm dialog (`src/ui/ConfirmDialog.tsx`)
 
-`ConfirmOptions` gains two optional fields: `run?: () => Promise<void>` and `pendingLabel?: string`. With `run`, confirming disables both buttons, shows `pendingLabel` on the confirm button, awaits `run`, then closes and resolves `true`. A rejection of `run` closes the dialog and rejects the `confirm()` promise, so the caller reports it. Existing callers pass neither field and behave as before.
+`ConfirmOptions` gains two optional fields: `run?: () => Promise<void>` and `pendingLabel?: string`. `message` may be a function, which is read reactively so the text can change while the dialog is open. With `run`, confirming disables both buttons, shows `pendingLabel` on the confirm button, awaits `run`, then closes and resolves `true`. A rejection of `run` closes the dialog and rejects the `confirm()` promise, so the caller reports it. Existing callers pass neither field and behave as before.
 
 ### Pickers (`src/ui/Overlays.tsx`)
 
 For both Move (`v`) and Label (`l`):
 
-- When the typed text is non-empty, passes `validate`, and matches no existing mailbox path exactly (case-insensitively), one more row appears: "Create '<path>'", in its own group "New", below every match.
+- When the typed text is non-empty, passes `validate`, and matches no existing mailbox path exactly (case-insensitively), one more row appears: "Create '<path>'", in its own group "New", below every match. The path is shown in bold; the typed letters are not highlighted inside the word "Create".
 - Selecting it calls `labels.create(path, { quiet: true })`, then applies the new label as the picker would have: `actions.addLabel` for Label, `actions.moveTo` for Move. The usual Undo toast follows; Undo does not delete the new label.
 - If the create fails, an error toast shows the message and the conversations are untouched.
 - Text that fails validation gets no Create row; the list shows its matches or "No matching mailboxes".
@@ -233,6 +239,7 @@ For both Move (`v`) and Label (`l`):
 - In the conversation header, each chip for a mailbox where `isLabel` is true gets an "×" button with the accessible name "Remove label <name>". The Inbox chip does not.
 - `actions.removeLabel(threadIds, labelId)` builds `unlabelPatch(emails, labelId, archiveId)` (the same rule as `archivePatch`, exported under this name): for each email of the threads that is in the label, `mailboxIds/<label>: null`, plus `mailboxIds/<archive>: true` when the email would otherwise be in no mailbox. Archive is created with `ensureMailbox` only when such an email exists.
 - It runs through the existing `moveWithUndo`, with the toast "Removed '<name>'." and Undo.
+- It does nothing for a mailbox with a role, or one that is gone.
 - When the view is that label, the conversation no longer belongs to it and closes back to the list, as Archive does today.
 
 ### Viewing a label that changes
@@ -243,7 +250,7 @@ For both Move (`v`) and Label (`l`):
 | The label is deleted here | `MailView` replaces the route with `/inbox`; the only toast is "Deleted '<path>'.". |
 | The label is deleted elsewhere, or a link points at a label that no longer exists | `MailView` replaces the route with `/inbox` and toasts "That label no longer exists.". An open conversation closes with it. |
 
-The redirect applies only to `label/<id>` slugs, and only once the engine has reconciled its store with the server in this session (`state.synced`). A warm-start snapshot can be older than a label created on another device, and a link to that label must not be treated as dead. Other unknown slugs keep today's "Mailbox not found.".
+The redirect applies only to `label/<id>` slugs, and only once the engine has reconciled its store with the server in this session (`state.synced`). A warm-start snapshot can be older than a label created on another device, and a link to that label must not be treated as dead. Other unknown slugs keep today's "Mailbox not found.". A `label/<id>` route without a view shows "Loading…" instead: the label is either still arriving or the view is about to leave for the Inbox.
 
 ### Component check
 

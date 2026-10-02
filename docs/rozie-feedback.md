@@ -178,6 +178,10 @@ default (`defaultScore` / `fuzzyMatch`) isn't exported, so we wrote our own rank
 also needs the base. Suggest exporting `defaultScore`, or passing it to `score` as a third
 argument, or a first-class `creatable` row as Combobox has.
 Worked well: the row is an ordinary item, so arrow keys, Enter and the group heading come free.
+Highlighting: `labelHighlight` marks the first subsequence match in the visible label, so for the
+row `Create 'ea'` it marks letters of "Create", not the typed text. We render that one row through
+`optionSlot` (returning `undefined` for every other row keeps the default rendering, which is
+handy). A per-item `highlight: false`, or highlight ranges an item can supply, would do.
 
 ## Popover 0.2.4 — hosting a menu (the sidebar label "⋯")
 Wanted: a menu button with Rename/Delete. There is no Menu component, so the roving focus, arrow
@@ -190,6 +194,8 @@ keys, focus-first-item and Escape-returns-focus are ours (`LabelMenu` in `src/ui
    our own positioned `<span>`.
 3. **Every panel has `id="rozie-popover-floating"`**: two open popovers would share an id.
 4. The known "no external anchor" gap means one Popover instance per label row.
+5. Home/End, and Tab closing the menu with focus handed back to the button, are ours too
+   (`src/ui/LabelMenu.tsx`). A Menu component would cover all of this.
 
 ## Dialog 0.1.3 — fine for a form
 The create/rename label dialog needed nothing extra. One note: Dialog calls `showModal()` in its
@@ -202,3 +208,12 @@ inside `<Show>` and removed while open (our ConfirmDialog and LabelDialog both d
 decrements the lock count, so `<html>` keeps `overflow: hidden`. oinbox doesn't scroll the
 document, so nothing shows, but an app that does would be stuck. Suggest releasing the lock in
 `onCleanup`.
+
+## Dialog 0.1.3 — focus is not returned when unmounted while open
+Same cause as the scroll lock above. A native `<dialog>` returns focus to the previously focused
+element in `close()`; a Dialog inside `<Show>` that is removed while open never calls it, so focus
+lands on `<body>` (found from the label "⋯" menu: after the rename dialog or a cancelled delete,
+keyboard users were back at the top of the page). oinbox remembers `document.activeElement` when
+the dialog's parent mounts and refocuses it a microtask after cleanup (`src/ui/focus.ts`); it has
+to wait, because until the dialog is out of the page everything else is inert. Suggest calling
+`el.close()` (or restoring focus) in the component's `onCleanup`.
