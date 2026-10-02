@@ -1,5 +1,6 @@
 import { Dialog } from '@rozie-ui/dialog-solid';
 import { createSignal, Show, type JSX } from 'solid-js';
+import { restoreFocus } from './focus';
 
 export interface ConfirmOptions {
   title: string;
@@ -46,18 +47,25 @@ export function createConfirmDialog(): { confirm: ConfirmFn; Host: () => JSX.Ele
 
   const Host = () => (
     <Show when={pending()}>
-      {(p) => (
-        <Dialog open onOpenChange={(open) => !open && finish(false)} ariaLabelledby="confirm-title">
-          <h2 id="confirm-title">{p().opts.title}</h2>
-          <p>{typeof p().opts.message === 'function' ? (p().opts.message as () => string)() : (p().opts.message as string)}</p>
-          <div class="dialog-actions">
-            <button disabled={busy()} onClick={() => finish(false)}>Cancel</button>
-            <button class="danger" disabled={busy()} onClick={() => finish(true)} autofocus>
-              {busy() ? (p().opts.pendingLabel ?? p().opts.confirmLabel ?? 'Confirm') : (p().opts.confirmLabel ?? 'Confirm')}
-            </button>
-          </div>
-        </Dialog>
-      )}
+      {(p) => {
+        restoreFocus();
+        const message = () => {
+          const m = p().opts.message;
+          return typeof m === 'function' ? m() : m;
+        };
+        return (
+          <Dialog open onOpenChange={(open) => !open && finish(false)} ariaLabelledby="confirm-title">
+            <h2 id="confirm-title">{p().opts.title}</h2>
+            <p>{message()}</p>
+            <div class="dialog-actions">
+              <button disabled={busy()} onClick={() => finish(false)}>Cancel</button>
+              <button class="danger" disabled={busy()} onClick={() => finish(true)} autofocus>
+                {busy() ? (p().opts.pendingLabel ?? p().opts.confirmLabel ?? 'Confirm') : (p().opts.confirmLabel ?? 'Confirm')}
+              </button>
+            </div>
+          </Dialog>
+        );
+      }}
     </Show>
   );
 
