@@ -1,7 +1,7 @@
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { Id } from '../jmap/types';
 import type { EmailRec, MailEngine } from '../sync/engine';
-import { archivePatch, keywordPatch, movePatch, trashPatch, type EmailPatch } from '../sync/patch';
+import { archivePatch, keywordPatch, movePatch, onlyIn, trashPatch, unlabelPatch, type EmailPatch } from '../sync/patch';
 import type { View } from '../sync/selectors';
 
 export interface ToastFn {
@@ -108,6 +108,22 @@ export function createActions(engine: MailEngine, toast: ToastFn, confirm: Confi
       const emails = engine.threadEmails(threadIds);
       const name = engine.state.mailboxes[label]?.name ?? 'label';
       void moveWithUndo(emails, movePatch(emails, null, label), `Labeled "${name}".`);
+    },
+
+    /** Take a label off conversations. A message left in no mailbox goes to Archive. */
+    async removeLabel(threadIds: Id[], label: Id) {
+      const emails = engine.threadEmails(threadIds);
+      let archive = role('archive') ?? '';
+      if (!archive && emails.some((e) => onlyIn(e, label))) {
+        try {
+          archive = await engine.ensureMailbox('archive', 'Archive');
+        } catch (e) {
+          toast((e as Error).message, 'error');
+          return;
+        }
+      }
+      const name = engine.state.mailboxes[label]?.name ?? 'label';
+      await moveWithUndo(emails, unlabelPatch(emails, label, archive), `Removed '${name}'.`);
     },
 
     markRead: (threadIds: Id[]) => keywords(threadIds, '$seen', true),

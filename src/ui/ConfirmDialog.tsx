@@ -5,25 +5,41 @@ export interface ConfirmOptions {
   title: string;
   message: string;
   confirmLabel?: string;
+  /** Work to do on confirm. The dialog stays open, showing `pendingLabel`, until it settles. */
+  run?: () => Promise<void>;
+  pendingLabel?: string;
 }
 
 export interface ConfirmFn {
+  /** Resolves whether the user confirmed. With `run`, resolves after it finished and rejects if it failed. */
   (opts: ConfirmOptions): Promise<boolean>;
 }
 
 interface Pending {
   opts: ConfirmOptions;
   resolve: (ok: boolean) => void;
+  reject: (e: unknown) => void;
 }
 
 /** A single blocking confirm dialog, queued one at a time via `confirm()`. */
 export function createConfirmDialog(): { confirm: ConfirmFn; Host: () => JSX.Element } {
   const [pending, setPending] = createSignal<Pending | null>(null);
+  const [busy, setBusy] = createSignal(false);
 
-  const confirm: ConfirmFn = (opts) => new Promise((resolve) => setPending({ opts, resolve }));
+  const confirm: ConfirmFn = (opts) => new Promise((resolve, reject) => setPending({ opts, resolve, reject }));
 
   const finish = (ok: boolean) => {
-    pending()?.resolve(ok);
+    const p = pending();
+    if (!p || busy()) return;
+    if (ok && p.opts.run) {
+      setBusy(true);
+      p.opts.run().then(() => p.resolve(true), p.reject).finally(() => {
+        setBusy(false);
+        setPending(null);
+      });
+      return;
+    }
+    p.resolve(ok);
     setPending(null);
   };
 
@@ -34,9 +50,9 @@ export function createConfirmDialog(): { confirm: ConfirmFn; Host: () => JSX.Ele
           <h2 id="confirm-title">{p().opts.title}</h2>
           <p>{p().opts.message}</p>
           <div class="dialog-actions">
-            <button onClick={() => finish(false)}>Cancel</button>
-            <button class="danger" onClick={() => finish(true)} autofocus>
-              {p().opts.confirmLabel ?? 'Confirm'}
+            <button disabled={busy()} onClick={() => finish(false)}>Cancel</button>
+            <button class="danger" disabled={busy()} onClick={() => finish(true)} autofocus>
+              {busy() ? (p().opts.pendingLabel ?? p().opts.confirmLabel ?? 'Confirm') : (p().opts.confirmLabel ?? 'Confirm')}
             </button>
           </div>
         </Dialog>

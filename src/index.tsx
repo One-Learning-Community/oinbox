@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
+import { createLabels } from './app/labels';
 import { createRecipients } from './app/recipients';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
@@ -12,6 +13,7 @@ import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSna
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream } from './jmap/sse';
 import { CALENDARS } from './jmap/types';
+import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
 import { MailEngine } from './sync/engine';
 import { createConfirmDialog } from './ui/ConfirmDialog';
 import { MailView, Shell } from './ui/Shell';
@@ -94,6 +96,7 @@ async function boot() {
     auth,
     toast: toasts.toast,
     actions: createActions(engine, toasts.toast, confirmDialog.confirm),
+    labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session) : DEFAULT_LIMITS)),
     nav: createNav(),
     composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm, recipients.recordSent),
     recipients,

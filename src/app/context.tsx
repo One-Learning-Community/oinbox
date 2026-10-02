@@ -1,6 +1,7 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
+import type { Labels } from './labels';
 import type { Recipients } from './recipients';
 import type { OAuth } from '../auth/oauth';
 import type { CalendarStore } from '../calendar/store';
@@ -20,6 +21,7 @@ export interface App {
   auth: OAuth;
   toast: ToastFn;
   actions: Actions;
+  labels: Labels;
   nav: Nav;
   composers: Composers;
   recipients: Recipients;
