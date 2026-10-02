@@ -270,3 +270,153 @@ describe('MailEngine labels: create and rename', () => {
     expect(engine.state.mailboxes.W?.name).toBe('Renamed elsewhere');
   });
 });
+
+describe('MailEngine labels: delete', () => {
+  let server: FakeJmap;
+  let engine: MailEngine;
+  const workSpec = { filter: { inMailbox: 'W' }, sort: DEFAULT_SORT, collapseThreads: true };
+  const mailboxSets = () => server.sent.filter(([n]) => n === 'Mailbox/set').map(([, a]) => a);
+
+  function setup(withArchive = true) {
+    server = new FakeJmap();
+    server.addMailbox('I', 'Inbox', 'inbox');
+    if (withArchive) server.addMailbox('A', 'Archive', 'archive');
+    server.addMailbox('W', 'Work');
+    server.addEmail({ id: 'x1', threadId: 't1', receivedAt: '2026-09-01T10:00:00Z', mailboxIds: { W: true } }, false);
+    server.addEmail({ id: 'x2', threadId: 't2', receivedAt: '2026-09-01T11:00:00Z', mailboxIds: { W: true, I: true } }, false);
+    server.addEmail({ id: 'x3', threadId: 't3', receivedAt: '2026-09-01T12:00:00Z', mailboxIds: { I: true } }, false);
+    engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+  }
+
+  beforeEach(async () => {
+    setup();
+    await engine.start();
+  });
+
+  it('counts the emails that are in the label and nowhere else, asking for one id', async () => {
+    expect(await engine.countOrphans('W')).toBe(1);
+    const [, args] = server.sent.filter(([n]) => n === 'Email/query').pop()!;
+    expect(args).toMatchObject({
+      filter: { operator: 'AND', conditions: [{ inMailbox: 'W' }, { operator: 'NOT', conditions: [{ inMailboxOtherThan: ['W'] }] }] },
+      limit: 1,
+      calculateTotal: true,
+    });
+  });
+
+  it('strips the label from its mail, archives the orphans, then destroys the mailbox', async () => {
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    await engine.destroyLabel('W');
+    expect(server.emails.get('x1')?.mailboxIds).toEqual({ A: true });
+    expect(server.emails.get('x2')?.mailboxIds).toEqual({ I: true });
+    expect(server.emails.get('x3')?.mailboxIds).toEqual({ I: true });
+    expect(server.mailboxes.has('W')).toBe(false);
+    expect(engine.state.mailboxes.W).toBeUndefined();
+    expect(engine.state.queries[key]).toBeUndefined();
+    expect(engine.state.emails.x1?.mailboxIds).toEqual({ A: true });
+  });
+
+  it('never asks the server to remove the emails', async () => {
+    await engine.destroyLabel('W');
+    expect(mailboxSets().length).toBeGreaterThan(0);
+    for (const args of mailboxSets()) expect(args.onDestroyRemoveEmails).not.toBe(true);
+  });
+
+  it('works through a large label a page at a time', async () => {
+    for (let i = 0; i < 501; i++) {
+      server.addEmail({ id: `b${i}`, threadId: `bt${i}`, receivedAt: '2026-08-01T00:00:00Z', mailboxIds: { W: true } }, false);
+    }
+    server.calls = [];
+    await engine.destroyLabel('W');
+    expect(server.calls.filter((c) => c === 'Email/set')).toHaveLength(2);
+    expect([...server.emails.values()].filter((e) => e.mailboxIds?.W)).toHaveLength(0);
+    expect(server.emails.get('b500')?.mailboxIds).toEqual({ A: true });
+    expect(server.mailboxes.has('W')).toBe(false);
+  });
+
+  it('creates Archive when an orphan needs it and the account has none', async () => {
+    setup(false);
+    await engine.start();
+    await engine.destroyLabel('W');
+    const archive = [...server.mailboxes.values()].find((m) => m.role === 'archive');
+    expect(archive).toBeDefined();
+    expect(server.emails.get('x1')?.mailboxIds).toEqual({ [archive!.id]: true });
+  });
+
+  it('does not create Archive when no email would be orphaned', async () => {
+    setup(false);
+    server.emails.get('x1')!.mailboxIds = { W: true, I: true };
+    await engine.start();
+    await engine.destroyLabel('W');
+    expect([...server.mailboxes.values()].some((m) => m.role === 'archive')).toBe(false);
+  });
+
+  it('sweeps once more when mail arrives during the delete', async () => {
+    let arrived = false;
+    server.onCall = (name, args) => {
+      if (name !== 'Mailbox/set' || !args.destroy || arrived) return;
+      arrived = true;
+      server.addEmail({ id: 'late', threadId: 't9', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { W: true } });
+    };
+    await engine.destroyLabel('W');
+    expect(server.emails.get('late')?.mailboxIds).toEqual({ A: true });
+    expect(server.mailboxes.has('W')).toBe(false);
+  });
+
+  it('gives up, keeping the label, when mail keeps arriving', async () => {
+    let n = 0;
+    server.onCall = (name, args) => {
+      if (name === 'Mailbox/set' && args.destroy) server.addEmail({ id: `late${n++}`, threadId: `lt${n}`, receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { W: true } });
+    };
+    await expect(engine.destroyLabel('W')).rejects.toThrow();
+    expect(server.mailboxes.has('W')).toBe(true);
+    expect(engine.state.mailboxes.W).toBeDefined();
+    expect(server.emails.size).toBe(5); // nothing was destroyed
+  });
+
+  it('leaves the label in place when a page of updates is refused', async () => {
+    server.rejectUpdates.add('x1');
+    await expect(engine.destroyLabel('W')).rejects.toThrow('forbidden');
+    expect(server.mailboxes.has('W')).toBe(true);
+    expect(engine.state.mailboxes.W).toBeDefined();
+    expect(server.emails.has('x1')).toBe(true);
+  });
+
+  it('succeeds when the label is already gone on the server', async () => {
+    for (const e of server.emails.values()) delete e.mailboxIds!.W;
+    server.emails.get('x1')!.mailboxIds = { A: true };
+    server.mailboxes.delete('W');
+    await engine.destroyLabel('W');
+    expect(engine.state.mailboxes.W).toBeUndefined();
+  });
+
+  it('surfaces mailboxHasChild from the server', async () => {
+    server.addMailbox('K', 'Kid', null, 'W');
+    await expect(engine.destroyLabel('W')).rejects.toThrow('Mailbox has at least one children.');
+  });
+
+  it('drops a label destroyed by another client, with its live query', async () => {
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    const inboxKey = engine.openQuery(inboxSpec);
+    await engine.ensureRange(inboxKey, 0, 10);
+    for (const e of server.emails.values()) delete e.mailboxIds!.W;
+    server.emails.get('x1')!.mailboxIds = { A: true };
+    server.mailboxes.delete('W');
+    server.bumpMailbox({ destroyed: ['W'] });
+    await engine.catchUp();
+    expect(engine.state.mailboxes.W).toBeUndefined();
+    expect(engine.state.queries[key]).toBeUndefined();
+    expect(engine.state.queries[inboxKey]).toBeDefined();
+  });
+
+  it('is synced only after reconciling with the server, not straight from a snapshot', async () => {
+    expect(engine.state.synced).toBe(true);
+    const warm = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    expect(warm.hydrate(engine.snapshot())).toBe(true);
+    expect(warm.state.ready).toBe(true);
+    expect(warm.state.synced).toBe(false);
+    await warm.start();
+    expect(warm.state.synced).toBe(true);
+  });
+});

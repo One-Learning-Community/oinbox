@@ -4,10 +4,12 @@ import type { BatchResult, JmapClient } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
 import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, MailboxRole, SetError, StateChange, Thread } from '../jmap/types';
 import type { LabelPlan } from '../mail/labels';
-import { applyEmailPatch, type EmailPatch } from './patch';
+import { applyEmailPatch, onlyIn, unlabelPatch, type EmailPatch, type MutableEmail } from './patch';
 import { applyQueryChanges, missingPages, type Slots } from './window';
 
 export const PAGE_SIZE = 50;
+/** Emails per request while emptying a label (Stalwart's maxObjectsInSet). */
+const SWEEP_PAGE = 500;
 
 /** Properties for a thread-list row's representative email. */
 export const LIST_PROPS = ['id', 'threadId', 'mailboxIds', 'keywords', 'from', 'to', 'subject', 'preview', 'receivedAt', 'hasAttachment'];
@@ -48,6 +50,8 @@ export interface LiveQuery extends QuerySpec {
 
 export interface MailState {
   ready: boolean;
+  /** True once the store has been reconciled with the server in this session (a snapshot alone may be stale). */
+  synced: boolean;
   mailboxes: Record<Id, Mailbox>;
   identities: Identity[];
   emails: Record<Id, EmailRec>;
@@ -112,6 +116,7 @@ export class MailEngine {
     this.settleDelayMs = opts.settleDelayMs ?? 500;
     const [state, set] = createStore<MailState>({
       ready: false,
+      synced: false,
       mailboxes: {},
       identities: [],
       emails: {},
@@ -160,6 +165,7 @@ export class MailEngine {
   async start(): Promise<void> {
     if (this.states.Mailbox) {
       await this.catchUp();
+      this.set('synced', true);
       return;
     }
     const b = this.client.batch();
@@ -169,7 +175,7 @@ export class MailEngine {
     const mailboxes = res.get(mb);
     this.states.Mailbox = mailboxes.state;
     const identities = res.error(id) ? [] : res.get(id).list;
-    this.set({ mailboxes: byId(mailboxes.list), identities, ready: true });
+    this.set({ mailboxes: byId(mailboxes.list), identities, ready: true, synced: true });
   }
 
   setOnline(online: boolean): void {
@@ -497,6 +503,92 @@ export class MailEngine {
     this.persistSoon();
   }
 
+  /** How many emails are in this mailbox and no other. */
+  async countOrphans(id: Id): Promise<number> {
+    const b = this.client.batch();
+    const q = b.call('Email/query', {
+      accountId: this.accountId,
+      filter: { operator: 'AND', conditions: [{ inMailbox: id }, { operator: 'NOT', conditions: [{ inMailboxOtherThan: [id] }] }] },
+      // Stalwart reads limit 0 as "no limit".
+      limit: 1,
+      calculateTotal: true,
+    });
+    return (await this.client.send(b)).get(q).total ?? 0;
+  }
+
+  /**
+   * Delete a label without deleting mail: take the label off every email (those with no other
+   * mailbox go to Archive), then destroy the empty mailbox. The server is never asked to remove
+   * emails, so a failure midway leaves the label in place with less mail in it.
+   */
+  async destroyLabel(id: Id): Promise<void> {
+    try {
+      await this.sweepLabel(id);
+      if (await this.destroyEmptyMailbox(id)) {
+        // Mail arrived during the sweep.
+        await this.sweepLabel(id);
+        if (await this.destroyEmptyMailbox(id)) throw new Error('New mail keeps arriving in this label');
+      }
+    } finally {
+      this.persistSoon();
+    }
+    this.forgetMailboxes([id]);
+    await this.catchUp().catch(() => undefined);
+  }
+
+  /** Resolves true if the server refused because the mailbox still holds mail. */
+  private async destroyEmptyMailbox(id: Id): Promise<boolean> {
+    const b = this.client.batch();
+    const call = b.call('Mailbox/set', { accountId: this.accountId, destroy: [id], onDestroyRemoveEmails: false });
+    const err = (await this.client.send(b)).get(call).notDestroyed?.[id];
+    // notFound: another client deleted it first.
+    if (!err || err.type === 'notFound') return false;
+    if (err.type === 'mailboxHasEmail') return true;
+    throw new Error(err.description ?? err.type);
+  }
+
+  private async sweepLabel(id: Id): Promise<void> {
+    const accountId = this.accountId;
+    const seen = new Set<Id>();
+    for (;;) {
+      const b = this.client.batch();
+      const q = b.call('Email/query', { accountId, filter: { inMailbox: id }, collapseThreads: false, limit: SWEEP_PAGE });
+      const g = b.call('Email/get', { accountId, '#ids': q.ref('/ids'), properties: ['mailboxIds'] });
+      const page = (await this.client.send(b)).get(g).list as MutableEmail[];
+      if (!page.length) return;
+      if (page.every((e) => seen.has(e.id))) throw new Error("The server didn't apply the change");
+      page.forEach((e) => seen.add(e.id));
+
+      const archive = page.some((e) => onlyIn(e, id)) ? await this.ensureMailbox('archive', 'Archive') : '';
+      const patches = unlabelPatch(page, id, archive);
+      const sb = this.client.batch();
+      const call = sb.call('Email/set', { accountId, update: patches });
+      const failed = Object.values((await this.client.send(sb)).get(call).notUpdated ?? {})[0];
+      if (failed) throw new Error(failed.description ?? failed.type);
+      this.set('emails', produce((m) => {
+        for (const [eid, patch] of Object.entries(patches)) {
+          const e = m[eid];
+          if (e) Object.assign(e, applyEmailPatch(e, patch));
+        }
+      }));
+    }
+  }
+
+  /** Drop mailboxes from the store, and with them the live queries that list them. */
+  private forgetMailboxes(ids: Id[]): void {
+    if (!ids.length) return;
+    const gone = new Set(ids);
+    solidBatch(() => {
+      this.set('mailboxes', produce((m) => ids.forEach((id) => delete m[id])));
+      for (const q of Object.values(this.state.queries)) {
+        const f = q.filter as Record<string, unknown> | null;
+        if (!f || Object.keys(f).length !== 1 || typeof f.inMailbox !== 'string' || !gone.has(f.inMailbox)) continue;
+        this.ranges.delete(q.key);
+        this.set('queries', produce((all) => void delete all[q.key]));
+      }
+    });
+  }
+
   /** Create nested mailboxes in one Mailbox/set, each child naming its parent by creation id. */
   private async createMailboxChain(parentId: Id | null, names: string[]): Promise<Id[]> {
     const create: Record<string, Partial<Mailbox>> = {};
@@ -624,7 +716,7 @@ export class MailEngine {
       if (mb) {
         const ch = res.get(mb.changes);
         this.mergeMailboxes([...res.get(mb.created).list, ...res.get(mb.updated).list] as unknown as Mailbox[]);
-        this.set('mailboxes', produce((m) => ch.destroyed.forEach((id) => delete m[id])));
+        this.forgetMailboxes(ch.destroyed);
         this.states.Mailbox = ch.newState;
         more ||= ch.hasMoreChanges;
       }
@@ -646,6 +738,7 @@ export class MailEngine {
         more ||= ch.hasMoreChanges;
       }
       for (const { q, call } of qcs) {
+        if (!this.state.queries[q.key]) continue;
         if (res.error(call)) {
           toResetQueries.push(q.key);
           continue;
@@ -745,6 +838,7 @@ export class MailEngine {
 
   /** The server can't compute changes for this query: reload only what's on screen. */
   private async resetQuery(key: string): Promise<void> {
+    if (!this.state.queries[key]) return;
     const range = this.ranges.get(key) ?? [0, PAGE_SIZE];
     this.set('queries', key, produce((q) => {
       q.slots = q.slots.map(() => null);
@@ -756,7 +850,7 @@ export class MailEngine {
   private async resetAll(): Promise<void> {
     this.states = {};
     const queries = Object.values(this.state.queries).map((q) => q.key);
-    this.set({ emails: {}, threads: {}, bodies: {}, mailboxes: {} });
+    this.set({ emails: {}, threads: {}, bodies: {}, mailboxes: {}, synced: false });
     this.set('queries', produce((all) => {
       for (const q of Object.values(all)) {
         q.slots = [];

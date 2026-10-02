@@ -60,9 +60,22 @@ export class FakeJmap {
     this.log.push({ state: this.emailState, created: c.created ?? [], updated: c.updated ?? [], destroyed: c.destroyed ?? [] });
   }
 
+  private matches(e: Rec, f: Record<string, unknown> | null | undefined): boolean {
+    if (!f) return true;
+    if (typeof f.operator === 'string') {
+      const results = (f.conditions as Record<string, unknown>[]).map((c) => this.matches(e, c));
+      return f.operator === 'AND' ? results.every(Boolean) : f.operator === 'OR' ? results.some(Boolean) : !results.some(Boolean);
+    }
+    if (f.inMailbox && !e.mailboxIds?.[f.inMailbox as string]) return false;
+    if (f.inMailboxOtherThan) {
+      const not = new Set(f.inMailboxOtherThan as string[]);
+      if (!Object.keys(e.mailboxIds ?? {}).some((id) => !not.has(id))) return false;
+    }
+    return true;
+  }
+
   private queryIds(args: Record<string, unknown>): string[] {
-    const filter = (args.filter ?? {}) as Record<string, unknown>;
-    let list = [...this.emails.values()].filter((e) => !filter.inMailbox || e.mailboxIds?.[filter.inMailbox as string]);
+    let list = [...this.emails.values()].filter((e) => this.matches(e, args.filter as Record<string, unknown> | null));
     list.sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
     if (args.collapseThreads) {
       const seen = new Set<string>();
