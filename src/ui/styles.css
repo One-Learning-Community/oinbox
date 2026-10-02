@@ -284,22 +284,16 @@ a { color: var(--accent); }
   --rozie-combobox-border-width: 0;
   --rozie-combobox-focus-ring-width: 0;
   --rozie-combobox-font: inherit;
-  --rozie-combobox-chips-padding: 4px 0;
-  --rozie-combobox-input-padding: 4px 0;
+  --rozie-combobox-inline-padding: 4px 0;
+  --rozie-combobox-inline-input-padding: 4px 0;
+  --rozie-combobox-inline-input-min-width: 120px;
+  --rozie-combobox-chip-gap: 4px;
   --rozie-combobox-chip-bg: var(--chip);
   --rozie-combobox-chip-color: var(--text);
   --rozie-combobox-list-bg: var(--surface);
   --rozie-combobox-list-border-color: var(--border);
   --rozie-combobox-list-shadow: var(--shadow);
 }
-/* Combobox is a fixed-width control with its chips on a row above the input (docs/rozie-feedback.md).
-   A recipient field fills its row and flows chips and input together, so its internals are re-laid out here. */
-.recipient-field .rozie-combobox.rozie-combobox--multiple { display: block; width: 100%; }
-.recipient-field .rozie-combobox .rozie-popover-anchor { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.recipient-field .rozie-combobox .rozie-combobox-chips { display: contents; }
-.recipient-field .rozie-combobox .rozie-combobox-input { flex: 1; width: auto; min-width: 120px; }
-/* Combobox opens on focus and shows "No results"; a recipient field shows a list only when it has suggestions. */
-.recipient-field .rozie-combobox-list:not(:has(.rozie-combobox-option)) { display: none; }
 .rcpt-chip-remove { border: 0; background: none; padding: 0 2px; color: var(--text-2); font: inherit; cursor: pointer; }
 .rcpt-option { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .rcpt-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

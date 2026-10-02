@@ -287,6 +287,12 @@ test('free text still works: a comma commits, a pasted list adds everyone, Backs
   await expect(recipientChips(c)).toContainText('zed@nowhere.test');
   await expect(to).toHaveValue('');
 
+  // An address the field already holds is not added twice, and leaves no list for the emptied input.
+  await to.pressSequentially('zed@nowhere.test,');
+  await expect(recipientChips(c)).toHaveCount(1);
+  await expect(to).toHaveValue('');
+  await expect(suggestions(c)).toHaveCount(0);
+
   await to.evaluate((el, text) => {
     const data = new DataTransfer();
     data.setData('text/plain', text);
@@ -333,6 +339,32 @@ test('Ctrl+Enter with a suggestion highlighted adds the person without sending; 
   await expect(sending).toBeVisible();
   await sending.getByRole('button', { name: 'Undo' }).click();
   await expect(floatingComposer(page)).toBeVisible();
+});
+
+test('a recipient field fills its row with chips and input on one line, and announces a list only while it shows one', async ({ page }) => {
+  const c = await openComposer(page, newSubject());
+  const to = recipientInput(c);
+  await to.focus();
+  await expect(to).toHaveAttribute('aria-expanded', 'false');
+  await addRecipient(c, BOB);
+  await expect(to).toHaveAttribute('aria-expanded', 'false');
+
+  const chip = (await recipientChips(c).first().boundingBox())!;
+  const input = (await to.boundingBox())!;
+  const row = (await c.getByRole('group', { name: 'To', exact: true }).boundingBox())!;
+  // One line: the input starts right of the chip and overlaps it vertically.
+  expect(input.x).toBeGreaterThan(chip.x + chip.width - 1);
+  expect(input.y).toBeLessThan(chip.y + chip.height);
+  expect(input.y + input.height).toBeGreaterThan(chip.y);
+  // The input takes what the chip leaves of the row.
+  expect(input.x + input.width).toBeGreaterThan(row.x + row.width - 2);
+
+  await to.pressSequentially('car');
+  await expect(suggestions(c).filter({ hasText: 'carol@partner.test' })).toBeVisible();
+  await expect(to).toHaveAttribute('aria-expanded', 'true');
+  // The list is as wide as the field.
+  const list = (await c.getByRole('listbox').boundingBox())!;
+  expect(Math.abs(list.width - row.width)).toBeLessThan(2);
 });
 
 test('removing a recipient from the keyboard keeps focus in the field', async ({ page }) => {

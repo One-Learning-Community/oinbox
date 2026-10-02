@@ -19,10 +19,13 @@ const heldSends = new WeakSet<Event>();
 /** Whether this keypress just added a suggestion the user hadn't typed out, so it must not also send. */
 export const pickedSuggestion = (e: Event): boolean => heldSends.has(e);
 
+/** Typed text is committed by these keys, as well as by Enter. */
+const DELIMITERS = [',', ';'];
+
 /**
  * To/Cc/Bcc: chips plus a text input that suggests people from mail history.
- * rozie Combobox renders the chips and the list; committing typed or pasted addresses,
- * Tab-to-pick and "no list without suggestions" are added here (docs/rozie-feedback.md).
+ * rozie Combobox renders the chips and the list, picks with Enter and Tab and commits typed
+ * text. Pasted address lists and committing on blur are added here (docs/rozie-feedback.md).
  */
 export function RecipientField(props: {
   /** Unique on the page: Combobox derives its element ids from it. */
@@ -35,14 +38,11 @@ export function RecipientField(props: {
 }) {
   const { recipients } = useApp();
   const [text, setText] = createSignal('');
-  const [dismissed, setDismissed] = createSignal(false);
   let handle: ComboboxHandle | undefined;
   let root: HTMLDivElement | undefined;
-  /** Set when Combobox picks someone other than the address typed in full; read by the same keypress. */
-  let pickedOther = false;
 
   const taken = () => new Set([...props.value, ...props.others].map((a) => a.email.toLowerCase()));
-  const found = createMemo(() => (dismissed() ? [] : offer(recipients.suggest(text(), taken()), text())));
+  const found = createMemo(() => offer(recipients.suggest(text(), taken()), text()));
   const options = createMemo<Option[]>(() =>
     found().map((r) => ({ value: r.email, label: r.name ? `${r.name} ${r.email}` : r.email, recipient: r })),
   );
@@ -57,36 +57,31 @@ export function RecipientField(props: {
     if (typed) addAll([typed]);
     return !!typed;
   };
-  /** Combobox doesn't expose its highlighted option; its input's aria-activedescendant names it. */
-  const highlighted = (): Recipient | undefined => {
-    const id = root?.querySelector('input')?.getAttribute('aria-activedescendant') ?? '';
-    return found()[Number(id.slice(id.lastIndexOf('-') + 1))] ?? found()[0];
-  };
 
   // Runs after Combobox's own handler for the same keypress.
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      if (found().length) {
-        setDismissed(true);
-        listEscapes.add(e);
-      }
+      // Combobox takes Escape only to close a list that is showing.
+      if (e.defaultPrevented) listEscapes.add(e);
     } else if (e.defaultPrevented) {
-      // Combobox picked the highlighted suggestion (Enter). With Ctrl/Cmd held the composer
-      // would send in the same keypress, to someone the user has only just seen added.
-      if (e.key === 'Enter' && pickedOther) heldSends.add(e);
-      pickedOther = false;
-    } else if (e.key === 'Enter') {
-      commitTyped();
-    } else if (e.key === 'Tab' && !e.shiftKey && found().length) {
-      e.preventDefault();
-      addAll([toAddress(highlighted()!)]);
-    } else if (e.key === ',' || e.key === ';') {
-      e.preventDefault();
-      commitTyped();
+      // Committing an address the field already holds empties the input without an event.
+      if (e.target instanceof HTMLInputElement && !e.target.value) setText('');
+    } else if (e.key === 'Enter' && !commitTyped()) {
+      // Ctrl/Cmd+Enter, which Combobox leaves alone and the composer sends on. Half-typed text
+      // would be left behind, so the highlighted suggestion is added and the send held: it
+      // would go to someone the user has only just seen added.
+      const active = handle?.activeOption() as Option | null | undefined;
+      if (active) {
+        addAll([toAddress(active.recipient)]);
+        heldSends.add(e);
+      }
     }
   };
 
+  // Combobox splits a paste on its delimiters, which breaks `"Roe, Sam" <sam@x>` and replaces
+  // half-typed text; this runs first (capture) and keeps the paste from it.
   const onPaste = (e: ClipboardEvent) => {
+    e.stopPropagation();
     const pasted = parseAddressList(e.clipboardData?.getData('text/plain') ?? '');
     // A fragment pasted into half-typed text is ordinary text; whole addresses become recipients.
     if (pasted.length > 1 || (pasted.length === 1 && !text())) {
@@ -101,8 +96,7 @@ export function RecipientField(props: {
       <div
         ref={(el) => {
           root = el;
-          // paste is not one of Solid's delegated events.
-          el.addEventListener('paste', onPaste);
+          el.addEventListener('paste', onPaste, true);
         }}
         class="recipient-field"
         role="group"
@@ -116,21 +110,24 @@ export function RecipientField(props: {
           ref={(h) => (handle = h)}
           multiple
           disableFilter
+          block
+          chipLayout="inline"
+          disableOpenOnFocus
+          hideEmpty
+          selectOnTab
+          delimiters={DELIMITERS}
+          validate={(t: string) => !!completeAddress(t)}
           idBase={props.id}
           ariaLabel={props.label}
           value={props.value.map((a) => a.email)}
           options={options()}
-          onSearch={(...args: unknown[]) => {
-            setText((args[0] as { query: string }).query);
-            setDismissed(false);
-          }}
-          onChange={(...args: unknown[]) => {
-            const e = args[0] as { value: string[]; option: Option | null; selected: boolean };
-            if (e.selected && e.option) {
-              pickedOther = completeAddress(text())?.email.toLowerCase() !== e.option.value.toLowerCase();
-              addAll([toAddress(e.option.recipient)]);
-            }
-            else props.onChange(props.value.filter((a) => e.value.includes(a.email)));
+          onSearch={(e) => setText(e.query)}
+          onChange={(e) => {
+            if (e.text !== undefined) {
+              const typed = completeAddress(e.text);
+              if (typed) addAll([typed]);
+            } else if (e.selected && e.option) addAll([toAddress((e.option as Option).recipient)]);
+            else props.onChange(props.value.filter((a) => (e.value as string[]).includes(a.email)));
           }}
           chipSlot={(chip) => (
             <Show when={props.value[chip.index]}>
@@ -142,11 +139,7 @@ export function RecipientField(props: {
                     class="rcpt-chip-remove"
                     aria-label={`Remove ${formatAddress(a())}`}
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      chip.remove();
-                      // The button is gone: keep the keyboard in the field, not on the page's shortcuts.
-                      handle?.focus();
-                    }}
+                    onClick={() => chip.remove()}
                   >
                     ×
                   </button>
@@ -165,7 +158,6 @@ export function RecipientField(props: {
               </span>
             );
           }}
-          emptySlot={() => null}
         />
       </div>
     </div>
