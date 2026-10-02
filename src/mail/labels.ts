@@ -33,6 +33,13 @@ export function labelLimits(session: Session): LabelLimits {
 
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const encoder = new TextEncoder();
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** The first `max` characters as a reader counts them, so the cut never lands inside an emoji. */
+function clip(text: string, max: number): string {
+  const parts = [...graphemes.segment(text)];
+  return parts.length > max ? `${parts.slice(0, max).map((p) => p.segment).join('')}…` : text;
+}
 
 /** How many levels of sub-labels hang below a mailbox. */
 function subtreeHeight(id: Id, all: Mailbox[], depth = 0): number {
@@ -53,7 +60,7 @@ export function planLabel(path: string, mailboxes: Record<Id, Mailbox>, limits: 
   if (segments.some((s) => !s)) return fail("A label name can't be empty.");
   if (segments.some((s) => CONTROL.test(s))) return fail("Label names can't contain control characters.");
   const long = segments.find((s) => encoder.encode(s).length > limits.maxNameBytes);
-  if (long) return fail(`'${long.length > 30 ? `${long.slice(0, 30)}…` : long}' is too long.`);
+  if (long) return fail(`'${clip(long, 30)}' is too long.`);
 
   const all = Object.values(mailboxes);
   const childOf = (parentId: Id | null, name: string) =>
@@ -61,24 +68,32 @@ export function planLabel(path: string, mailboxes: Record<Id, Mailbox>, limits: 
 
   let parentId: Id | null = null;
   const shown: string[] = [];
+  let system: string | undefined;
+  let insideSelf = false;
   let i = 0;
   for (; i < segments.length - 1; i++) {
     const hit = childOf(parentId, segments[i]!);
     if (!hit) break;
-    if (hit.id === renaming) return fail("A label can't be moved inside itself.");
-    if (hit.role) return fail(`'${hit.name}' is a system mailbox.`);
+    if (hit.id === renaming) insideSelf = true;
+    if (hit.role) system ??= hit.name;
     parentId = hit.id;
     shown.push(hit.name);
   }
   const ancestors = segments.slice(i, -1);
   const name = segments[segments.length - 1]!;
-
   const existing = ancestors.length ? undefined : childOf(parentId, name);
+
+  // A label another client put under a system mailbox may be renamed where it is: nothing new goes there.
+  const current = renaming ? mailboxes[renaming] : undefined;
+  const inPlace = !!current && !ancestors.length && (current.parentId ?? null) === parentId;
+  if (system && !inPlace) return fail(`'${system}' is a system mailbox.`);
   if (existing?.role) return fail(`'${existing.name}' is a system mailbox.`);
   if (existing && existing.id !== renaming) return fail(`A label named '${[...shown, existing.name].join('/')}' already exists.`);
-
+  const tooDeep = `Labels can be nested at most ${limits.maxDepth} deep.`;
+  if (segments.length > limits.maxDepth) return fail(tooDeep);
+  if (insideSelf) return fail("A label can't be moved inside itself.");
   const below = renaming ? subtreeHeight(renaming, all) : 0;
-  if (segments.length + below > limits.maxDepth) return fail(`Labels can be nested at most ${limits.maxDepth} deep.`);
+  if (segments.length + below > limits.maxDepth) return fail(tooDeep);
 
   return {
     ok: true,

@@ -54,8 +54,14 @@ describe('planLabel', () => {
     expect(plan('x'.repeat(255)).ok).toBe(true);
     expect(error('x'.repeat(256))).toBe(`'${'x'.repeat(30)}…' is too long.`);
     expect(plan('😀'.repeat(63)).ok).toBe(true);
-    expect(error('😀'.repeat(64))).toBe(`'${'😀'.repeat(15)}…' is too long.`);
+    expect(error('😀'.repeat(64))).toBe(`'${'😀'.repeat(30)}…' is too long.`);
     expect(error('Clients/abcd', undefined, { maxDepth: 10, maxNameBytes: 3 })).toBe("'Clients' is too long.");
+  });
+
+  it('never cuts the too-long name inside an emoji', () => {
+    expect(error(`a${'😀'.repeat(64)}`)).toBe(`'a${'😀'.repeat(29)}…' is too long.`);
+    const family = '👨‍👩‍👧';
+    expect(error(family.repeat(31))).toBe(`'${family.repeat(30)}…' is too long.`);
   });
 
   it('refuses system mailboxes anywhere in the path', () => {
@@ -95,6 +101,18 @@ describe('planLabel', () => {
     it('refuses moving a label inside itself', () => {
       expect(error('Clients/Sub', 'C')).toBe("A label can't be moved inside itself.");
       expect(error('Clients/Acme/Clients', 'C')).toBe("A label can't be moved inside itself.");
+    });
+
+    it('lets a label under a system mailbox be renamed where it is or moved out, but nothing be moved in', () => {
+      expect(plan('Inbox/Sub', 'X')).toMatchObject({ ok: true, noop: true });
+      expect(plan('inbox/Sub 2', 'X')).toEqual({ ok: true, plan: { parentId: 'I', ancestors: [], name: 'Sub 2' }, path: 'Inbox/Sub 2', noop: false });
+      expect(error('Inbox/New/Sub', 'X')).toBe("'Inbox' is a system mailbox.");
+      expect(error('Inbox/Receipts', 'R')).toBe("'Inbox' is a system mailbox.");
+    });
+
+    it('reports a duplicate and the depth limit before a move inside itself', () => {
+      expect(error('Clients/Acme', 'C')).toBe("A label named 'Clients/Acme' already exists.");
+      expect(error('Clients/x/y', 'C', { maxDepth: 2, maxNameBytes: 255 })).toBe('Labels can be nested at most 2 deep.');
     });
 
     it('counts the label\'s own sub-labels against the depth limit', () => {
