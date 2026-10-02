@@ -271,7 +271,7 @@ export class MailEngine {
     try {
       res = await this.client.send(b);
     } catch (e) {
-      this.set('queries', key, 'error', String(e));
+      if (this.state.queries[key]) this.set('queries', key, 'error', String(e));
       throw e;
     }
     if (!this.state.queries[key]) return;
@@ -383,7 +383,8 @@ export class MailEngine {
         }));
         const failedThreads = new Set(failed.map((id) => this.state.emails[id]?.threadId));
         for (const r of removedRows) {
-          if (!failedThreads.has(this.state.emails[r.id]?.threadId)) continue;
+          // The list may have been closed since its row was removed.
+          if (!this.state.queries[r.key] || !failedThreads.has(this.state.emails[r.id]?.threadId)) continue;
           this.set('queries', r.key, 'slots', produce((slots) => {
             if (!slots.includes(r.id)) slots.splice(Math.min(r.index, slots.length), 0, r.id);
           }));
@@ -617,13 +618,18 @@ export class MailEngine {
     const gone = new Set(ids);
     solidBatch(() => {
       this.set('mailboxes', produce((m) => ids.forEach((id) => delete m[id])));
-      for (const q of Object.values(this.state.queries)) {
-        const f = q.filter as Record<string, unknown> | null;
-        if (!f || Object.keys(f).length !== 1 || typeof f.inMailbox !== 'string' || !gone.has(f.inMailbox)) continue;
-        this.ranges.delete(q.key);
-        this.set('queries', produce((all) => void delete all[q.key]));
-      }
+      this.dropMailboxQueries((id) => gone.has(id));
     });
+  }
+
+  /** Drop every live query, and its remembered range, that lists exactly one mailbox which `gone` says is gone. */
+  private dropMailboxQueries(gone: (mailboxId: Id) => boolean): void {
+    for (const q of Object.values(this.state.queries)) {
+      const f = q.filter as Record<string, unknown> | null;
+      if (!f || Object.keys(f).length !== 1 || typeof f.inMailbox !== 'string' || !gone(f.inMailbox)) continue;
+      this.ranges.delete(q.key);
+      this.set('queries', produce((all) => void delete all[q.key]));
+    }
   }
 
   /** Create nested mailboxes in one Mailbox/set, each child naming its parent by creation id. */
@@ -886,7 +892,6 @@ export class MailEngine {
 
   private async resetAll(): Promise<void> {
     this.states = {};
-    const queries = Object.values(this.state.queries).map((q) => q.key);
     this.set({ emails: {}, threads: {}, bodies: {}, mailboxes: {}, synced: false });
     this.set('queries', produce((all) => {
       for (const q of Object.values(all)) {
@@ -896,7 +901,9 @@ export class MailEngine {
       }
     }));
     await this.start();
-    await Promise.all(queries.map((k) => this.resetQuery(k)));
+    // A label may have been deleted while the cursor was stale.
+    this.dropMailboxQueries((id) => !this.state.mailboxes[id]);
+    await Promise.all(Object.keys(this.state.queries).map((k) => this.resetQuery(k)));
   }
 
   // ---- Store merging -------------------------------------------------------

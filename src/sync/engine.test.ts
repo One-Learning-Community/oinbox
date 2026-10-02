@@ -2,9 +2,11 @@ import { createRoot } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SORT, MailEngine } from './engine';
 import { FakeJmap } from './fake-jmap';
-import { archivePatch, keywordPatch } from './patch';
+import { archivePatch, keywordPatch, unlabelPatch } from './patch';
 
 const inboxSpec = { filter: { inMailbox: 'I' }, sort: DEFAULT_SORT, collapseThreads: true };
+/** The engine's remembered viewport ranges: private, but the only trace a revived dead query leaves. */
+const rangesOf = (e: MailEngine) => (e as unknown as { ranges: Map<string, unknown> }).ranges;
 
 function setup(opts: { collapsedQueryChanges?: boolean; settleDelayMs?: number } = {}) {
   const server = new FakeJmap();
@@ -453,6 +455,80 @@ describe('MailEngine labels: delete', () => {
     expect(engine.state.mailboxes.W).toBeUndefined();
     expect(engine.state.queries[key]).toBeUndefined();
     expect(engine.state.queries[inboxKey]).toBeDefined();
+  });
+
+  const destroyWorkElsewhere = () => {
+    for (const e of server.emails.values()) delete e.mailboxIds!.W;
+    server.emails.get('x1')!.mailboxIds = { A: true };
+    server.mailboxes.delete('W');
+  };
+
+  it('drops the query of a label that vanished while the change cursor was stale', async () => {
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    const inboxKey = engine.openQuery(inboxSpec);
+    await engine.ensureRange(inboxKey, 0, 10);
+    destroyWorkElsewhere();
+    server.changesUnsupported = true;
+    await engine.catchUp();
+    expect(engine.state.mailboxes.W).toBeUndefined();
+    expect(engine.state.queries[key]).toBeUndefined();
+    expect(rangesOf(engine).has(key)).toBe(false);
+    expect(engine.state.queries[inboxKey]!.slots).toEqual(['x3', 'x2']);
+  });
+
+  it('reports a failed page load as itself when the list was closed meanwhile', async () => {
+    const key = engine.openQuery(workSpec);
+    server.onCall = (name) => {
+      if (name !== 'Email/query') return;
+      engine.closeQuery(key, () => false);
+      throw new Error('boom');
+    };
+    await expect(engine.ensureRange(key, 0, 10)).rejects.toThrow('boom');
+  });
+
+  it('rolls back a refused update when a list it had changed was closed meanwhile', async () => {
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    server.rejectUpdates.add('x2');
+    server.onCall = (name) => {
+      if (name === 'Email/set') engine.closeQuery(key, () => false);
+    };
+    await expect(engine.updateEmails(unlabelPatch(engine.threadEmails(['t2']), 'W', 'A'))).rejects.toThrow('forbidden');
+    expect(engine.state.emails.x2?.mailboxIds).toEqual({ W: true, I: true });
+  });
+
+  it('leaves alone the query changes of a label destroyed in the same round', async () => {
+    engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0, collapsedQueryChanges: true }));
+    await engine.start();
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    destroyWorkElsewhere();
+    server.bumpMailbox({ destroyed: ['W'] });
+    server.queryChangesUnsupported = true;
+    server.calls = [];
+    await engine.catchUp();
+    expect(engine.state.queries[key]).toBeUndefined();
+    expect(rangesOf(engine).has(key)).toBe(false);
+    expect(server.calls).not.toContain('Email/query');
+  });
+
+  it('does not revive a list closed while another one was being reloaded', async () => {
+    engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0, collapsedQueryChanges: true }));
+    await engine.start();
+    const inboxKey = engine.openQuery(inboxSpec);
+    await engine.ensureRange(inboxKey, 0, 10);
+    const key = engine.openQuery(workSpec);
+    await engine.ensureRange(key, 0, 10);
+    server.queryChangesUnsupported = true;
+    // Both lists must be reloaded. The first reload's request closes the second list.
+    server.onCall = (name) => {
+      if (name === 'Email/query') engine.closeQuery(key, () => false);
+    };
+    await engine.catchUp();
+    expect(engine.state.queries[key]).toBeUndefined();
+    expect(rangesOf(engine).has(key)).toBe(false);
+    expect(engine.state.queries[inboxKey]!.queryState).toBeTruthy();
   });
 
   it('is synced only after reconciling with the server, not straight from a snapshot', async () => {
