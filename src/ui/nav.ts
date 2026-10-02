@@ -14,6 +14,14 @@ export interface ListHandle {
 export type PickerKind = 'move' | 'label';
 export type LabelDialogState = { kind: 'create' } | { kind: 'rename'; id: Id };
 
+/**
+ * What a mail route shows while it has no view. A label route never says "not found": on a warm
+ * start the label may be newer than the snapshot, and once synced a missing label redirects.
+ */
+export function missingViewText(labelRoute: boolean, ready: boolean): string {
+  return ready && !labelRoute ? 'Mailbox not found.' : 'Loading…';
+}
+
 /** Shared UI navigation state: cursor, selection, the open thread, and overlays. */
 export function createNav() {
   const [cursor, setCursor] = createSignal(0);

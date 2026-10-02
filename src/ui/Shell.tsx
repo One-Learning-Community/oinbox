@@ -8,6 +8,7 @@ import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
 import { LabelDialog } from './LabelDialog';
 import { LabelMenu } from './LabelMenu';
+import { missingViewText } from './nav';
 import { HelpDialog, MailboxPicker } from './Overlays';
 import { latestReplyable } from './Conversation';
 import { ThreadList } from './ThreadList';
@@ -223,18 +224,15 @@ export function MailView() {
 
   // A label that is gone (deleted here or elsewhere, or a stale link) has no view: go to the Inbox.
   // Only once the store has been reconciled; a warm-start snapshot may not know a new label yet.
-  let left: string | undefined;
-  createEffect(() => {
-    const id = params.id;
-    if (!id || view() || !engine.state.synced || left === id) return;
-    // Once per label: the effect can run again before the navigation lands.
-    left = id;
+  // `on` keeps the toast and the navigation from adding dependencies that would run this twice.
+  createEffect(on([() => params.id, view, () => engine.state.synced], ([id, v, synced]) => {
+    if (!id || v || !synced) return;
     if (!labels.deletedHere(id)) toast('That label no longer exists.', 'info');
     navigate('/inbox', { replace: true });
-  });
+  }));
 
   return (
-    <Show when={view()} fallback={<div class="list-empty">{engine.state.ready ? 'Mailbox not found.' : 'Loading…'}</div>} keyed>
+    <Show when={view()} fallback={<div class="list-empty">{missingViewText(!!params.id, engine.state.ready)}</div>} keyed>
       {(v) => (
         <>
           <ThreadList view={v} hidden={!!params.threadId} />
