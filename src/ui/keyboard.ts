@@ -32,10 +32,12 @@ export const SHORTCUTS: [string, string][] = [
   ['?', 'Keyboard shortcuts'],
 ];
 
-function isTyping(el: Element | null): boolean {
+/** True while single-key shortcuts must stay quiet: the focus is in a text field, or in a menu with keys of its own. */
+export function shortcutsSuspended(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable) return true;
+  return !!el.closest('[role="menu"]');
 }
 
 /** Gmail's default keyboard shortcuts. Returns a disposer. */
@@ -68,7 +70,7 @@ export function installShortcuts(app: App, nav: Nav, navigate: Navigator, compos
 
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (isTyping(document.activeElement)) return;
+    if (shortcutsSuspended(document.activeElement)) return;
     // Enter on a focused control activates that control; it doesn't open the cursor thread.
     if (e.key === 'Enter' && document.activeElement?.closest('button, a[href], [role="button"]')) return;
     if (nav.labelDialog()) return;
