@@ -45,6 +45,7 @@ The `setup` project signs Alice in once through the real OAuth flow and saves `e
 | `search.spec.ts` | `from:bob` (deep link) returns only Bob's threads, including "Lunch Friday?". A free-text search for "zeppelin" from the search box hits the Q3 thread with `<mark>` highlights. |
 | `keyboard.spec.ts` | `j` then `e` prompts a confirm dialog before archiving the cursor thread; Cancel keeps it, confirming removes it (row disappears, server confirms). Also `o` opens a thread, `u` goes back, `?` opens the shortcuts dialog and Escape closes it. |
 | `imap-sync.spec.ts` | A real IMAP client (simulating another mail app) mutates mail while oinbox is open: marking a message seen, moving it out of the inbox, and deleting one message of an open thread all update the UI live via push, with no reload. |
+| `labels.spec.ts` | Label management: "+" creates a label (a double submit creates one); a path creates its parent; duplicates and empty segments are refused inline; rename keeps the URL and can move a label under another parent; delete keeps the mail (shared mail loses the label, mail only there goes to Archive) and returns to the Inbox; a label with sub-labels can't be deleted; the "⋯" menu works from the keyboard; a label deleted by another client sends its view to the Inbox; the pickers' "Create" row creates and applies a label; the chip "×" removes a label, with Undo. Labels it creates are named `e2e-…` and removed after each test. |
 
 ## Regression tests for fixed bugs
 

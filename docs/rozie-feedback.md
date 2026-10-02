@@ -169,3 +169,29 @@ out of the box. Everything below is added from outside in `src/ui/RecipientField
    depends on internal markup and will break if those classes change.
 Also: `on*` props are `(...args: unknown[]) => void` and slot contexts are loosely typed, the same
 finding as FullCalendar and DataTable.
+
+## CommandPalette 0.4.10 — a row pinned last needs the whole scorer replaced
+Wanted: the Move/Label pickers show "Create '<typed text>'" as the last row, below every match.
+`score` is the only way to order one row, and it replaces the default scorer for every row; the
+default (`defaultScore` / `fuzzyMatch`) isn't exported, so we wrote our own ranking for all rows
+(`src/ui/picker.ts`) to pin one. The docs suggest `return baseScore + bonus` inside `score`, which
+also needs the base. Suggest exporting `defaultScore`, or passing it to `score` as a third
+argument, or a first-class `creatable` row as Combobox has.
+Worked well: the row is an ordinary item, so arrow keys, Enter and the group heading come free.
+
+## Popover 0.2.4 — hosting a menu (the sidebar label "⋯")
+Wanted: a menu button with Rename/Delete. There is no Menu component, so the roving focus, arrow
+keys, focus-first-item and Escape-returns-focus are ours (`LabelMenu` in `src/ui/Shell.tsx`).
+1. **`trigger="click"` puts `aria-haspopup="dialog"` and `aria-expanded` on the anchor wrapper
+   `<div>`**, not on the consumer's button, and the value can't be `menu`. A menu button therefore
+   needs `trigger="manual"` with its own ARIA, and loses the click trigger's focus return.
+   Suggest passing the ARIA props through the anchor slot context, with a `popupRole` prop.
+2. **The root is `display: contents`**, so a class on `<Popover>` can't place it; we wrap it in
+   our own positioned `<span>`.
+3. **Every panel has `id="rozie-popover-floating"`**: two open popovers would share an id.
+4. The known "no external anchor" gap means one Popover instance per label row.
+
+## Dialog 0.1.3 — fine for a form
+The create/rename label dialog needed nothing extra. One note: Dialog calls `showModal()` in its
+own `onMount`, which runs after the parent's, so a parent that wants to focus and select its input
+has to wait a microtask. An `initialFocus` prop (element or selector) would make that explicit.
