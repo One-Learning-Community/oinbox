@@ -1,11 +1,13 @@
+import { Popover } from '@rozie-ui/popover-solid';
 import { A, useLocation, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, Show, type JSX } from 'solid-js';
 import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
-import { labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
+import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes, subLabelCount } from '../sync/selectors';
 import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
+import { LabelDialog } from './LabelDialog';
 import { HelpDialog, MailboxPicker } from './Overlays';
 import { latestReplyable } from './Conversation';
 import { ThreadList } from './ThreadList';
@@ -73,6 +75,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       </Show>
       <MailboxPicker />
       <HelpDialog />
+      <LabelDialog />
       <props.confirmHost />
     </div>
   );
@@ -121,7 +124,7 @@ function SearchBox() {
 }
 
 function Sidebar(props: { current: string }) {
-  const { engine, hasCalendars } = useApp();
+  const { engine, hasCalendars, nav } = useApp();
   const groups = createMemo(() => sidebarMailboxes(engine.state.mailboxes));
   const isActive = (slug: string) => props.current === `/${slug}` || props.current.startsWith(`/${slug}/t/`);
 
@@ -145,12 +148,22 @@ function Sidebar(props: { current: string }) {
           </>
         )}
       </For>
-      <Show when={groups().labels.length}>
-        <div class="nav-section">Labels</div>
-        <For each={groups().labels}>
-          {(mb) => item(mb, mailboxSlug(mb), labelPath(mb, engine.state.mailboxes), 'label', mb.unreadThreads)}
-        </For>
-      </Show>
+      <div class="nav-section">
+        <span>Labels</span>
+        <button class="icon-btn nav-add" type="button" aria-label="New label" title="New label" onClick={() => nav.setLabelDialog({ kind: 'create' })}>
+          <Icon name="add" />
+        </button>
+      </div>
+      <For each={groups().labels}>
+        {(mb) => (
+          <div class="nav-row">
+            {item(mb, mailboxSlug(mb), labelPath(mb, engine.state.mailboxes), 'label', mb.unreadThreads)}
+            <Show when={isLabel(mb)}>
+              <LabelMenu mailbox={mb} />
+            </Show>
+          </div>
+        )}
+      </For>
       <Show when={hasCalendars()}>
         <A href="/calendar" class="nav-item" classList={{ active: props.current === '/calendar' }}>
           <Icon name="calendar" />
@@ -161,6 +174,79 @@ function Sidebar(props: { current: string }) {
         </Show>
       </Show>
     </>
+  );
+}
+
+/** The "⋯" menu of a label row: Rename and Delete. */
+function LabelMenu(props: { mailbox: Mailbox }) {
+  const { engine, labels, nav } = useApp();
+  const [open, setOpen] = createSignal(false);
+  let button: HTMLButtonElement | undefined;
+  let menu: HTMLDivElement | undefined;
+  const path = () => labelPath(props.mailbox, engine.state.mailboxes);
+  const subs = createMemo(() => subLabelCount(props.mailbox.id, engine.state.mailboxes));
+  const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+
+  createEffect(on(open, (isOpen) => {
+    if (isOpen) queueMicrotask(() => items()[0]?.focus({ preventScroll: true }));
+  }, { defer: true }));
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setOpen(false);
+      button?.focus();
+      return;
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const list = items();
+    const at = list.indexOf(document.activeElement as HTMLElement);
+    list[(at + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus();
+  };
+
+  const choose = (run: () => void) => {
+    setOpen(false);
+    run();
+  };
+
+  return (
+    <span class="nav-menu">
+      <Popover
+        open={open()}
+        onOpenChange={setOpen}
+        trigger="manual"
+        placement="bottom-end"
+        strategy="fixed"
+        offset={4}
+        anchorSlot={() => (
+          <button
+            ref={button}
+            class="icon-btn nav-more"
+            type="button"
+            aria-label={`Options for ${path()}`}
+            aria-haspopup="menu"
+            aria-expanded={open()}
+            onClick={() => setOpen(!open())}
+          >
+            <Icon name="more" />
+          </button>
+        )}
+      >
+        <div class="menu" role="menu" aria-label={`Options for ${path()}`} ref={menu} onKeyDown={onKeyDown}>
+          <button type="button" role="menuitem" onClick={() => choose(() => nav.setLabelDialog({ kind: 'rename', id: props.mailbox.id }))}>
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            aria-disabled={subs() > 0}
+            onClick={() => subs() === 0 && choose(() => void labels.remove(props.mailbox.id))}
+          >
+            {subs() > 0 ? `Delete (has ${subs()} sub-label${subs() === 1 ? '' : 's'})` : 'Delete'}
+          </button>
+        </div>
+      </Popover>
+    </span>
   );
 }
 
@@ -195,7 +281,8 @@ function safeDecode(s: string): string {
 /** Route component for /:slug, /:slug/t/:threadId and /label/:id[/t/:threadId]. */
 export function MailView() {
   const params = useParams<{ slug?: string; id?: string; q?: string; threadId?: string }>();
-  const { engine } = useApp();
+  const { engine, labels, toast } = useApp();
+  const navigate = useNavigate();
   const slug = () =>
     params.q !== undefined
       ? `search/${encodeURIComponent(safeDecode(params.q))}`
@@ -205,6 +292,18 @@ export function MailView() {
   // Only a different mailbox counts as a new view; count updates must not remount the list.
   const view = createMemo(() => resolveView(slug(), engine.state.mailboxes), undefined, {
     equals: (a, b) => a?.slug === b?.slug && a?.mailboxId === b?.mailboxId && a?.title === b?.title,
+  });
+
+  // A label that is gone (deleted here or elsewhere, or a stale link) has no view: go to the Inbox.
+  // Only once the store has been reconciled; a warm-start snapshot may not know a new label yet.
+  let left: string | undefined;
+  createEffect(() => {
+    const id = params.id;
+    if (!id || view() || !engine.state.synced || left === id) return;
+    // Once per label: the effect can run again before the navigation lands.
+    left = id;
+    if (!labels.deletedHere(id)) toast('That label no longer exists.', 'info');
+    navigate('/inbox', { replace: true });
   });
 
   return (

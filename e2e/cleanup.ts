@@ -9,7 +9,7 @@ export async function cleanupE2eMail(): Promise<number> {
     // One query per prefix: Stalwart (with the Meilisearch store) returns nothing for an
     // OR of subject conditions.
     const ids: string[] = [];
-    for (const prefix of ['Push test', 'Archive target', 'Archive neighbour', 'Compose test']) {
+    for (const prefix of ['Push test', 'Archive target', 'Archive neighbour', 'Compose test', 'Label test']) {
       const r = await jmap(
         [
           ['Email/query', { accountId: acct, filter: { subject: prefix } }, 'q'],

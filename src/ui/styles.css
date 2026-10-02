@@ -102,7 +102,22 @@ a { color: var(--accent); }
 .nav-item svg { width: 20px; height: 20px; flex: none; color: var(--text-2); }
 .nav-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .nav-item .count { font-size: 12px; font-weight: 700; }
-.nav-section { margin: 16px 0 4px 26px; font-size: 14px; color: var(--text-2); }
+.nav-section { display: flex; align-items: center; justify-content: space-between; margin: 16px 6px 4px 26px; font-size: 14px; color: var(--text-2); }
+.nav-add, .nav-more { width: 28px; height: 28px; }
+.nav-row { position: relative; }
+.nav-row .nav-item { padding-right: 40px; }
+.nav-menu {
+  position: absolute; top: 2px; right: 6px;
+  --rozie-popover-bg: var(--surface); --rozie-popover-color: var(--text); --rozie-popover-border: 1px solid var(--border);
+  --rozie-popover-shadow: var(--shadow); --rozie-popover-padding: 4px;
+}
+.nav-more { opacity: 0; }
+.nav-row:hover .nav-more, .nav-row:focus-within .nav-more, .nav-more[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .nav-more { opacity: 1; } }
+.menu { display: flex; flex-direction: column; min-width: 160px; }
+.menu [role='menuitem'] { border: 0; background: none; text-align: left; padding: 8px 12px; border-radius: 4px; cursor: pointer; color: var(--text); }
+.menu [role='menuitem']:hover, .menu [role='menuitem']:focus-visible { background: var(--hover); outline: none; }
+.menu [role='menuitem'][aria-disabled='true'] { color: var(--text-3); cursor: default; }
 
 .main { min-width: 0; min-height: 0; margin: 0 16px 16px 0; background: var(--surface); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
 
@@ -231,6 +246,13 @@ a { color: var(--accent); }
 .dialog-actions button:hover { background: var(--hover); }
 .dialog-actions button.danger { border-color: transparent; background: var(--danger); color: #fff; }
 .dialog-actions button.danger:hover { filter: brightness(1.1); }
+.dialog-actions button.primary { border-color: transparent; background: var(--accent); color: var(--surface); }
+.dialog-actions button:disabled { opacity: 0.6; cursor: default; }
+.label-form input { width: 100%; min-width: min(360px, 70vw); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
+.label-form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.label-form input[aria-invalid='true'] { border-color: var(--danger); }
+.rozie-dialog .label-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-3); }
+.rozie-dialog .label-error { margin: 6px 0 16px; min-height: 18px; font-size: 13px; color: var(--danger); }
 
 /* ---- Compose ---- */
 .link-btn { border: 0; background: none; color: var(--text-3); cursor: pointer; padding: 0; font-size: 13px; }

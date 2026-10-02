@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { cleanupE2eMail } from './cleanup';
+import { destroyE2eLabels } from './support/labels';
 import { BASE } from './support/mail';
 
 /**
@@ -37,4 +38,6 @@ export default async function globalSetup() {
   // Remove mail that earlier (aborted) runs may have left behind.
   const removed = await cleanupE2eMail();
   if (removed) console.log(`e2e: removed ${removed} leftover test message(s)`);
+  const labels = await destroyE2eLabels();
+  if (labels) console.log(`e2e: removed ${labels} leftover test label(s)`);
 }

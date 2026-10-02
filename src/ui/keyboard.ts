@@ -71,6 +71,7 @@ export function installShortcuts(app: App, nav: Nav, navigate: Navigator, compos
     if (isTyping(document.activeElement)) return;
     // Enter on a focused control activates that control; it doesn't open the cursor thread.
     if (e.key === 'Enter' && document.activeElement?.closest('button, a[href], [role="button"]')) return;
+    if (nav.labelDialog()) return;
     if (nav.picker() || nav.helpOpen()) {
       if (e.key === 'Escape') {
         nav.setPicker(null);

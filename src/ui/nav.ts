@@ -12,6 +12,7 @@ export interface ListHandle {
 }
 
 export type PickerKind = 'move' | 'label';
+export type LabelDialogState = { kind: 'create' } | { kind: 'rename'; id: Id };
 
 /** Shared UI navigation state: cursor, selection, the open thread, and overlays. */
 export function createNav() {
@@ -21,6 +22,7 @@ export function createNav() {
   const [openThread, setOpenThread] = createSignal<Id | null>(null);
   const [picker, setPicker] = createSignal<{ kind: PickerKind; threadIds: Id[] } | null>(null);
   const [helpOpen, setHelpOpen] = createSignal(false);
+  const [labelDialog, setLabelDialog] = createSignal<LabelDialogState | null>(null);
 
   const toggleSelected = (id: Id) => {
     const next = new Set(selected());
@@ -55,6 +57,8 @@ export function createNav() {
     setPicker,
     helpOpen,
     setHelpOpen,
+    labelDialog,
+    setLabelDialog,
   };
 }
 
