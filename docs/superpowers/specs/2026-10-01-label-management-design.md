@@ -32,9 +32,9 @@ When a colleague's other mail client renames or deletes a label she is looking a
 src/
   mail/labels.ts          new. Pure: parse and validate a path, produce a plan. No Solid, no JMAP.
   sync/engine.ts          + createLabel, updateLabel, countOrphans, destroyLabel
-                          + drops live queries of a destroyed mailbox
+                          + drops live queries of a destroyed mailbox; + state.synced
   sync/selectors.ts       + isLabel, subLabelCount
-  sync/patch.ts           + unlabelPatch
+  sync/patch.ts           + unlabelPatch, onlyIn
   sync/fake-jmap.ts       + Mailbox/set, a real Mailbox/changes log, filter operators
   app/labels.ts           new. create / rename / remove with confirm, toasts, navigation
   app/actions.ts          + removeLabel
@@ -43,6 +43,7 @@ src/
   ui/LabelDialog.tsx      new. One dialog for create and rename (rozie Dialog)
   ui/Shell.tsx            Labels heading "+", row "⋯" menu (rozie Popover), dead-label redirect
   ui/Overlays.tsx         "Create …" row in the Move and Label pickers
+  ui/picker.ts            new. Ranks picker rows
   ui/Conversation.tsx     "×" on label chips
   ui/ConfirmDialog.tsx    optional async action, so the button can show "Deleting…"
 ```
@@ -62,7 +63,7 @@ interface LabelPlan {
   name: string;          // the leaf name
 }
 
-type PlanResult = { ok: true; plan: LabelPlan; path: string } | { ok: false; error: string };
+type PlanResult = { ok: true; plan: LabelPlan; path: string; noop: boolean } | { ok: false; error: string };
 
 function planLabel(
   path: string,
@@ -78,7 +79,7 @@ function labelLimits(session: Session): LabelLimits;
 
 ### Parsing
 
-1. Split the text on `/`. Trim each segment and collapse inner runs of whitespace to one space.
+1. Split the text on `/`. Trim each segment and collapse inner runs of whitespace (tabs and newlines included) to one space.
 2. Resolve each segment but the last against the existing children of the parent found so far, comparing names case-insensitively. `clients/New` reuses an existing `Clients`.
 3. From the first segment that does not exist, the remaining non-leaf segments become `ancestors`.
 4. `path` in the result is the normalized path with the existing ancestors in their stored case. It is what toasts and the picker show.
@@ -101,7 +102,7 @@ The first failing rule gives the message, in this order:
 Rename details:
 
 - The path resolving to `renaming` itself is not a duplicate. A change of case only (`receipts` to `Receipts`) is a real rename.
-- A rename whose plan equals the label's current parent and exact name is a no-op: the caller closes the dialog without a request.
+- A rename whose plan equals the label's current parent and exact name is a no-op (`noop: true`): the caller closes the dialog without a request.
 
 Anything the server refuses that these rules missed is shown in the same place, using the server's description.
 
@@ -122,7 +123,7 @@ Each method throws an `Error` carrying the server's description, as `ensureMailb
 | Method | Request | On success |
 |---|---|---|
 | `createLabel(plan): Promise<Id>` | One `Mailbox/set` creating the missing ancestors and the leaf. Each created mailbox points at its parent, with `parentId: "#<creation id>"` when the parent is created in the same call. Every create sets `isSubscribed: true`, so IMAP clients show the label. | Merges the created mailboxes into the store and returns the leaf's id. |
-| `updateLabel(id, plan): Promise<void>` | One `Mailbox/set`: `create` for missing ancestors, `update` of the label's `name` and `parentId`. | Merges the created mailboxes and the changed label. |
+| `updateLabel(id, plan): Promise<void>` | When ancestors are missing, one `Mailbox/set` creating them; then one `Mailbox/set` updating the label's `name` and `parentId`. | Merges the created mailboxes and the changed label. |
 | `countOrphans(id): Promise<number>` | `Email/query` with filter `{ operator: 'AND', conditions: [{ inMailbox: id }, { operator: 'NOT', conditions: [{ inMailboxOtherThan: [id] }] }] }`, `limit: 1`, `calculateTotal: true`. | Returns `total`. |
 | `destroyLabel(id): Promise<void>` | The sweep below. | Removes the mailbox from the store, drops its live queries, then runs `catchUp()`. |
 
@@ -132,7 +133,12 @@ Server facts, checked read-only against Stalwart 0.16.23 on 2026-10-01:
 - `limit: 0` means "no limit" (it returned every id), so a count query must use `limit: 1`.
 - `maxObjectsInGet` and `maxObjectsInSet` are 500; `maxCallsInRequest` is 16.
 
-**Creation references.** Not yet checked, because checking writes: whether Stalwart accepts a parent and its child created in one `Mailbox/set`. The first build step checks it against the dev stack. If Stalwart refuses, `createLabel` and `updateLabel` send one call per level instead. A failure partway then leaves the already-created ancestors in place, which is harmless: a retry reuses them.
+Checked by writing probe labels (removed afterwards) on the same day:
+
+- A parent and its child can be created in one `Mailbox/set`, the child with `parentId: "#<creation id>"`, in either order.
+- A creation reference inside `update` is refused with a method-level `invalidResultReference`, and nothing in the call is applied. This is why `updateLabel` creates missing ancestors in a request of their own. If the update then fails, the new ancestors stay, which is harmless: a retry reuses them.
+- A sibling with the same name in another letter case is refused with `alreadyExists`.
+- Destroy refusals are `mailboxHasChild` and `mailboxHasEmail`.
 
 ### The delete sweep (`destroyLabel`)
 
@@ -158,12 +164,13 @@ Guarantees and failure:
 
 ## App layer (`src/app/labels.ts`)
 
-`createLabels(engine, toast, confirm, navigate)` returns the operations the UI calls. It owns confirmation, toasts and navigation, like `actions.ts`.
+`createLabels(engine, toast, confirm, limits)` returns the operations the UI calls. It owns confirmation and toasts, like `actions.ts`. `limits` is a function returning the session's `LabelLimits`. The app object is built outside the router, so navigation stays in the UI: see "Viewing a label that changes".
 
 - `validate(path, renaming?)`: `planLabel` with the engine's mailboxes and the session's limits.
 - `create(path, opts?: { quiet?: boolean }): Promise<Id>`: validates, calls `engine.createLabel`, toasts "Created '<path>'." unless `quiet`, and returns the id. Throws the validation or server message for the dialog to show inline. The pickers pass `quiet`, so the only toast there is the "Labeled" or "moved" one.
 - `rename(id, path): Promise<void>`: validates, returns at once for a no-op, otherwise calls `engine.updateLabel` and toasts "Renamed to '<path>'.".
-- `remove(id): Promise<void>`: see below.
+- `remove(id): Promise<boolean>`: see below. Resolves whether the label was deleted.
+- `deletedHere(id): boolean`: true for a label this session deleted, so its view can close without the "no longer exists" notice.
 
 ### Delete
 
@@ -179,7 +186,7 @@ Guarantees and failure:
 
    `<n>` is the mailbox's `totalThreads`; `<m>` is the orphan count, which counts messages.
 4. On confirm, the dialog stays open with its button reading "Deleting…" while `engine.destroyLabel(id)` runs.
-5. On success: if the current route is that label, navigate to `/inbox`; toast "Deleted '<path>'.".
+5. On success: toast "Deleted '<path>'.". The id is recorded for `deletedHere` before the engine drops the mailbox; a view of that label then leaves for the Inbox by the redirect below.
 6. On failure: an error toast, "Couldn't finish deleting '<path>'. Some conversations may already have been removed from it; try again. (<server message>)".
 
 ## UI
@@ -221,7 +228,7 @@ For both Move (`v`) and Label (`l`):
 ### Removing a label from a conversation
 
 - In the conversation header, each chip for a mailbox where `isLabel` is true gets an "×" button with the accessible name "Remove label <name>". The Inbox chip does not.
-- `actions.removeLabel(threadIds, labelId)` builds `unlabelPatch(emails, labelId, archiveId)`: for each email of the threads that is in the label, `mailboxIds/<label>: null`, plus `mailboxIds/<archive>: true` when the email would otherwise be in no mailbox. Archive is created with `ensureMailbox` only when such an email exists.
+- `actions.removeLabel(threadIds, labelId)` builds `unlabelPatch(emails, labelId, archiveId)` (the same rule as `archivePatch`, exported under this name): for each email of the threads that is in the label, `mailboxIds/<label>: null`, plus `mailboxIds/<archive>: true` when the email would otherwise be in no mailbox. Archive is created with `ensureMailbox` only when such an email exists.
 - It runs through the existing `moveWithUndo`, with the toast "Removed '<name>'." and Undo.
 - When the view is that label, the conversation no longer belongs to it and closes back to the list, as Archive does today.
 
@@ -230,24 +237,28 @@ For both Move (`v`) and Label (`l`):
 | Event | Result |
 |---|---|
 | The label is renamed or moved, here or elsewhere | The view stays. Title and sidebar update. The URL holds the id, so it doesn't change. |
-| The label is deleted here | Navigate to `/inbox`; toast "Deleted '<path>'.". |
+| The label is deleted here | `MailView` replaces the route with `/inbox`; the only toast is "Deleted '<path>'.". |
 | The label is deleted elsewhere, or a link points at a label that no longer exists | `MailView` replaces the route with `/inbox` and toasts "That label no longer exists.". An open conversation closes with it. |
 
-The redirect applies only to `label/<id>` slugs, and only once the engine is ready. Other unknown slugs keep today's "Mailbox not found.".
+The redirect applies only to `label/<id>` slugs, and only once the engine has reconciled its store with the server in this session (`state.synced`). A warm-start snapshot can be older than a label created on another device, and a link to that label must not be treated as dead. Other unknown slugs keep today's "Mailbox not found.".
 
 ### Component check
 
-To be done by reading the rozie sources while writing the plan, as in slice 2. If a row turns out to block the work, the work pauses and the user decides.
+Done on 2026-10-01 by reading the rozie sources while writing the plan. Nothing blocks.
 
-| Need | Component | To check |
+| Need | Component | Finding |
 |---|---|---|
-| A dialog with a form and a focused text field | Dialog 0.1.3 | Whether initial focus can be directed at the input. |
-| The row menu | Popover 0.2.4 | It anchors to its own trigger, which fits. Menu keyboard behaviour is ours to add. "No Menu component" is logged as a gap. |
-| The "Create" row always last | CommandPalette 0.4.10 | The `score` prop replaces the default scorer. Real items must keep fuzzy ranking, so the default scorer has to be reachable, or the row needs another way in (the `empty` or `footer` slot). |
+| A dialog with a form and a focused text field | Dialog 0.1.3 | Works as is. Dialog calls `showModal()` in its own `onMount`, after the parent's, so the form focuses and selects its input a microtask later. |
+| The row menu | Popover 0.2.4 | Used with `trigger="manual"`: the click trigger puts `aria-haspopup="dialog"` on its wrapper `<div>` and can't say `menu`. Opening, arrow keys, Escape and focus return are ours. The root is `display: contents`, so it sits in our own positioned `<span>`. |
+| The "Create" row always last | CommandPalette 0.4.10 | `score` replaces the default scorer for every row and the default isn't exported, so `src/ui/picker.ts` ranks all rows (exact, prefix, word start, substring, subsequence) and gives the Create row 0. |
+
+Each row is logged in `docs/rozie-feedback.md`.
 
 ## Fake JMAP (`src/sync/fake-jmap.ts`)
 
-- `Mailbox/set`: `create` with creation references between creates of the same call, `update` of `name` and `parentId`, `destroy`. Refusals: a duplicate sibling name (`invalidProperties`), `mailboxHasChild`, and `mailboxHasEmail` unless `onDestroyRemoveEmails` is true. A switch makes the fake refuse creation references, for the fallback path.
+- `Mailbox/set`: `create` with creation references between creates of the same call, `update` of `name` and `parentId`, `destroy`. Refusals, as Stalwart gives them: a duplicate sibling name (`alreadyExists`), a creation reference inside `update` (method-level `invalidResultReference`), `mailboxHasChild`, and `mailboxHasEmail` unless `onDestroyRemoveEmails` is true.
+- `Mailbox/get` honours `ids` and reports `totalEmails` and `totalThreads` from the emails it holds.
+- A log of every call's arguments and a hook that runs before each call, for asserting on what was sent and for race tests.
 - `Mailbox/changes` and `Mailbox/get`: a real state counter and change log, in place of today's fixed `m1` and empty answer.
 - `Email/query`: the `AND` and `NOT` operators and `inMailboxOtherThan`.
 
@@ -259,11 +270,14 @@ To be done by reading the rozie sources while writing the plan, as in slice 2. I
 - `sync/patch.test.ts`: `unlabelPatch` removes the label, and adds Archive only to emails with no other mailbox.
 - `sync/selectors.test.ts`: `isLabel` and `subLabelCount`.
 - `sync/engine.test.ts`, against the fake:
-  - `createLabel` sends one `Mailbox/set` with creation references and merges every created mailbox; with references refused it sends one call per level;
+  - `createLabel` sends one `Mailbox/set` with creation references and merges every created mailbox;
   - `updateLabel` renames, moves, and creates missing ancestors;
   - `countOrphans` sends the filter with `limit: 1` and returns the total;
   - `destroyLabel` strips the label page by page, archives only orphans, never sends `onDestroyRemoveEmails: true`, sweeps again after `mailboxHasEmail`, and leaves the label in place when a page fails;
-  - a mailbox destroyed through `Mailbox/changes` leaves the store and takes its live queries with it.
+  - a mailbox destroyed through `Mailbox/changes` leaves the store and takes its live queries with it;
+  - `synced` is false after hydrating from a snapshot and true after `start()`.
+- `ui/picker.test.ts`: the ranking order, and that every match scores above 0.
+- `app/actions.test.ts`: `removeLabel` strips the label, archives a message with no other mailbox, and Undo restores it.
 - `app/labels.test.ts`: delete does nothing when sub-labels exist; the confirm message in each of its cases; a failed delete reports the half-done message; a no-op rename sends no request.
 
 **End to end (Playwright, new `e2e/labels.spec.ts`)**
