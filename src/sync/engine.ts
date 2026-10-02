@@ -92,6 +92,8 @@ export class MailEngine {
   /** Visible ranges per query, for refetching after cannotCalculateChanges. */
   private ranges = new Map<string, [number, number]>();
   onPersist: ((s: Snapshot) => void) | null = null;
+  /** Called with every batch of emails merged into the store (the recipient index listens). */
+  onEmails: ((emails: Partial<Email>[]) => void) | null = null;
 
   /**
    * Whether Email/queryChanges can be trusted for collapseThreads queries. Stalwart 0.16
@@ -149,6 +151,7 @@ export class MailEngine {
       queries: snap.queries,
       ready: true,
     });
+    this.onEmails?.(Object.values(snap.emails));
     return true;
   }
 
@@ -445,6 +448,17 @@ export class MailEngine {
     }
   }
 
+  /** To, Cc and Bcc of the newest `limit` messages in Sent, for the recipient index. */
+  async sentRecipients(limit: number): Promise<Partial<Email>[]> {
+    const sent = this.mailboxByRole('sent')?.id;
+    if (!sent) return [];
+    const accountId = this.accountId;
+    const b = this.client.batch();
+    const q = b.call('Email/query', { accountId, filter: { inMailbox: sent }, sort: DEFAULT_SORT, limit });
+    const g = b.call('Email/get', { accountId, '#ids': q.ref('/ids'), properties: ['to', 'cc', 'bcc', 'receivedAt'] });
+    return (await this.client.send(b)).get(g).list;
+  }
+
   /** The mailbox with a role, creating it if the account lacks one (e.g. Archive). */
   async ensureMailbox(role: MailboxRole, name: string): Promise<Id> {
     const existing = this.mailboxByRole(role);
@@ -725,6 +739,7 @@ export class MailEngine {
         else Object.assign(cur, e);
       }
     }));
+    this.onEmails?.(list);
   }
 
   private mergeThreads(list: Thread[]): void {

@@ -169,4 +169,45 @@ describe('MailEngine', () => {
     expect(server.calls).not.toContain('Email/query');
     expect(fresh.state.queries[key]!.slots).toEqual(['e5', 'e3', 'e4']);
   });
+
+  it('reports merged emails through onEmails', async () => {
+    const seen = new Set<string>();
+    engine.onEmails = (emails) => emails.forEach((e) => seen.add(e.id!));
+    const key = engine.openQuery(inboxSpec);
+    await engine.ensureRange(key, 0, 10);
+    expect([...seen].sort()).toEqual(['e1', 'e2', 'e3', 'e4']);
+  });
+
+  it('reports the emails of an applied snapshot through onEmails', async () => {
+    const key = engine.openQuery(inboxSpec);
+    await engine.ensureRange(key, 0, 10);
+    const snap = engine.snapshot();
+    const fresh = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    const seen: string[] = [];
+    fresh.onEmails = (emails) => seen.push(...emails.map((e) => e.id!));
+    expect(fresh.hydrate(snap)).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.sort()).toEqual(Object.keys(snap.emails).sort());
+  });
+
+  it('reads the recipients of the newest Sent messages in one request', async () => {
+    const to = [{ name: 'Bob Example', email: 'bob@example.test' }];
+    const cc = [{ name: null, email: 'carol@partner.test' }];
+    server.addEmail({ id: 's1', threadId: 't9', receivedAt: '2026-09-03T00:00:00Z', mailboxIds: { S: true }, to, cc }, false);
+    server.calls = [];
+    const list = await engine.sentRecipients(1);
+    expect(server.calls).toEqual(['Email/query', 'Email/get']);
+    // limit 1: only the newest Sent message, not the older e2.
+    expect(list).toEqual([{ id: 's1', receivedAt: '2026-09-03T00:00:00Z', to, cc }]);
+  });
+
+  it('skips the Sent scan when the account has no Sent mailbox', async () => {
+    const bare = new FakeJmap();
+    bare.addMailbox('I', 'Inbox', 'inbox');
+    const e = createRoot(() => new MailEngine(bare.client(), { settleDelayMs: 0 }));
+    await e.start();
+    bare.calls = [];
+    expect(await e.sentRecipients(500)).toEqual([]);
+    expect(bare.calls).toEqual([]);
+  });
 });

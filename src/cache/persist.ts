@@ -1,5 +1,6 @@
 import { createStore as createIdbStore, del, get, set, type UseStore } from 'idb-keyval';
 import type { Session } from '../jmap/types';
+import { parseRecipientCache, type RecipientCache } from '../mail/recipients';
 import type { Snapshot } from '../sync/engine';
 
 // Warm-start cache. Never the source of truth: everything here is reconciled
@@ -56,7 +57,29 @@ export async function saveSnapshot(username: string, snap: Snapshot): Promise<vo
 export async function clearCache(username: string): Promise<void> {
   localStorage.removeItem(SESSION_KEY);
   const s = idb();
-  if (s) await del(`snap:${username}`, s).catch(() => undefined);
+  if (!s) return;
+  await del(`snap:${username}`, s).catch(() => undefined);
+  await del(`recipients:${username}`, s).catch(() => undefined);
+}
+
+export async function loadRecipients(username: string): Promise<RecipientCache | undefined> {
+  const s = idb();
+  if (!s) return undefined;
+  try {
+    return parseRecipientCache(await get<unknown>(`recipients:${username}`, s));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveRecipients(username: string, cache: RecipientCache): Promise<void> {
+  const s = idb();
+  if (!s) return;
+  try {
+    await set(`recipients:${username}`, cache, s);
+  } catch {
+    // Ignore: best effort.
+  }
 }
 
 export async function loadImageAllowList(): Promise<string[]> {
