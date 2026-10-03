@@ -1,6 +1,7 @@
 import { createRoot } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SORT, MailEngine } from './engine';
+import { VACATION } from '../jmap/types';
+import { DEFAULT_SORT, MailEngine, SetFailure } from './engine';
 import { FakeJmap } from './fake-jmap';
 import { archivePatch, keywordPatch, unlabelPatch } from './patch';
 
@@ -548,5 +549,105 @@ describe('MailEngine labels: delete', () => {
     expect(warm.state.synced).toBe(false);
     await warm.start();
     expect(warm.state.synced).toBe(true);
+  });
+});
+
+describe('MailEngine settings', () => {
+  let server: FakeJmap;
+  let engine: MailEngine;
+  const value = { name: 'Support', email: 'alice@example.test', htmlSignature: '<b>S</b>', textSignature: 'S' };
+
+  beforeEach(async () => {
+    server = new FakeJmap();
+    server.addMailbox('I', 'Inbox', 'inbox');
+    engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    await vi.waitFor(() => expect(engine.state.vacationLoad).toBe('ready'));
+  });
+
+  it('creates an identity and adds it to the store', async () => {
+    const id = await engine.createIdentity(value);
+    expect(engine.state.identities.map((i) => i.id)).toEqual(['id1', id]);
+    expect(engine.state.identities[1]).toMatchObject({ ...value, mayDelete: true, replyTo: null, bcc: null });
+  });
+
+  it('throws a SetFailure carrying the type and property', async () => {
+    const err = await engine.createIdentity({ ...value, email: 'bob@example.test' }).catch((e) => e);
+    expect(err).toBeInstanceOf(SetFailure);
+    expect(err).toMatchObject({ type: 'invalidProperties', properties: ['email'], message: 'E-mail address not configured for this account.' });
+    expect(engine.state.identities).toHaveLength(1);
+  });
+
+  it('updates name and signatures only', async () => {
+    await engine.updateIdentity('id1', { name: 'A', htmlSignature: '<i>x</i>', textSignature: 'x' });
+    const [, args] = server.sent.findLast(([n]) => n === 'Identity/set')!;
+    expect(args.update).toEqual({ id1: { name: 'A', htmlSignature: '<i>x</i>', textSignature: 'x' } });
+    expect(engine.state.identities[0]).toMatchObject({ name: 'A', htmlSignature: '<i>x</i>', textSignature: 'x' });
+  });
+
+  it('destroys an identity, treats notFound as done, and refuses the only one locally', async () => {
+    const id = await engine.createIdentity(value);
+    server.identities.delete(id);
+    await engine.destroyIdentity(id);
+    expect(engine.state.identities.map((i) => i.id)).toEqual(['id1']);
+    server.calls = [];
+    await expect(engine.destroyIdentity('id1')).rejects.toThrow('This is your only identity.');
+    expect(server.calls).toEqual([]);
+  });
+
+  it('refetches identities on an Identity push from elsewhere, but not after its own write', async () => {
+    await engine.updateIdentity('id1', { name: 'Mine', htmlSignature: '', textSignature: '' });
+    server.calls = [];
+    engine.onStateChange({ '@type': 'StateChange', changed: { a1: { Identity: `i${server.identityState}` } } });
+    await Promise.resolve();
+    expect(server.calls).toEqual([]);
+    server.identities.get('id1')!.name = 'Elsewhere';
+    server.identityState++;
+    engine.onStateChange({ '@type': 'StateChange', changed: { a1: { Identity: `i${server.identityState}` } } });
+    await vi.waitFor(() => expect(engine.state.identities[0]!.name).toBe('Elsewhere'));
+  });
+
+  it('loads the vacation response at start with the capability in using', () => {
+    expect(engine.state.vacation).toMatchObject({ id: 'singleton', isEnabled: false });
+    expect(server.usings.some((u) => u.includes(VACATION))).toBe(true);
+    expect(server.usings.filter((u) => !u.includes(VACATION)).length).toBeGreaterThan(0);
+  });
+
+  it('updates the vacation response and reloads it on a SieveScript push from elsewhere only', async () => {
+    await engine.updateVacation({ isEnabled: true, textBody: 'Away' });
+    expect(engine.state.vacation).toMatchObject({ isEnabled: true, textBody: 'Away', subject: null });
+    server.calls = [];
+    engine.onStateChange({ '@type': 'StateChange', changed: { a1: { SieveScript: `v${server.vacationState}` } } });
+    await Promise.resolve();
+    expect(server.calls).toEqual([]);
+    server.vacation = { ...server.vacation, isEnabled: false };
+    server.vacationState++;
+    engine.onStateChange({ '@type': 'StateChange', changed: { a1: { SieveScript: `v${server.vacationState}` } } });
+    await vi.waitFor(() => expect(engine.state.vacation?.isEnabled).toBe(false));
+  });
+
+  it('marks the vacation responder unsupported without the capability, and failed when the load fails', async () => {
+    const s2 = new FakeJmap();
+    s2.vacationSupported = false;
+    const e2 = createRoot(() => new MailEngine(s2.client(), { settleDelayMs: 0 }));
+    await e2.start();
+    await vi.waitFor(() => expect(e2.state.vacationLoad).toBe('unsupported'));
+    expect(s2.calls).not.toContain('VacationResponse/get');
+
+    const s3 = new FakeJmap();
+    s3.onCall = (name) => {
+      if (name === 'VacationResponse/get') throw new Error('down');
+    };
+    const e3 = createRoot(() => new MailEngine(s3.client(), { settleDelayMs: 0 }));
+    await e3.start();
+    await vi.waitFor(() => expect(e3.state.vacationLoad).toBe('failed'));
+  });
+
+  it('does not put the vacation response in the snapshot', async () => {
+    let snap: unknown;
+    engine.onPersist = (s) => (snap = s);
+    await engine.createIdentity(value);
+    await vi.waitFor(() => expect(snap).toBeTruthy(), { timeout: 3000 });
+    expect(JSON.stringify(snap)).not.toContain('singleton');
   });
 });

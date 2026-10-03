@@ -2,7 +2,8 @@ import { batch as solidBatch } from 'solid-js';
 import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
 import type { BatchResult, JmapClient } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
-import type { Comparator, Email, EmailFilter, Id, Identity, Mailbox, MailboxRole, SetError, StateChange, Thread } from '../jmap/types';
+import { CORE, MAIL, VACATION, type Comparator, type Email, type EmailFilter, type Id, type Identity, type Mailbox, type MailboxRole, type SetError, type StateChange, type Thread, type VacationResponse } from '../jmap/types';
+import type { IdentityValue, VacationPatch } from '../mail/settings';
 import type { LabelPlan } from '../mail/labels';
 import { applyEmailPatch, onlyIn, unlabelPatch, type EmailPatch, type MutableEmail } from './patch';
 import { applyQueryChanges, missingPages, type Slots } from './window';
@@ -54,6 +55,9 @@ export interface MailState {
   synced: boolean;
   mailboxes: Record<Id, Mailbox>;
   identities: Identity[];
+  /** The vacation response; null until loaded, or when the server has none. Never persisted. */
+  vacation: VacationResponse | null;
+  vacationLoad: VacationLoad;
   emails: Record<Id, EmailRec>;
   threads: Record<Id, Thread>;
   /** Emails whose bodies have been fetched. */
@@ -85,6 +89,20 @@ export class LabelHasSubLabelsError extends Error {
   }
 }
 
+/** A record the server refused in a /set call, with its SetError type and properties. */
+export class SetFailure extends Error {
+  constructor(
+    readonly type: string,
+    readonly properties: string[] = [],
+    description?: string,
+  ) {
+    super(description ?? type);
+  }
+}
+const failure = (e: SetError) => new SetFailure(e.type, e.properties ?? [], e.description);
+
+export type VacationLoad = 'idle' | 'loading' | 'ready' | 'failed' | 'unsupported';
+
 export function queryKey(spec: QuerySpec): string {
   return JSON.stringify([spec.filter, spec.sort, spec.collapseThreads, !!spec.snippets]);
 }
@@ -101,6 +119,10 @@ export class MailEngine {
   private inflightThreads = new Map<Id, Promise<void>>();
   private catchUpRunning: Promise<void> | null = null;
   private catchUpAgain = false;
+  /** Last Identity state seen, so our own writes don't trigger a refetch. */
+  private identityState: string | null = null;
+  /** Last vacation state seen. Stalwart reports vacation changes as SieveScript, with the same state string. */
+  private vacationState: string | null = null;
   /** Visible ranges per query, for refetching after cannotCalculateChanges. */
   private ranges = new Map<string, [number, number]>();
   onPersist: ((s: Snapshot) => void) | null = null;
@@ -126,6 +148,8 @@ export class MailEngine {
       synced: false,
       mailboxes: {},
       identities: [],
+      vacation: null,
+      vacationLoad: 'idle',
       emails: {},
       threads: {},
       bodies: {},
@@ -173,6 +197,8 @@ export class MailEngine {
     if (this.states.Mailbox) {
       await this.catchUp();
       this.set('synced', true);
+      // A snapshot can be older than an identity change made elsewhere.
+      void this.refreshSettings().catch(() => undefined);
       return;
     }
     const b = this.client.batch();
@@ -182,7 +208,9 @@ export class MailEngine {
     const mailboxes = res.get(mb);
     this.states.Mailbox = mailboxes.state;
     const identities = res.error(id) ? [] : res.get(id).list;
+    if (!res.error(id)) this.identityState = res.get(id).state;
     this.set({ mailboxes: byId(mailboxes.list), identities, ready: true, synced: true });
+    void this.loadVacation().catch(() => undefined);
   }
 
   setOnline(online: boolean): void {
@@ -689,6 +717,93 @@ export class MailEngine {
     return removed;
   }
 
+  // ---- Identities and vacation ----------------------------------------------
+
+  private hasVacation(): boolean {
+    return !!this.client.session.accounts[this.accountId]?.accountCapabilities?.[VACATION];
+  }
+
+  async refreshIdentities(): Promise<void> {
+    const b = this.client.batch();
+    const call = b.call('Identity/get', { accountId: this.accountId, ids: null });
+    const r = (await this.client.send(b)).get(call);
+    this.identityState = r.state;
+    this.set('identities', r.list);
+    this.persistSoon();
+  }
+
+  /** Identities and the vacation response, after a warm start or a reconnect. */
+  async refreshSettings(): Promise<void> {
+    await Promise.all([this.refreshIdentities(), this.loadVacation()]);
+  }
+
+  async createIdentity(v: IdentityValue): Promise<Id> {
+    const b = this.client.batch();
+    const call = b.call('Identity/set', { accountId: this.accountId, create: { c: v } });
+    const r = (await this.client.send(b)).get(call);
+    const err = r.notCreated?.c;
+    if (err) throw failure(err);
+    const id = r.created!.c!.id;
+    this.identityState = r.newState;
+    this.set('identities', (list) => [...list, { id, ...v, email: v.email.toLowerCase(), replyTo: null, bcc: null, mayDelete: true }]);
+    this.persistSoon();
+    return id;
+  }
+
+  async updateIdentity(id: Id, v: Pick<IdentityValue, 'name' | 'htmlSignature' | 'textSignature'>): Promise<void> {
+    const patch = { name: v.name, htmlSignature: v.htmlSignature, textSignature: v.textSignature };
+    const b = this.client.batch();
+    const call = b.call('Identity/set', { accountId: this.accountId, update: { [id]: patch } });
+    const r = (await this.client.send(b)).get(call);
+    const err = r.notUpdated?.[id];
+    if (err) throw failure(err);
+    this.identityState = r.newState;
+    this.set('identities', (i) => i.id === id, patch);
+    this.persistSoon();
+  }
+
+  async destroyIdentity(id: Id): Promise<void> {
+    // Stalwart lets the last identity go and never recreates one: the account could no longer send.
+    if (this.state.identities.length === 1 && this.state.identities[0]!.id === id) throw new Error('This is your only identity.');
+    const b = this.client.batch();
+    const call = b.call('Identity/set', { accountId: this.accountId, destroy: [id] });
+    const r = (await this.client.send(b)).get(call);
+    const err = r.notDestroyed?.[id];
+    if (err && err.type !== 'notFound') throw failure(err);
+    this.identityState = r.newState;
+    this.set('identities', (list) => list.filter((i) => i.id !== id));
+    this.persistSoon();
+  }
+
+  async loadVacation(): Promise<void> {
+    if (!this.hasVacation()) {
+      this.set('vacationLoad', 'unsupported');
+      return;
+    }
+    if (this.state.vacationLoad !== 'ready') this.set('vacationLoad', 'loading');
+    const b = this.client.batch();
+    const call = b.call('VacationResponse/get', { accountId: this.accountId, ids: ['singleton'] });
+    try {
+      const r = (await this.client.send(b, [CORE, MAIL, VACATION])).get(call);
+      this.vacationState = r.state;
+      this.set({ vacation: r.list[0] ?? null, vacationLoad: 'ready' });
+    } catch (e) {
+      if (this.state.vacationLoad !== 'ready') this.set('vacationLoad', 'failed');
+      throw e;
+    }
+  }
+
+  async updateVacation(patch: Partial<VacationPatch>): Promise<void> {
+    const b = this.client.batch();
+    const call = b.call('VacationResponse/set', { accountId: this.accountId, update: { singleton: patch } });
+    const r = (await this.client.send(b, [CORE, MAIL, VACATION])).get(call);
+    const err = r.notUpdated?.singleton;
+    if (err) throw failure(err);
+    this.vacationState = r.newState;
+    const base: VacationResponse = this.state.vacation ?? { id: 'singleton', isEnabled: false, fromDate: null, toDate: null, subject: null, textBody: null, htmlBody: null };
+    this.set('vacation', { ...base, ...patch });
+  }
+
   // ---- Push ----------------------------------------------------------------
 
   onStateChange(change: StateChange): void {
@@ -696,6 +811,8 @@ export class MailEngine {
     if (!types) return;
     const stale = (['Mailbox', 'Email', 'Thread'] as const).some((t) => types[t] && types[t] !== this.states[t]);
     if (stale) void this.catchUp();
+    if (types.Identity && types.Identity !== this.identityState) void this.refreshIdentities().catch(() => undefined);
+    if (types.SieveScript && types.SieveScript !== this.vacationState && this.hasVacation()) void this.loadVacation().catch(() => undefined);
   }
 
   /** Bring everything up to date with /changes and /queryChanges. Coalesces concurrent calls. */

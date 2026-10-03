@@ -123,6 +123,7 @@ async function boot() {
       onConnected: () => {
         engine.setOnline(true);
         void engine.catchUp().catch(() => undefined);
+        void engine.refreshSettings().catch(() => undefined);
         calendar.onConnected();
       },
       onUnauthorized: () => signOut(),
