@@ -1,7 +1,8 @@
 import { createSignal, type Accessor } from 'solid-js';
 import type { JmapClient } from '../jmap/client';
 import type { EmailAddress, Id, Identity } from '../jmap/types';
-import { buildEmailCreate, initialDraft, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
+import { buildEmailCreate, initialDraft, splitDraftHtml, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
+import { signatureForCompose } from '../mail/settings';
 import type { EmailRec, MailEngine } from '../sync/engine';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
@@ -10,6 +11,9 @@ const AUTOSAVE_MS = 2000;
 export const UNDO_SEND_MS = 10_000;
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+
+/** auto: follows From. removed / inline: the user took it out, or into the text; From no longer touches it. */
+export type SignatureMode = 'auto' | 'removed' | 'inline';
 
 export interface Composer {
   id: number;
@@ -27,6 +31,9 @@ export interface Composer {
   removeAttachment: (blobId: string) => void;
   /** Id of the saved draft email, if any. */
   draftId: Accessor<Id | null>;
+  removeSignature: () => void;
+  /** Put the signature into the text. `bodyHtml` is the editor's HTML with the signature appended. */
+  inlineSignature: (bodyHtml: string) => void;
 }
 
 /** Open composers plus the delayed-send queue. */
@@ -53,18 +60,28 @@ export function createComposers(
     return (ids.find((i) => addressed.has(i.email.toLowerCase())) ?? ids[0]!).id;
   };
 
+  const signatureOf = (id: Id | null): string => {
+    const identity = identities().find((i) => i.id === id);
+    return identity ? signatureForCompose(identity) : '';
+  };
+
   interface Restore {
     draft: Draft;
     draftId: Id | null;
     identityId: Id | null;
     threadId?: Id | null;
     replyTo?: Id | null;
+    signatureMode?: SignatureMode;
   }
 
   const create = (mode: ComposeMode, original: EmailRec | null, restore?: Restore): Composer => {
     const id = ++seq;
-    const [draft, setDraft] = createSignal<Draft>(restore?.draft ?? initialDraft(mode, original, engine.myAddresses()));
-    const [identityId, setIdentityId] = createSignal<Id | null>(restore?.identityId ?? defaultIdentity(original));
+    const startIdentity = restore?.identityId ?? defaultIdentity(original);
+    const [draft, setDraft] = createSignal<Draft>(
+      restore?.draft ?? { ...initialDraft(mode, original, engine.myAddresses()), signatureHtml: signatureOf(startIdentity) },
+    );
+    const [identityId, setIdentityId] = createSignal<Id | null>(startIdentity);
+    let signatureMode: SignatureMode = restore?.signatureMode ?? 'auto';
     const [status, setStatus] = createSignal<SaveStatus>(restore ? 'saved' : 'idle');
     const [uploading, setUploading] = createSignal(0);
     const [draftId, setDraftId] = createSignal<Id | null>(restore?.draftId ?? null);
@@ -99,7 +116,7 @@ export function createComposers(
       timer = setTimeout(() => void save().catch(() => undefined), AUTOSAVE_MS);
     };
 
-    const composer: Composer & { save: () => Promise<void>; cancelAutosave: () => void } = {
+    const composer: Composer & { save: () => Promise<void>; cancelAutosave: () => void; signatureMode: () => SignatureMode } = {
       id,
       mode,
       threadId: restore?.threadId ?? original?.threadId ?? null,
@@ -112,6 +129,17 @@ export function createComposers(
       identityId,
       setIdentityId: (v) => {
         setIdentityId(v);
+        if (signatureMode === 'auto') setDraft({ ...draft(), signatureHtml: signatureOf(v) });
+        scheduleSave();
+      },
+      removeSignature: () => {
+        signatureMode = 'removed';
+        setDraft({ ...draft(), signatureHtml: '' });
+        scheduleSave();
+      },
+      inlineSignature: (bodyHtml) => {
+        signatureMode = 'inline';
+        setDraft({ ...draft(), bodyHtml, signatureHtml: '' });
         scheduleSave();
       },
       status,
@@ -138,11 +166,12 @@ export function createComposers(
       draftId,
       save,
       cancelAutosave: () => clearTimeout(timer),
+      signatureMode: () => signatureMode,
     };
     return composer;
   };
 
-  const internals = (c: Composer) => c as Composer & { save: () => Promise<void>; cancelAutosave: () => void };
+  const internals = (c: Composer) => c as Composer & { save: () => Promise<void>; cancelAutosave: () => void; signatureMode: () => SignatureMode };
 
   const remove = (c: Composer) => {
     internals(c).cancelAutosave();
@@ -203,7 +232,7 @@ export function createComposers(
       return;
     }
     const draftId = c.draftId()!;
-    const snapshot: Restore = { draft: d, draftId, identityId, threadId: c.threadId, replyTo: c.replyTo };
+    const snapshot: Restore = { draft: d, draftId, identityId, threadId: c.threadId, replyTo: c.replyTo, signatureMode: internals(c).signatureMode() };
     remove(c);
 
     let cancelled = false;
@@ -238,6 +267,7 @@ export function createComposers(
     const values = email.bodyValues ?? {};
     const html = (email.htmlBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
     const text = (email.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
+    const parts = html ? splitDraftHtml(html) : { bodyHtml: `<p>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>`, signatureHtml: '', quoteHtml: '' };
     const draft: Draft = {
       mode: 'new',
       to: email.to ?? [],
@@ -246,13 +276,13 @@ export function createComposers(
       subject: email.subject ?? '',
       inReplyTo: email.inReplyTo ?? [],
       references: email.references ?? [],
-      quoteHtml: '',
-      signatureHtml: '',
-      bodyHtml: html || `<p>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>`,
+      quoteHtml: parts.quoteHtml,
+      signatureHtml: parts.signatureHtml,
+      bodyHtml: parts.bodyHtml,
       attachments: (email.attachments ?? []).filter((a) => a.blobId).map((a) => ({ blobId: a.blobId!, name: a.name ?? 'attachment', type: a.type, size: a.size })),
     };
     const identity = identities().find((i) => i.email.toLowerCase() === email.from?.[0]?.email.toLowerCase());
-    const c = create('new', null, { draft, draftId: email.id, identityId: identity?.id ?? defaultIdentity(null) });
+    const c = create('new', null, { draft, draftId: email.id, identityId: identity?.id ?? defaultIdentity(null), signatureMode: parts.signatureHtml ? 'auto' : 'removed' });
     setList([...list(), c]);
   };
 
