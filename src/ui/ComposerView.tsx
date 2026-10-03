@@ -4,6 +4,7 @@ import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
 import { formatAddress } from '../mail/compose';
 import { fileSize } from '../mail/format';
+import { FormatToolbar } from './FormatToolbar';
 import { Icon } from './icons';
 import { closedSuggestions, pickedSuggestion, RecipientField } from './RecipientField';
 
@@ -23,6 +24,12 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
   const expandQuote = () => {
     const html = (editor?.getHTML() ?? d().bodyHtml) + d().quoteHtml;
     c.update({ bodyHtml: html, quoteHtml: '' });
+    editor?.setContent(html);
+  };
+
+  const inlineSignature = () => {
+    const html = (editor?.getHTML() ?? d().bodyHtml) + d().signatureHtml;
+    c.inlineSignature(html);
     editor?.setContent(html);
   };
 
@@ -112,17 +119,22 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
           placeholder={c.mode === 'new' ? '' : 'Write your reply…'}
           ariaLabel="Message body"
           editorClass="compose-editor"
-          toolbarSlot={() => (
-            <div class="compose-format" role="toolbar" aria-label="Formatting">
-              <button type="button" title="Bold (Ctrl+B)" onClick={() => editor?.toggleBold()}><b>B</b></button>
-              <button type="button" title="Italic (Ctrl+I)" onClick={() => editor?.toggleItalic()}><i>I</i></button>
-              <button type="button" title="Underline (Ctrl+U)" onClick={() => editor?.toggleUnderline()}><u>U</u></button>
-              <button type="button" title="Bulleted list" onClick={() => editor?.toggleBulletList()}>•≡</button>
-              <button type="button" title="Numbered list" onClick={() => editor?.toggleOrderedList()}>1≡</button>
-              <button type="button" title="Link" onClick={() => editor?.openLinkEditor()}>🔗</button>
-            </div>
-          )}
+          toolbarSlot={() => <FormatToolbar editor={() => editor} />}
         />
+        <Show when={d().signatureHtml}>
+          <div class="compose-signature">
+            {/* Sanitized by signatureForCompose; contained so its styles can't reach the page. */}
+            <div class="compose-signature-body" innerHTML={d().signatureHtml} />
+            <div class="compose-signature-actions">
+              <button type="button" class="icon-btn" aria-label="Edit signature in this message" title="Edit signature in this message" onClick={inlineSignature}>
+                <Icon name="edit" />
+              </button>
+              <button type="button" class="icon-btn" aria-label="Remove signature" title="Remove signature" onClick={() => c.removeSignature()}>
+                <Icon name="close" />
+              </button>
+            </div>
+          </div>
+        </Show>
         <Show when={d().quoteHtml}>
           <button type="button" class="quote-toggle" title="Show trimmed content" onClick={expandQuote}>
             •••

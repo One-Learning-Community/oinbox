@@ -431,3 +431,13 @@ a { color: var(--accent); }
 .event-card .participants { list-style: none; margin: 8px 0; padding: 0; }
 .event-card .participants li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
 .event-card .rsvp { color: var(--text-3); font-size: 13px; }
+
+/* Signature under the composer's text; contain: content keeps a signature's own styles (even position: fixed) inside its box. */
+.compose-signature { display: flex; align-items: flex-start; gap: 4px; margin: 0 12px 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.compose-signature-body, .signature-preview { contain: content; overflow: hidden; color: var(--text-2); font-size: 13px; }
+.compose-signature-body { flex: 1; min-width: 0; }
+.compose-signature-actions { display: flex; flex: none; }
+.compose-signature-actions .icon-btn { width: 32px; height: 32px; }
+@media (pointer: coarse) {
+  .compose-signature-actions .icon-btn { width: 44px; height: 44px; }
+}
