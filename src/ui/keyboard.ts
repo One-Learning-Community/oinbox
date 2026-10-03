@@ -32,12 +32,12 @@ export const SHORTCUTS: [string, string][] = [
   ['?', 'Keyboard shortcuts'],
 ];
 
-/** True while single-key shortcuts must stay quiet: the focus is in a text field, or in a menu with keys of its own. */
+/** True while single-key shortcuts must stay quiet: the focus is in a text field, or in a menu, dialog or date grid with keys of its own. */
 export function shortcutsSuspended(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement).isContentEditable) return true;
-  return !!el.closest('[role="menu"]');
+  return !!el.closest('[role="menu"], dialog, .rozie-datepicker');
 }
 
 /** Gmail's default keyboard shortcuts. Returns a disposer. */

@@ -46,6 +46,9 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         <SearchBox />
         <div class="spacer" />
         <span class="status-dot" classList={{ online: app.engine.state.online }} title={app.engine.state.online ? 'Live updates connected' : 'Reconnecting…'} />
+        <A href="/settings" class="icon-btn" aria-label="Settings" title="Settings">
+          <Icon name="settings" />
+        </A>
         <button
           class="icon-btn"
           title="Toggle theme"

@@ -17,6 +17,7 @@ import { CALENDARS } from './jmap/types';
 import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
 import { MailEngine } from './sync/engine';
 import { createConfirmDialog } from './ui/ConfirmDialog';
+import { SettingsView } from './ui/SettingsView';
 import { MailView, Shell } from './ui/Shell';
 import { SignIn } from './ui/SignIn';
 import { createNav } from './ui/nav';
@@ -156,6 +157,7 @@ async function boot() {
           <Route path="/search/:q/t/:threadId" component={MailView} />
           <Route path="/label/:id" component={MailView} />
           <Route path="/label/:id/t/:threadId" component={MailView} />
+          <Route path="/settings" component={SettingsView} />
           <Route path="/:slug" component={MailView} />
           <Route path="/:slug/t/:threadId" component={MailView} />
         </Router>

@@ -14,3 +14,12 @@ describe('shortcutsSuspended', () => {
     expect(shortcutsSuspended(null)).toBe(false);
   });
 });
+
+describe('shortcutsSuspended in dialogs', () => {
+it('keeps shortcuts quiet inside a dialog and inside the date picker', () => {
+  document.body.innerHTML = '<dialog open><button id="a">x</button></dialog><div class="rozie-datepicker"><button id="b">1</button></div><button id="c">y</button>';
+  expect(shortcutsSuspended(document.getElementById('a'))).toBe(true);
+  expect(shortcutsSuspended(document.getElementById('b'))).toBe(true);
+  expect(shortcutsSuspended(document.getElementById('c'))).toBe(false);
+});
+});
