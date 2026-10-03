@@ -7,6 +7,7 @@ import { createComposers } from './app/composer';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { createLabels } from './app/labels';
 import { createRecipients } from './app/recipients';
+import { createSettings } from './app/settings';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
@@ -97,6 +98,7 @@ async function boot() {
     toast: toasts.toast,
     actions: createActions(engine, toasts.toast, confirmDialog.confirm),
     labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session) : DEFAULT_LIMITS)),
+    settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
     nav: createNav(),
     composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm, recipients.recordSent),
     recipients,

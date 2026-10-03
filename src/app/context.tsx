@@ -3,6 +3,7 @@ import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
 import type { Labels } from './labels';
 import type { Recipients } from './recipients';
+import type { Settings } from './settings';
 import type { OAuth } from '../auth/oauth';
 import type { CalendarStore } from '../calendar/store';
 import { loadImageAllowList, saveImageAllowList } from '../cache/persist';
@@ -22,6 +23,7 @@ export interface App {
   toast: ToastFn;
   actions: Actions;
   labels: Labels;
+  settings: Settings;
   nav: Nav;
   composers: Composers;
   recipients: Recipients;
