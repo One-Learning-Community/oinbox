@@ -247,6 +247,7 @@ export function createComposers(
       inReplyTo: email.inReplyTo ?? [],
       references: email.references ?? [],
       quoteHtml: '',
+      signatureHtml: '',
       bodyHtml: html || `<p>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>`,
       attachments: (email.attachments ?? []).filter((a) => a.blobId).map((a) => ({ blobId: a.blobId!, name: a.name ?? 'attachment', type: a.type, size: a.size })),
     };

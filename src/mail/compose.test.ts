@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EmailRec } from '../sync/engine';
-import { buildEmailCreate, initialDraft, parseAddressList, formatAddress } from './compose';
+import { buildEmailCreate, initialDraft, parseAddressList, formatAddress, splitDraftHtml } from './compose';
 
 const me = new Set(['alice@example.test']);
 const original: EmailRec = {
@@ -100,5 +100,45 @@ describe('buildEmailCreate', () => {
     expect(e.htmlBody).toEqual([{ partId: 'html', type: 'text/html' }]);
     expect(e.textBody).toEqual([{ partId: 'text', type: 'text/plain' }]);
     expect(e.attachments).toEqual([{ blobId: 'B1', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' }]);
+  });
+});
+
+describe('the signature in a saved draft', () => {
+  const draft = { ...initialDraft('new', null, me), to: [{ name: null, email: 'bob@x.test' }], bodyHtml: '<p>Hello</p>' };
+  const parts = (e: ReturnType<typeof buildEmailCreate>) => ({ html: e.bodyValues!.html!.value, text: e.bodyValues!.text!.value });
+
+  it('goes between the text and the quote, with a -- line in the text part', () => {
+    const e = buildEmailCreate({ ...draft, signatureHtml: '<b>Alice</b>', quoteHtml: '<br><div class="gmail_quote">Old</div>' }, { name: 'A', email: 'alice@example.test' }, 'D');
+    const { html, text } = parts(e);
+    expect(html).toBe('<p>Hello</p><div class="oinbox-signature"><b>Alice</b></div><br><div class="gmail_quote">Old</div>');
+    expect(text).toBe('Hello\n-- \nAlice\nOld\n');
+  });
+
+  it('adds nothing without a signature', () => {
+    const { html, text } = parts(buildEmailCreate({ ...draft, signatureHtml: '' }, { name: null, email: 'alice@example.test' }, 'D'));
+    expect(html).toBe('<p>Hello</p>');
+    expect(text).toBe('Hello\n');
+  });
+
+  it('starts empty in a new draft', () => {
+    expect(initialDraft('reply', original, me).signatureHtml).toBe('');
+  });
+});
+
+describe('splitDraftHtml', () => {
+  it('splits the body, the signature and what follows it', () => {
+    const html = '<p>Hello</p><div class="oinbox-signature"><b>Alice</b></div><br><div class="gmail_quote">Old</div>';
+    expect(splitDraftHtml(html)).toEqual({ bodyHtml: '<p>Hello</p>', signatureHtml: '<b>Alice</b>', quoteHtml: '<br><div class="gmail_quote">Old</div>' });
+  });
+  it('reads a full HTML document as the server may return it', () => {
+    const html = '<html><head></head><body><p>Hi</p><div class="oinbox-signature">S</div></body></html>';
+    expect(splitDraftHtml(html)).toEqual({ bodyHtml: '<p>Hi</p>', signatureHtml: 'S', quoteHtml: '' });
+  });
+  it('leaves HTML without a signature block as the body', () => {
+    expect(splitDraftHtml('<p>Hi</p><div class="x">S</div>')).toEqual({ bodyHtml: '<p>Hi</p><div class="x">S</div>', signatureHtml: '', quoteHtml: '' });
+  });
+  it('ignores a signature block nested inside the quote', () => {
+    const html = '<p>Hi</p><div class="gmail_quote"><div class="oinbox-signature">Theirs</div></div>';
+    expect(splitDraftHtml(html).signatureHtml).toBe('');
   });
 });

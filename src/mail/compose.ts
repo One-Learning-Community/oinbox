@@ -22,6 +22,8 @@ export interface Draft {
   references: string[];
   /** Quoted original (reply) or forwarded message, appended after the user's text. */
   quoteHtml: string;
+  /** The identity's signature, kept apart from the text so From can swap it; '' for none. */
+  signatureHtml: string;
   bodyHtml: string;
   attachments: DraftAttachment[];
 }
@@ -73,7 +75,7 @@ function when(e: EmailRec): string {
 }
 
 export function initialDraft(mode: ComposeMode, original: EmailRec | null, me: Set<string>): Draft {
-  const empty: Draft = { mode, to: [], cc: [], bcc: [], subject: '', inReplyTo: [], references: [], quoteHtml: '', bodyHtml: '', attachments: [] };
+  const empty: Draft = { mode, to: [], cc: [], bcc: [], subject: '', inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '', attachments: [] };
   if (!original || mode === 'new') return empty;
 
   const from = original.from ?? [];
@@ -135,7 +137,14 @@ export function htmlToText(html: string): string {
 
 /** The Email object for Email/set create (RFC 8621 §4.6), stored as a draft. */
 export function buildEmailCreate(draft: Draft, from: EmailAddress, draftsId: string): Partial<Email> {
-  const html = draft.bodyHtml + draft.quoteHtml;
+  const signature = draft.signatureHtml ? `<div class="oinbox-signature">${draft.signatureHtml}</div>` : '';
+  const html = draft.bodyHtml + signature + draft.quoteHtml;
+  // "-- " on its own line is the delimiter mail clients use to recognise a signature.
+  const text = [
+    htmlToText(draft.bodyHtml).trimEnd(),
+    draft.signatureHtml ? `-- \n${htmlToText(draft.signatureHtml).trimEnd()}` : '',
+    draft.quoteHtml ? htmlToText(draft.quoteHtml).trim() : '',
+  ].filter(Boolean).join('\n') + '\n';
   return {
     mailboxIds: { [draftsId]: true },
     keywords: { $draft: true, $seen: true },
@@ -147,11 +156,21 @@ export function buildEmailCreate(draft: Draft, from: EmailAddress, draftsId: str
     ...(draft.inReplyTo.length ? { inReplyTo: draft.inReplyTo } : {}),
     ...(draft.references.length ? { references: draft.references } : {}),
     bodyValues: {
-      text: { value: htmlToText(html), isEncodingProblem: false, isTruncated: false },
+      text: { value: text, isEncodingProblem: false, isTruncated: false },
       html: { value: html, isEncodingProblem: false, isTruncated: false },
     },
     textBody: [{ partId: 'text', type: 'text/plain' }] as Email['textBody'],
     htmlBody: [{ partId: 'html', type: 'text/html' }] as Email['htmlBody'],
     attachments: draft.attachments.map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, disposition: 'attachment' })) as Email['attachments'],
   };
+}
+
+/** Take a saved draft's HTML apart again: the text, the top-level signature block, and what follows it (the quote). */
+export function splitDraftHtml(html: string): { bodyHtml: string; signatureHtml: string; quoteHtml: string } {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const nodes = [...doc.body.childNodes];
+  const at = nodes.findIndex((n) => n instanceof Element && n.matches('div.oinbox-signature'));
+  if (at < 0) return { bodyHtml: html, signatureHtml: '', quoteHtml: '' };
+  const serialize = (list: ChildNode[]) => list.map((n) => (n instanceof Element ? n.outerHTML : escapeHtml(n.textContent ?? ''))).join('');
+  return { bodyHtml: serialize(nodes.slice(0, at)), signatureHtml: (nodes[at] as Element).innerHTML, quoteHtml: serialize(nodes.slice(at + 1)) };
 }
