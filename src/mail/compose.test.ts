@@ -85,7 +85,7 @@ describe('buildEmailCreate', () => {
     const e = buildEmailCreate(
       {
         mode: 'reply', to: [{ name: 'Bob', email: 'bob@x.test' }], cc: [], bcc: [], subject: 'Re: Lunch',
-        inReplyTo: ['m1@x.test'], references: ['m0@x.test', 'm1@x.test'], quoteHtml: '<blockquote>q</blockquote>', bodyHtml: '<p>Yes <b>12</b></p>',
+        inReplyTo: ['m1@x.test'], references: ['m0@x.test', 'm1@x.test'], quoteHtml: '<blockquote>q</blockquote>', signatureHtml: '', bodyHtml: '<p>Yes <b>12</b></p>',
         attachments: [{ blobId: 'B1', name: 'a.pdf', type: 'application/pdf', size: 3 }],
       },
       { name: 'Alice', email: 'alice@example.test' },
