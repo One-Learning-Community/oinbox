@@ -2,7 +2,7 @@
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import type { Calendar, CalendarEvent, Email, Mailbox, Session } from '../jmap/types';
+import { VACATION, type Calendar, type CalendarEvent, type Email, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
@@ -33,6 +33,18 @@ export class FakeJmap {
   failCalendarQueries = false;
   /** Each request's response waits for the next promise here, if any (for race tests). */
   holds: Promise<void>[] = [];
+  identities = new Map<string, Identity>([['id1', identityRec('id1', 'Alice', 'alice@example.test')]]);
+  identityState = 1;
+  identityLog: { state: number; created: string[]; updated: string[]; destroyed: string[] }[] = [];
+  /** Addresses Identity/set create accepts (Stalwart: the account's own addresses). */
+  ownAddresses = ['alice@example.test'];
+  private nextIdentityId = 2;
+  vacation: VacationResponse = { id: 'singleton', isEnabled: false, fromDate: null, toDate: null, subject: null, textBody: null, htmlBody: null };
+  vacationState = 1;
+  /** Whether the account advertises urn:ietf:params:jmap:vacationresponse. */
+  vacationSupported = true;
+  /** Each request's `using`. */
+  usings: string[][] = [];
 
   addMailbox(id: string, name: string, role: Mailbox['role'] = null, parentId: string | null = null) {
     this.mailboxes.set(id, {
@@ -86,10 +98,13 @@ export class FakeJmap {
 
   private queryStates = new Map<string, string[]>();
 
-  handle(name: string, args: Record<string, unknown>): [string, unknown] {
+  handle(name: string, args: Record<string, unknown>, using: string[] = [VACATION]): [string, unknown] {
     this.calls.push(name);
     this.sent.push([name, args]);
     this.onCall?.(name, args);
+    if (name.startsWith('VacationResponse/') && !using.includes(VACATION)) {
+      return ['error', { type: 'unknownMethod', description: `Method ${name} requires capability ${VACATION}.` }];
+    }
     const ids = args.ids as string[] | null | undefined;
     const pick = (e: Rec) => {
       const props = args.properties as string[] | undefined;
@@ -102,8 +117,26 @@ export class FakeJmap {
         const list = (ids ? all.filter((m) => ids.includes(m.id)) : all).map((m) => this.withCounts(m));
         return [name, { accountId: 'a1', state: `m${this.mailboxState}`, list, notFound: [] }];
       }
-      case 'Identity/get':
-        return [name, { accountId: 'a1', state: 'i1', list: [{ id: 'id1', name: 'Alice', email: 'alice@example.test' }], notFound: [] }];
+      case 'Identity/get': {
+        const all = [...this.identities.values()];
+        const list = (ids ? all.filter((i) => ids.includes(i.id)) : all).map((i) => structuredClone(i));
+        return [name, { accountId: 'a1', state: `i${this.identityState}`, list, notFound: ids ? ids.filter((id) => !this.identities.has(id)) : [] }];
+      }
+      case 'Identity/changes': {
+        const since = Number(String(args.sinceState).slice(1));
+        const entries = this.identityLog.filter((l) => l.state > since);
+        const uniq = (xs: string[]) => [...new Set(xs)];
+        const destroyed = uniq(entries.flatMap((l) => l.destroyed));
+        const created = uniq(entries.flatMap((l) => l.created)).filter((id) => !destroyed.includes(id));
+        const updated = uniq(entries.flatMap((l) => l.updated)).filter((id) => !created.includes(id) && !destroyed.includes(id));
+        return [name, { accountId: 'a1', oldState: args.sinceState, newState: `i${this.identityState}`, hasMoreChanges: false, created, updated, destroyed }];
+      }
+      case 'Identity/set':
+        return [name, this.identitySet(args)];
+      case 'VacationResponse/get':
+        return [name, { accountId: 'a1', state: `v${this.vacationState}`, list: ids && !ids.includes('singleton') ? [] : [structuredClone(this.vacation)], notFound: (ids ?? []).filter((id) => id !== 'singleton') }];
+      case 'VacationResponse/set':
+        return [name, this.vacationSet(args)];
       case 'Email/query': {
         const all = this.queryIds(args);
         const qs = `q${this.emailState}`;
@@ -298,6 +331,102 @@ export class FakeJmap {
     return ['error', { type: 'unknownMethod' }];
   }
 
+  private identitySet(args: Record<string, unknown>) {
+    const bytes = (v: unknown) => new TextEncoder().encode(typeof v === 'string' ? v : '').length;
+    const invalid = (prop: string, description = 'Field could not be set.') => ({ type: 'invalidProperties', description, properties: [prop] });
+    const limits: [keyof Identity, number][] = [['name', 254], ['textSignature', 2047], ['htmlSignature', 2047]];
+    const tooLong = (p: Partial<Identity>) => limits.find(([k, max]) => bytes(p[k]) > max)?.[0];
+    const created: Record<string, { id: string }> = {};
+    const notCreated: Record<string, unknown> = {};
+    for (const [cid, p] of Object.entries((args.create ?? {}) as Record<string, Partial<Identity>>)) {
+      const email = typeof p.email === 'string' ? p.email.toLowerCase() : '';
+      const long = tooLong(p);
+      if (!p.email) notCreated[cid] = invalid('email', 'Missing e-mail address.');
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !email.endsWith('@example.test')) notCreated[cid] = invalid('email', 'Invalid e-mail address.');
+      else if (!this.ownAddresses.includes(email)) notCreated[cid] = invalid('email', 'E-mail address not configured for this account.');
+      else if (long) notCreated[cid] = invalid(long);
+      else if (this.identities.size >= 20) notCreated[cid] = { type: 'overQuota', description: 'There are too many identities, please delete some before adding a new one.' };
+      else {
+        const id = `id${this.nextIdentityId++}`;
+        this.identities.set(id, { ...identityRec(id, p.name ?? '', email), textSignature: p.textSignature ?? '', htmlSignature: p.htmlSignature ?? '' });
+        created[cid] = { id };
+      }
+    }
+    const updated: Record<string, null> = {};
+    const notUpdated: Record<string, unknown> = {};
+    for (const [id, p] of Object.entries((args.update ?? {}) as Record<string, Partial<Identity>>)) {
+      const cur = this.identities.get(id);
+      const long = tooLong(p);
+      const unknown = Object.keys(p).find((k) => !['name', 'textSignature', 'htmlSignature', 'replyTo', 'bcc', 'email'].includes(k));
+      if (!cur) notUpdated[id] = { type: 'notFound' };
+      else if (unknown) notUpdated[id] = invalid(unknown, unknown.includes('/') ? 'Field could not be set.' : 'Invalid property.');
+      else if ('email' in p) notUpdated[id] = invalid('email');
+      else if (long) notUpdated[id] = invalid(long);
+      else {
+        Object.assign(cur, p, { textSignature: p.textSignature === undefined ? cur.textSignature : (p.textSignature ?? '') });
+        updated[id] = null;
+      }
+    }
+    const destroyed: string[] = [];
+    const notDestroyed: Record<string, unknown> = {};
+    for (const id of (args.destroy ?? []) as string[]) {
+      if (this.identities.delete(id)) destroyed.push(id);
+      else notDestroyed[id] = { type: 'notFound' };
+    }
+    const change = { created: Object.values(created).map((c) => c.id), updated: Object.keys(updated), destroyed };
+    if (change.created.length || change.updated.length || change.destroyed.length) {
+      this.identityState++;
+      this.identityLog.push({ state: this.identityState, ...change });
+    }
+    const orNull = <T extends object>(o: T) => (Object.keys(o).length ? o : undefined);
+    // Stalwart's Identity/set response has no oldState.
+    return {
+      accountId: 'a1', newState: `i${this.identityState}`,
+      created: orNull(created), updated: orNull(updated), destroyed: destroyed.length ? destroyed : undefined,
+      notCreated: orNull(notCreated), notUpdated: orNull(notUpdated), notDestroyed: orNull(notDestroyed),
+    };
+  }
+
+  private vacationSet(args: Record<string, unknown>) {
+    const oldState = `v${this.vacationState}`;
+    const bytes = (v: unknown) => new TextEncoder().encode(typeof v === 'string' ? v : '').length;
+    const invalid = (prop: string) => ({ type: 'invalidProperties', description: 'Field could not be set.', properties: [prop] });
+    const singleton = { type: 'singleton', description: 'Singletons cannot be created or destroyed.' };
+    const notCreated = Object.fromEntries(Object.keys((args.create ?? {}) as object).map((k) => [k, singleton]));
+    const notDestroyed = Object.fromEntries(((args.destroy ?? []) as string[]).map((k) => [k, singleton]));
+    const updated: Record<string, null> = {};
+    const notUpdated: Record<string, unknown> = {};
+    const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+    for (const [id, p] of Object.entries((args.update ?? {}) as Record<string, Partial<VacationResponse>>)) {
+      if (id !== 'singleton') {
+        notUpdated[id] = { type: 'notFound', description: 'ID not found.' };
+        continue;
+      }
+      const next = { ...this.vacation, ...p };
+      const unknown = Object.keys(p).find((k) => !['isEnabled', 'fromDate', 'toDate', 'subject', 'textBody', 'htmlBody'].includes(k));
+      const badDate = (['fromDate', 'toDate'] as const).find((k) => typeof p[k] === 'string' && !DATE_TIME.test(p[k]!));
+      // Without a text part the server derives one from the HTML; it counts against the budget.
+      const text = next.textBody ?? next.htmlBody;
+      const err = unknown ?? badDate
+        ?? (bytes(next.subject) > 511 ? 'subject' : undefined)
+        ?? (bytes(next.textBody) > 2047 ? 'textBody' : undefined)
+        ?? (bytes(next.htmlBody) > 2047 || bytes(text) + bytes(next.htmlBody) > 3504 ? 'htmlBody' : undefined);
+      if (err) {
+        notUpdated[id] = invalid(err);
+        continue;
+      }
+      for (const k of ['fromDate', 'toDate'] as const) if (typeof next[k] === 'string') next[k] = new Date(next[k]!).toISOString().replace(/\.\d{3}Z$/, 'Z');
+      this.vacation = next;
+      updated[id] = null;
+    }
+    if (Object.keys(updated).length) this.vacationState++;
+    const orNull = <T extends object>(o: T) => (Object.keys(o).length ? o : undefined);
+    return {
+      accountId: 'a1', oldState, newState: `v${this.vacationState}`,
+      updated: orNull(updated), notCreated: orNull(notCreated), notUpdated: orNull(notUpdated), notDestroyed: orNull(notDestroyed),
+    };
+  }
+
   /** Resolve back-references (RFC 8620 §3.7) including `*` path segments. */
   private resolve(args: Record<string, unknown>, done: Map<string, Invocation>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
@@ -319,16 +448,18 @@ export class FakeJmap {
 
   client(): JmapClient {
     const session: Session = {
-      capabilities: {}, accounts: { a1: { name: 'alice', isPersonal: true, isReadOnly: false } },
+      capabilities: {},
+      accounts: { a1: { name: 'alice', isPersonal: true, isReadOnly: false, accountCapabilities: this.vacationSupported ? { [VACATION]: {} } : {} } },
       primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
     };
     const fetchImpl = async (_url: string, init?: RequestInit) => {
-      const body = JSON.parse(init!.body as string) as { methodCalls: Invocation[] };
+      const body = JSON.parse(init!.body as string) as { using: string[]; methodCalls: Invocation[] };
+      this.usings.push(body.using);
       const done = new Map<string, Invocation>();
       const responses: Invocation[] = [];
       for (const [name, args, id] of body.methodCalls) {
-        const [rname, result] = this.handle(name, this.resolve(args, done));
+        const [rname, result] = this.handle(name, this.resolve(args, done), body.using);
         const inv: Invocation = [rname, result as Record<string, unknown>, id];
         done.set(id, inv);
         responses.push(inv);
@@ -342,4 +473,8 @@ export class FakeJmap {
     c.useSession(session);
     return c;
   }
+}
+
+function identityRec(id: string, name: string, email: string): Identity {
+  return { id, name, email, replyTo: null, bcc: null, textSignature: '', htmlSignature: '', mayDelete: true };
 }
