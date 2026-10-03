@@ -32,6 +32,9 @@ importers:
       '@rozie-ui/data-table-solid':
         specifier: ^0.7.1
         version: 0.7.1(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/table-core@8.21.3)(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
+      '@rozie-ui/date-picker-solid':
+        specifier: ^0.1.14
+        version: 0.1.14(solid-js@1.9.15)
       '@rozie-ui/dialog-solid':
         specifier: ^0.2.0
         version: 0.2.0(solid-js@1.9.15)
@@ -41,6 +44,9 @@ importers:
       '@rozie-ui/popover-solid':
         specifier: ^0.3.0
         version: 0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
+      '@rozie-ui/switch-solid':
+        specifier: ^0.1.4
+        version: 0.1.4(solid-js@1.9.15)
       '@rozie-ui/tiptap-solid':
         specifier: ^0.5.1
         version: 0.5.1(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)
@@ -445,6 +451,11 @@ packages:
       '@tanstack/virtual-core': ^3
       solid-js: ^1.8
 
+  '@rozie-ui/date-picker-solid@0.1.14':
+    resolution: {integrity: sha512-UhSl5qSHZ5pW/hgganEE3SiXL/YlhwPLLDy1irVSGZJZHVSlksE9GqIuRZgjqWUdtrQ5FwymFa3PQJbzAEF1KQ==}
+    peerDependencies:
+      solid-js: ^1.8
+
   '@rozie-ui/dialog-solid@0.2.0':
     resolution: {integrity: sha512-Ei9etM2UWMpvrMYijzEMEYYRYtMKKSLG7s8bIrEVmKPNSd9ZHdKCnIO4QwkazdngQmk7AByoYYckUQKXuEGyjw==}
     peerDependencies:
@@ -463,6 +474,11 @@ packages:
     resolution: {integrity: sha512-HvtJ5PzlAOMdNS4rCGN0q+afaUP0Avx9C6xBsVWtyCSv7oPsGYtx9lCGPu2uV+w/xcAGKsmQm2HhQ4KqaY4LqQ==}
     peerDependencies:
       '@floating-ui/dom': ^1.7.2
+      solid-js: ^1.8
+
+  '@rozie-ui/switch-solid@0.1.4':
+    resolution: {integrity: sha512-M5hRwO+P2rnmLOyctPCi0vycaaVCginH1u06/uDsDLHcJo06nt9uXKNwUQgXXrt+qIulGhzkXuG7hV9rafYOgA==}
+    peerDependencies:
       solid-js: ^1.8
 
   '@rozie-ui/tiptap-solid@0.5.1':
@@ -1745,6 +1761,12 @@ snapshots:
       '@tanstack/virtual-core': 3.17.11
       solid-js: 1.9.15
 
+  '@rozie-ui/date-picker-solid@0.1.14(solid-js@1.9.15)':
+    dependencies:
+      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
+      solid-js: 1.9.15
+
   '@rozie-ui/dialog-solid@0.2.0(solid-js@1.9.15)':
     dependencies:
       '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
@@ -1762,6 +1784,11 @@ snapshots:
   '@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15)':
     dependencies:
       '@floating-ui/dom': 1.8.0
+      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      solid-js: 1.9.15
+
+  '@rozie-ui/switch-solid@0.1.4(solid-js@1.9.15)':
+    dependencies:
       '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
       solid-js: 1.9.15
 

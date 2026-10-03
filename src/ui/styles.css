@@ -469,3 +469,21 @@ a { color: var(--accent); }
   .settings .btn, .settings-form button, .settings .icon-btn { min-height: 44px; }
   .topbar a.icon-btn { width: 44px; height: 44px; }
 }
+
+.vacation-status { margin: 0; font-weight: 500; }
+.vacation-form { width: 100%; max-width: 560px; }
+.switch-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--text); font-size: 14px; }
+.day-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.day-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
+.day-button { min-width: 180px; text-align: left; }
+.day-popover { padding: 4px; }
+.settings, .day-popover {
+  --rozie-switch-on-bg: var(--accent); --rozie-switch-off-bg: var(--border); --rozie-switch-thumb-bg: var(--surface);
+  --rozie-datepicker-bg: var(--surface); --rozie-datepicker-fg: var(--text); --rozie-datepicker-accent: var(--accent);
+  --rozie-datepicker-border: var(--border); --rozie-datepicker-font: var(--font);
+}
+@media (pointer: coarse) {
+  .day-button { min-height: 44px; }
+  .day-popover { --rozie-datepicker-day-size: 44px; --rozie-datepicker-cell-size: 44px; }
+  .switch-row { min-height: 44px; }
+}

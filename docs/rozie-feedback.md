@@ -225,3 +225,29 @@ Every wrapper's props now extend `ComponentProps<'div'>` (or `'dialog'`), which 
 2. **Untyped handlers got looser:** `(...args: unknown[]) => void` became `(...args: any[]) => void`
    in Dialog, CommandPalette, DataTable, TipTap and Toast.
 
+
+## OPEN, BLOCKING (2026-10-02): DatePicker 0.1.14 — `focus()` doesn't move DOM focus
+Wanted: the vacation form opens a DatePicker in a Popover and calls the handle's `focus()` so a
+keyboard user lands in the grid (the README: "Move keyboard focus into the calendar grid … Useful
+right after the picker becomes visible").
+What happens: the active day changes (today gets the roving `tabindex=0` and its outline), but
+`document.activeElement` stays on the button that opened the popover. Calling `focus()` 300 ms after
+the open, with the handle present and the grid rendered, gives the same result, so it isn't timing.
+Cause, from the sources: `focus()` → `seedActiveDay()` → `setActiveDay()`. In `@rozie/runtime-solid`
+0.8.0 `createKeynav`'s effect only calls `activeEl.focus()` when `mayApply` is true, which needs
+`hasInteracted` (set by a `focusin` inside the grid) or the focus already inside the scope. Neither is
+true when the call comes from outside, which is the case the handle exists for.
+Effect in oinbox: the popover's calendar can't be reached from the keyboard (it's portalled, so Tab
+from the button doesn't go there either). The settings slice's vacation dates are blocked on this.
+Expected: `focus()` focuses the active day cell unconditionally (it's an explicit request), e.g. by
+marking the next settle as "apply focus".
+
+## TipTap 0.5.1 — Escape inside the editor never reaches a surrounding `<dialog>`
+ProseMirror's `captureKeyDown` calls `preventDefault()` on Escape (and Enter) in every editor, so a
+native `<dialog>` (rozie Dialog) doesn't fire `cancel` while the focus is in a TipTap field. oinbox's
+identity dialog closes itself on an Escape keydown whose target is the contenteditable
+(`src/ui/IdentityDialog.tsx`). A wrapper option (or Dialog listening for Escape regardless of
+`defaultPrevented` from a ProseMirror target) would make this unnecessary. Not blocking.
+
+## Switch 0.1.4 — no gaps found (2026-10-02)
+`id` passes through to the `role="switch"` button, so a plain `<label for>` names it; Space toggles.
