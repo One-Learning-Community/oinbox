@@ -7,6 +7,7 @@ export const CORE = 'urn:ietf:params:jmap:core';
 export const MAIL = 'urn:ietf:params:jmap:mail';
 export const SUBMISSION = 'urn:ietf:params:jmap:submission';
 export const CALENDARS = 'urn:ietf:params:jmap:calendars';
+export const VACATION = 'urn:ietf:params:jmap:vacationresponse';
 
 export interface Session {
   capabilities: Record<string, unknown>;
@@ -98,6 +99,17 @@ export interface Identity {
   textSignature: string;
   htmlSignature: string;
   mayDelete: boolean;
+}
+
+/** RFC 8621 §8. Stalwart keeps exactly one, with id "singleton". */
+export interface VacationResponse {
+  id: Id;
+  isEnabled: boolean;
+  fromDate: UTCDate | null;
+  toDate: UTCDate | null;
+  subject: string | null;
+  textBody: string | null;
+  htmlBody: string | null;
 }
 
 export interface SearchSnippet {
@@ -341,6 +353,9 @@ export interface Methods {
   'Thread/get': { args: GetArgs; result: GetResult<Thread> };
   'Thread/changes': { args: ChangesArgs; result: ChangesResult };
   'Identity/get': { args: GetArgs; result: GetResult<Identity> };
+  'Identity/set': { args: SetArgs<Identity>; result: SetResult<Identity> };
+  'VacationResponse/get': { args: GetArgs; result: GetResult<VacationResponse> };
+  'VacationResponse/set': { args: SetArgs<VacationResponse>; result: SetResult<VacationResponse> };
   'SearchSnippet/get': {
     args: { accountId: Id; filter: EmailFilter | null; emailIds: Id[] };
     result: { accountId: Id; list: SearchSnippet[]; notFound: Id[] | null };
