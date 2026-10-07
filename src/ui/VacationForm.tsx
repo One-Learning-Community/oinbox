@@ -74,7 +74,7 @@ export function VacationForm() {
             <label for="vacation-enabled">Send automatic replies</label>
           </div>
           <div class="day-row">
-            <DayField label="First day" value={form().firstDay} empty="Starting now" min={today()} onChange={(v) => update({ firstDay: v })} />
+            <DayField label="First day" value={form().firstDay} empty="Starting now" min={form().firstDay && form().firstDay! < today() ? form().firstDay! : today()} onChange={(v) => update({ firstDay: v })} />
             <DayField label="Last day" value={form().lastDay} empty="No end date" min={form().firstDay ?? today()} onChange={(v) => update({ lastDay: v })} />
           </div>
           <p class="field-error" role="alert">{err('dates')}</p>

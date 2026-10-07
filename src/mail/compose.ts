@@ -172,5 +172,5 @@ export function splitDraftHtml(html: string): { bodyHtml: string; signatureHtml:
   const at = nodes.findIndex((n) => n instanceof Element && n.matches('div.oinbox-signature'));
   if (at < 0) return { bodyHtml: html, signatureHtml: '', quoteHtml: '' };
   const serialize = (list: ChildNode[]) => list.map((n) => (n instanceof Element ? n.outerHTML : escapeHtml(n.textContent ?? ''))).join('');
-  return { bodyHtml: serialize(nodes.slice(0, at)), signatureHtml: (nodes[at] as Element).innerHTML, quoteHtml: serialize(nodes.slice(at + 1)) };
+  return { bodyHtml: serialize(nodes.slice(0, at)), signatureHtml: sanitizeEmailHtml((nodes[at] as Element).innerHTML, { allowRemote: true }).html, quoteHtml: serialize(nodes.slice(at + 1)) };
 }

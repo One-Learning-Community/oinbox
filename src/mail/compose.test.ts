@@ -137,6 +137,11 @@ describe('splitDraftHtml', () => {
   it('leaves HTML without a signature block as the body', () => {
     expect(splitDraftHtml('<p>Hi</p><div class="x">S</div>')).toEqual({ bodyHtml: '<p>Hi</p><div class="x">S</div>', signatureHtml: '', quoteHtml: '' });
   });
+  it('strips active content from a signature a draft arrives with', () => {
+    const sig = splitDraftHtml('<p>Hi</p><div class="oinbox-signature"><img src="x" onerror="alert(1)"><script>alert(2)</script><b>A</b></div>').signatureHtml;
+    expect(sig).not.toMatch(/onerror|script/i);
+    expect(sig).toContain('<b>A</b>');
+  });
   it('ignores a signature block nested inside the quote', () => {
     const html = '<p>Hi</p><div class="gmail_quote"><div class="oinbox-signature">Theirs</div></div>';
     expect(splitDraftHtml(html).signatureHtml).toBe('');
