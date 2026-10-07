@@ -324,6 +324,10 @@ export interface CalendarEvent {
   recurrenceId?: string | null;
   calendarIds?: Record<Id, boolean>;
   uid?: string;
+  sequence?: number;
+  status?: string | null;
+  /** Set only on events returned by CalendarEvent/parse: the iTIP method ("request", "cancel", …). */
+  method?: string | null;
   /** True when this copy is the organizer's (or the event has no other participants). */
   isOrigin?: boolean;
   title?: string;
