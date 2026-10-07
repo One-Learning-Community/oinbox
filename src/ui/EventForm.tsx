@@ -10,6 +10,8 @@ export interface EventFormProps {
   /** Resolve with an error message to show, or null when saved. */
   onSave: (title: string, calendarId: Id) => Promise<string | null>;
   onCancel: () => void;
+  /** Tells the host while a save is in flight, so it can keep the card from being dismissed. */
+  onBusy?: (busy: boolean) => void;
 }
 
 /** Title and calendar of one event, in a card. Enter saves; the card stays open until the server answers. */
@@ -25,12 +27,14 @@ export function EventForm(props: EventFormProps) {
     e.preventDefault();
     if (busy()) return;
     setBusy(true);
+    props.onBusy?.(true);
     setError('');
     try {
       const message = await props.onSave(title().trim(), calendarId());
       if (message) setError(message);
     } finally {
       setBusy(false);
+      props.onBusy?.(false);
     }
   };
 

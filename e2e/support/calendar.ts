@@ -103,3 +103,42 @@ export async function createInvitedEvent(title: string, start: string, timeZone:
     if (ids.length) await jmap([['Email/set', { accountId: mail, destroy: ids }, 'd']], ALICE);
   };
 }
+
+/** An event alice organises with bob as a guest. Nothing is emailed or delivered (scheduling messages off). */
+export async function createGuestEvent(title: string, start: string, timeZone: string): Promise<string> {
+  const account = await calendarAccount();
+  const calendarId = await defaultCalendar(account);
+  const r = await jmap(
+    [['CalendarEvent/set', { accountId: account, sendSchedulingMessages: false, create: { x: {
+      calendarIds: { [calendarId]: true }, title, start, timeZone, duration: 'PT1H', organizerCalendarAddress: `mailto:${ALICE}`,
+      participants: {
+        a: { calendarAddress: `mailto:${ALICE}`, roles: { owner: true, attendee: true }, participationStatus: 'accepted' },
+        b: { calendarAddress: `mailto:${BOB}`, roles: { attendee: true }, participationStatus: 'needs-action' },
+      },
+    } } }, 's']],
+    ALICE,
+    CAL_USING,
+  );
+  return r.s.created.x.id as string;
+}
+
+/** Subjects of bob's messages that mention this text. */
+export async function bobMailAbout(text: string): Promise<string[]> {
+  const mail = await accountId(BOB);
+  const r = await jmap(
+    [
+      ['Email/query', { accountId: mail, filter: { text } }, 'q'],
+      ['Email/get', { accountId: mail, '#ids': { resultOf: 'q', name: 'Email/query', path: '/ids' }, properties: ['subject'] }, 'g'],
+    ],
+    BOB,
+  );
+  // Full-text search is fuzzy ("E2E 1" matches "E2E 2"), so keep only exact mentions.
+  return (r.g.list as { subject: string }[]).map((e) => e.subject).filter((subject) => subject.includes(text));
+}
+
+export async function destroyBobMailAbout(text: string): Promise<void> {
+  const mail = await accountId(BOB);
+  const r = await jmap([['Email/query', { accountId: mail, filter: { text } }, 'q']], BOB);
+  const ids = r.q.ids as string[];
+  if (ids.length) await jmap([['Email/set', { accountId: mail, destroy: ids }, 'd']], BOB);
+}

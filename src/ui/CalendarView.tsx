@@ -17,14 +17,30 @@ export function CalendarView() {
   const [view, setView] = createSignal(loadView(window.innerWidth < 700));
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const notify = createNotifyDialog();
+  // The popovers dismiss on any click outside them, and the notify dialog is outside them.
+  const [dialogs, setDialogs] = createSignal(0);
+  const [formBusy, setFormBusy] = createSignal(0);
+  const keepOpen = () => dialogs() > 0 || formBusy() > 0;
+  const ask = async (a: NotifyAsk): Promise<NotifyAnswer> => {
+    setDialogs((n) => n + 1);
+    try {
+      return await notify.ask(a);
+    } finally {
+      setDialogs((n) => n - 1);
+    }
+  };
+  const trackBusy = (busy: boolean) => setFormBusy((n) => n + (busy ? 1 : -1));
+  /** Bumped whenever the events handed to FullCalendar change; its source is then swapped. */
+  let eventsGeneration = 0;
   const [handle, setHandle] = createSignal<FullCalendarHandle>();
 
-  const events = createMemo(() =>
-    calendar.state.events.flatMap((e) => {
+  const events = createMemo(() => {
+    eventsGeneration++;
+    return calendar.state.events.flatMap((e) => {
       const input = toCalendarInput(e, calendar.state.calendars, calendar.hidden());
       return input ? [{ ...input, editable: editability(e, calendar.state.calendars).editable }] : [];
-    }),
-  );
+    });
+  });
 
   interface Draft {
     start: Date;
@@ -43,20 +59,26 @@ export function CalendarView() {
     const ev = calendar.state.events.find((e) => e.id === id);
     const api = handle()?.getApi()?.getEventById(id);
     if (!ev || !api || !start) return revert();
+    // A refetch while we wait swaps FullCalendar's event source; reverting the old event then
+    // would add a second copy next to the fresh one, and the fresh one already shows the server's state.
+    const generation = eventsGeneration;
+    const undo = () => {
+      if (generation === eventsGeneration) revert();
+    };
     let sendMessages = false;
     if (hasGuests(ev)) {
-      const answer = await notify.ask({
+      const answer = await ask({
         title: 'Change this event?',
         message: `"${ev.title}" has guests. Email them the new time?`,
         guests: true,
         confirmLabel: 'Change',
       });
-      if (answer === 'cancel') return revert();
+      if (answer === 'cancel') return undo();
       sendMessages = answer === 'notify';
     }
     const r = await calendar.updateEvent(ev.baseEventId, patchForDrop(ev, start, end, api.allDay, zone), sendMessages);
     if (!r.ok) {
-      revert();
+      undo();
       toast(`Couldn't change the event: ${r.error}`, 'error');
     }
   }
@@ -99,8 +121,8 @@ export function CalendarView() {
           onDatesSet={({ start, end }) => void calendar.show({ start: toUtcDate(start), end: toUtcDate(end) })}
         />
       </div>
-      <EventPopover selected={selected()} onClose={() => setSelected(null)} notify={notify.ask} />
-      <Popover open={!!draft()} bare onOpenChange={(open) => !open && closeDraft()} trigger="manual" strategy="fixed" placement="right-start" reference={draft()?.anchor ?? null}>
+      <EventPopover selected={selected()} onClose={() => setSelected(null)} notify={ask} keepOpen={keepOpen} onBusy={trackBusy} />
+      <Popover open={!!draft()} disableDismiss={keepOpen()} bare onOpenChange={(open) => !open && closeDraft()} trigger="manual" strategy="fixed" placement="right-start" reference={draft()?.anchor ?? null}>
         <Show when={draft()} keyed>
           {(d) => (
             <EventForm
@@ -110,6 +132,7 @@ export function CalendarView() {
               calendarId={defaultCalendarId(calendar.state.calendars)!}
               saveLabel="Create"
               onCancel={closeDraft}
+              onBusy={trackBusy}
               onSave={async (title, calendarId) => {
                 const r = await calendar.createEvent(newEventFromSelection(d, calendarId, title, zone));
                 if (r.ok) closeDraft();
@@ -135,17 +158,17 @@ interface Selected {
  * event: it decides an outside click a tick after the press, and by then a click on another
  * event has pointed `reference` at that event, so the card moves there instead of closing.
  */
-function EventPopover(props: { selected: Selected | null; onClose: () => void; notify: (a: NotifyAsk) => Promise<NotifyAnswer> }) {
+function EventPopover(props: { selected: Selected | null; onClose: () => void; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; keepOpen: () => boolean; onBusy: (busy: boolean) => void }) {
   return (
-    <Popover open={!!props.selected} bare onOpenChange={(open) => !open && props.onClose()} trigger="manual" strategy="fixed" placement="right-start" reference={props.selected?.el ?? null}>
+    <Popover open={!!props.selected} disableDismiss={props.keepOpen()} bare onOpenChange={(open) => !open && props.onClose()} trigger="manual" strategy="fixed" placement="right-start" reference={props.selected?.el ?? null}>
       <Show when={props.selected?.event} keyed>
-        {(event) => <EventCard event={event} notify={props.notify} onClose={props.onClose} />}
+        {(event) => <EventCard event={event} notify={props.notify} onClose={props.onClose} onBusy={props.onBusy} />}
       </Show>
     </Popover>
   );
 }
 
-function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; onClose: () => void }) {
+function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; onClose: () => void; onBusy: (busy: boolean) => void }) {
   const { calendar, toast } = useApp();
   const state = () => editability(props.event, calendar.state.calendars);
   const [editing, setEditing] = createSignal(false);
@@ -204,6 +227,7 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
           calendarId={props.event.calendarIds[0]!}
           saveLabel="Save"
           onCancel={() => setEditing(false)}
+          onBusy={props.onBusy}
           onSave={save}
         />
       }

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { waitLive } from './support/app';
-import { createEvent, createInvitedEvent, destroyE2eEvents, eventsByTitle, todayIn } from './support/calendar';
+import { bobMailAbout, createEvent, createGuestEvent, createInvitedEvent, destroyBobMailAbout, destroyE2eEvents, eventsByTitle, todayIn } from './support/calendar';
 
 const TZ = 'America/New_York';
 test.use({ timezoneId: TZ });
@@ -29,9 +29,16 @@ async function dragSlot(page: Page, from: string, to: string) {
   await page.mouse.up();
 }
 
+/** An event's box; a refetch re-renders the events, so wait until it is measurable. */
+async function boxOf(page: Page, title: string) {
+  let box = null;
+  await expect.poll(async () => (box = await event(page, title).boundingBox())).not.toBeNull();
+  return box as { x: number; y: number; width: number; height: number } | null;
+}
+
 /** Drag an event down to the slot at `to`. */
 async function dragEventTo(page: Page, title: string, to: string) {
-  const box = (await event(page, title).boundingBox())!;
+  const box = (await boxOf(page, title))!;
   const target = (await lane(page, to).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 6);
   await page.mouse.down();
@@ -141,4 +148,91 @@ test('a failed write puts the dragged event back and says so', async ({ page }) 
   await expect(page.locator('.toast', { hasText: "Couldn't change the event" })).toBeVisible();
   const after = (await event(page, title).boundingBox())!;
   expect(Math.abs(after.y - before.y)).toBeLessThan(2);
+});
+
+test('clicking outside the create form closes it and creates nothing', async ({ page }) => {
+  await openWeek(page);
+  await dragSlot(page, '20:00', '20:30');
+  await expect(page.getByRole('form', { name: 'Event' })).toBeVisible();
+  await page.getByRole('link', { name: 'Inbox' }).or(page.locator('nav.sidebar')).first().click({ position: { x: 5, y: 5 } });
+  await expect(page.getByRole('form', { name: 'Event' })).toHaveCount(0);
+  await expect(page.locator('.calendar-view .fc-highlight')).toHaveCount(0);
+});
+
+test('an event can be resized by its bottom edge', async ({ page }) => {
+  const title = tag();
+  await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+  await openWeek(page);
+  await event(page, title).hover();
+  const handle = (await event(page, title).locator('.fc-event-resizer-end').boundingBox())!;
+  const target = (await lane(page, '19:00').boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, target.y + 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await eventsByTitle(title))[0]?.duration).toBe('PT2H30M');
+});
+
+test.describe('events with guests', () => {
+  test.afterEach(async () => destroyBobMailAbout('E2E'));
+
+  test('Cancel in the rename dialog returns to the form with the typed title', async ({ page }) => {
+    const title = tag();
+    await createGuestEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+    const form = page.getByRole('form', { name: 'Event' });
+    await form.getByRole('textbox', { name: 'Title' }).fill(`${title} renamed`);
+    await form.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('dialog', { name: 'Rename this event?' }).getByRole('button', { name: 'Cancel' }).click();
+    await expect(form.getByRole('textbox', { name: 'Title' })).toHaveValue(`${title} renamed`);
+    expect(await eventsByTitle(title)).toHaveLength(1);
+  });
+
+  test('a refused rename shows its error in the form', async ({ page }) => {
+    const title = tag();
+    await createGuestEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await page.route('**/jmap/', (route) =>
+      route.request().postData()?.includes('"CalendarEvent/set"') ? route.fulfill({ status: 500, body: 'boom' }) : route.continue(),
+    );
+    await event(page, title).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+    const form = page.getByRole('form', { name: 'Event' });
+    await form.getByRole('textbox', { name: 'Title' }).fill(`${title} renamed`);
+    await form.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('dialog', { name: 'Rename this event?' }).getByRole('button', { name: "Don't notify" }).click();
+    await expect(form.getByRole('alert')).toContainText(/500|boom|failed/i);
+  });
+
+  test('Notify guests emails bob; Don\'t notify does not', async ({ page }) => {
+    const quiet = tag();
+    const loud = `E2E ${Date.now() + 1}`;
+    await createGuestEvent(quiet, `${todayIn(TZ)}T17:00:00`, TZ);
+    await createGuestEvent(loud, `${todayIn(TZ)}T19:00:00`, TZ);
+    await openWeek(page);
+    await dragEventTo(page, quiet, '21:00');
+    await page.getByRole('dialog', { name: 'Change this event?' }).getByRole('button', { name: "Don't notify" }).click();
+    await expect.poll(async () => (await eventsByTitle(quiet))[0]?.start).toBe(`${todayIn(TZ)}T21:00:00`);
+    await dragEventTo(page, loud, '20:00');
+    await page.getByRole('dialog', { name: 'Change this event?' }).getByRole('button', { name: 'Notify guests' }).click();
+    await expect.poll(async () => (await bobMailAbout(loud)).length, { timeout: 15_000 }).toBeGreaterThan(0);
+    expect(await bobMailAbout(quiet)).toHaveLength(0);
+  });
+
+  test('Cancel after a refetch leaves exactly one copy of the event', async ({ page }) => {
+    const title = tag();
+    await createGuestEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await dragEventTo(page, title, '21:00');
+    const dialog = page.getByRole('dialog', { name: 'Change this event?' });
+    await expect(dialog).toBeVisible();
+    const other = tag() + ' other';
+    await createEvent(other, `${todayIn(TZ)}T08:00:00`, TZ);
+    await expect(event(page, other)).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(event(page, title)).toHaveCount(1);
+  });
 });
