@@ -2,7 +2,7 @@
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import { VACATION, type Calendar, type CalendarEvent, type Email, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
+import { CALENDARS_PARSE, VACATION, type Calendar, type CalendarEvent, type Email, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
@@ -30,6 +30,8 @@ export class FakeJmap {
   /** Base events, served by CalendarEvent/get by id. */
   baseEvents = new Map<string, CalendarEvent>();
   calendarEventState = 0;
+  /** Parsed invitations served by CalendarEvent/parse, keyed by blob id. */
+  parsedBlobs = new Map<string, CalendarEvent[]>();
   failCalendarQueries = false;
   /** The arguments of every CalendarEvent/set received. */
   calendarSets: Record<string, unknown>[] = [];
@@ -197,7 +199,23 @@ export class FakeJmap {
         if (this.failCalendarQueries) return ['error', { type: 'serverFail', description: 'calendar store unavailable' }];
         const f = (args.filter ?? {}) as { after?: string; before?: string };
         const inRange = (o: CalendarEvent) => (!f.after || o.utcStart! >= f.after) && (!f.before || o.utcStart! < f.before);
+        if (args.expandRecurrences !== true) {
+          // Not expanded: base events, matched on their (zone-naive) start.
+          const inWindow = (e: CalendarEvent) => (!f.after || `${e.start}Z` >= f.after) && (!f.before || `${e.start}Z` < f.before);
+          const ids = [...this.baseEvents.values()].filter(inWindow).map((e) => e.id).slice(0, (args.limit as number | undefined) ?? Infinity);
+          return [name, { accountId: 'a1', queryState: `ce${this.calendarEventState}`, canCalculateChanges: false, position: 0, ids }];
+        }
         return [name, { accountId: 'a1', queryState: `ce${this.calendarEventState}`, canCalculateChanges: false, position: 0, ids: this.occurrences.filter(inRange).map((o) => o.id) }];
+      }
+      case 'CalendarEvent/parse': {
+        const parsed: Record<string, CalendarEvent[]> = {};
+        const notFound: string[] = [];
+        for (const id of (args.blobIds as string[] | undefined) ?? []) {
+          const evs = this.parsedBlobs.get(id);
+          if (evs) parsed[id] = structuredClone(evs);
+          else notFound.push(id);
+        }
+        return [name, { accountId: 'a1', parsed, notParsable: null, notFound: notFound.length ? notFound : null }];
       }
       case 'CalendarEvent/get': {
         const all = new Map<string, CalendarEvent>([...this.baseEvents, ...this.occurrences.map((o) => [o.id, o] as const)]);
@@ -508,7 +526,7 @@ export class FakeJmap {
 
   client(): JmapClient {
     const session: Session = {
-      capabilities: {},
+      capabilities: { [CALENDARS_PARSE]: {} },
       accounts: { a1: { name: 'alice', isPersonal: true, isReadOnly: false, accountCapabilities: this.vacationSupported ? { [VACATION]: {} } : {} } },
       primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',

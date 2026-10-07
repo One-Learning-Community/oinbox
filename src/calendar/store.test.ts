@@ -199,3 +199,60 @@ describe('CalendarStore writes', () => {
     expect(r).toMatchObject({ error: expect.stringContaining('calendar store unavailable') });
   });
 });
+
+describe('invitations', () => {
+  const invite = (over: Partial<CalendarEvent> = {}): CalendarEvent => ({ id: 'x', uid: 'u1', method: 'request', sequence: 0, title: 'Review', ...over });
+
+  it('parses an invitation blob', async () => {
+    const { server, store } = setup();
+    server.parsedBlobs.set('blob1', [invite()]);
+    expect(await store.parseInvite('blob1')).toEqual({ ok: true, event: expect.objectContaining({ uid: 'u1' }) });
+  });
+  it('fails softly when the blob is unknown or yields no event', async () => {
+    const { server, store } = setup();
+    expect(await store.parseInvite('nope')).toEqual({ ok: false });
+    server.parsedBlobs.set('empty', []);
+    expect(await store.parseInvite('empty')).toEqual({ ok: false });
+  });
+  it('sends the parse capability in using', async () => {
+    const { server, store } = setup();
+    server.parsedBlobs.set('b', [invite()]);
+    await store.parseInvite('b');
+    expect(server.usings.at(-1)).toContain('urn:ietf:params:jmap:calendars:parse');
+  });
+
+  it('finds the copy by uid within the window, otherwise by scanning', async () => {
+    const { server, store } = setup();
+    server.baseEvents.set('b1', { ...server.baseEvents.get('b1')!, uid: 'u-near' });
+    server.baseEvents.set('far', { id: 'far', uid: 'u-far', calendarIds: { c1: true }, title: 'Far', start: '2027-06-01T09:00:00', timeZone: 'UTC' });
+    expect((await store.findByUid('u-near', '2026-10-05T09:00:00'))?.id).toBe('b1');
+    expect((await store.findByUid('u-far', '2026-10-05T09:00:00'))?.id).toBe('far');
+    expect(await store.findByUid('missing', '2026-10-05T09:00:00')).toBeNull();
+  });
+  it('caches a lookup until the store is refreshed', async () => {
+    const { server, store } = setup();
+    server.baseEvents.set('b1', { ...server.baseEvents.get('b1')!, uid: 'u1' });
+    const gets = () => server.calls.filter((c) => c === 'CalendarEvent/get').length;
+    await store.findByUid('u1');
+    const before = gets();
+    await store.findByUid('u1');
+    expect(gets()).toBe(before);
+    const v = store.version();
+    await store.refresh();
+    expect(store.version()).toBe(v + 1);
+    await store.findByUid('u1');
+    expect(gets()).toBeGreaterThan(before);
+  });
+
+  it('answers with scheduling messages on, patching only the participant status', async () => {
+    const { server, store } = setup();
+    expect(await store.rsvp('b1', 'a', 'accepted')).toEqual({ ok: true });
+    expect(server.calendarSets.at(-1)).toMatchObject({ sendSchedulingMessages: true, update: { b1: { 'participants/a/participationStatus': 'accepted' } } });
+  });
+  it('reports a refused answer', async () => {
+    const { server, store } = setup();
+    expect(await store.rsvp('gone', 'a', 'declined')).toEqual({ ok: false, error: 'That event no longer exists.' });
+    server.failCalendarSets = true;
+    expect((await store.rsvp('b1', 'a', 'declined')).ok).toBe(false);
+  });
+});

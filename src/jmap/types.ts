@@ -7,6 +7,7 @@ export const CORE = 'urn:ietf:params:jmap:core';
 export const MAIL = 'urn:ietf:params:jmap:mail';
 export const SUBMISSION = 'urn:ietf:params:jmap:submission';
 export const CALENDARS = 'urn:ietf:params:jmap:calendars';
+export const CALENDARS_PARSE = 'urn:ietf:params:jmap:calendars:parse';
 export const VACATION = 'urn:ietf:params:jmap:vacationresponse';
 
 export interface Session {
@@ -388,6 +389,10 @@ export interface Methods {
   'CalendarEvent/query': { args: CalendarEventQueryArgs; result: QueryResult };
   'CalendarEvent/get': { args: GetArgs; result: GetResult<CalendarEvent> };
   'CalendarEvent/set': { args: CalendarEventSetArgs; result: SetResult<CalendarEvent> };
+  'CalendarEvent/parse': {
+    args: { accountId: Id; blobIds: Id[] };
+    result: { accountId: Id; parsed: Record<Id, CalendarEvent[]> | null; notParsable: Id[] | null; notFound: Id[] | null };
+  };
 }
 
 export type MethodName = keyof Methods;

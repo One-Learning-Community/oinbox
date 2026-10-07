@@ -2,8 +2,9 @@ import { createSignal, type Accessor } from 'solid-js';
 import { createStore, reconcile, type SetStoreFunction } from 'solid-js/store';
 import type { ToastFn } from '../app/actions';
 import { UnauthorizedError, type JmapClient } from '../jmap/client';
-import { CALENDARS, CORE, type Calendar, type CalendarEvent, type CalendarEventSetArgs, type Id, type StateChange } from '../jmap/types';
-import { addRangeCalls, rangeKey, toDisplayEvents, type DisplayEvent, type Range } from './instances';
+import { CALENDARS, CALENDARS_PARSE, CORE, type Calendar, type CalendarEvent, type CalendarEventSetArgs, type Id, type StateChange } from '../jmap/types';
+import { rsvpPatch } from './invite';
+import { addRangeCalls, rangeKey, toDisplayEvents, toUtcDate, type DisplayEvent, type Range } from './instances';
 import { loadHidden, saveHidden } from './prefs';
 
 export interface CalendarState {
@@ -18,6 +19,14 @@ export type WriteResult = { ok: true } | { ok: false; error: string };
 
 /** Recently viewed ranges kept in memory, least recently used dropped first. */
 const CACHE_SIZE = 8;
+
+const DAY_MS = 86_400_000;
+/** The most events a by-uid scan looks at. */
+const SCAN_LIMIT = 2000;
+const LOOKUP_PROPS = [
+  'id', 'uid', 'sequence', 'status', 'calendarIds', 'title', 'description', 'start', 'timeZone', 'duration',
+  'showWithoutTime', 'locations', 'participants', 'organizerCalendarAddress', 'recurrenceRule', 'isOrigin',
+];
 
 /**
  * Calendar data for the visible date range. No local mirror: the server expands recurrences,
@@ -34,6 +43,10 @@ export class CalendarStore {
   private eventState: string | null = null;
   private calendarState: string | null = null;
   private failing = false;
+  private byUid = new Map<string, Promise<CalendarEvent | null>>();
+  private readonly versionSignal = createSignal(0);
+  /** Bumps on every refresh, so UI holding a looked-up event can re-read it. */
+  readonly version: Accessor<number> = this.versionSignal[0];
   private readonly hiddenSignal = createSignal<ReadonlySet<Id>>(loadHidden());
   /** Calendars this browser hides (a display preference, not Calendar.isVisible). */
   readonly hidden: Accessor<ReadonlySet<Id>> = this.hiddenSignal[0];
@@ -82,7 +95,9 @@ export class CalendarStore {
   /** Drop the cache and refetch the visible range. */
   refresh(): Promise<void> {
     this.cache.clear();
+    this.byUid.clear();
     this.generation++;
+    this.versionSignal[1]((v) => v + 1);
     const range = this.state.range;
     return range ? this.fetch(range) : Promise.resolve();
   }
@@ -135,6 +150,60 @@ export class CalendarStore {
       if (e instanceof UnauthorizedError) throw e;
       return { ok: false, error: (e as Error).message };
     }
+  }
+
+  /** Parse an invitation's text/calendar blob. Never throws except on sign-out: a card must not break the mail. */
+  async parseInvite(blobId: Id): Promise<{ ok: true; event: CalendarEvent } | { ok: false }> {
+    const accountId = this.accountId;
+    if (!accountId || !this.client.session.capabilities[CALENDARS_PARSE]) return { ok: false };
+    try {
+      const b = this.client.batch();
+      const call = b.call('CalendarEvent/parse', { accountId, blobIds: [blobId] });
+      const res = (await this.client.send(b, [CORE, CALENDARS, CALENDARS_PARSE])).get(call);
+      const event = res.parsed?.[blobId]?.[0];
+      return event ? { ok: true, event } : { ok: false };
+    } catch (e) {
+      if (e instanceof UnauthorizedError) throw e;
+      return { ok: false };
+    }
+  }
+
+  /** The user's copy of an event by uid (the server's uid filter matches nothing). Cached until the next refresh. */
+  findByUid(uid: string, near?: string): Promise<CalendarEvent | null> {
+    let hit = this.byUid.get(uid);
+    if (!hit) {
+      hit = this.lookup(uid, near).catch((e) => {
+        this.byUid.delete(uid);
+        if (e instanceof UnauthorizedError) throw e;
+        return null;
+      });
+      this.byUid.set(uid, hit);
+    }
+    return hit;
+  }
+
+  private async lookup(uid: string, near?: string): Promise<CalendarEvent | null> {
+    const accountId = this.accountId;
+    if (!accountId) return null;
+    const find = async (filter?: { after: string; before: string }) => {
+      const b = this.client.batch();
+      const q = b.call('CalendarEvent/query', { accountId, ...(filter ? { filter } : { limit: SCAN_LIMIT }) });
+      const g = b.call('CalendarEvent/get', { accountId, '#ids': q.ref('/ids'), properties: LOOKUP_PROPS });
+      const res = await this.client.send(b, [CORE, CALENDARS]);
+      res.get(q); // surfaces a failed query instead of a dangling back-reference
+      return res.get(g).list.find((e) => e.uid === uid) ?? null;
+    };
+    const t = near ? Date.parse(`${near}Z`) : NaN;
+    if (!Number.isNaN(t)) {
+      const found = await find({ after: toUtcDate(new Date(t - 7 * DAY_MS)), before: toUtcDate(new Date(t + 7 * DAY_MS)) });
+      if (found) return found;
+    }
+    return find();
+  }
+
+  /** Answer an invitation (the whole series). Always emails the organizer. */
+  rsvp(eventId: Id, participantId: string, status: 'accepted' | 'tentative' | 'declined'): Promise<WriteResult> {
+    return this.updateEvent(eventId, rsvpPatch(participantId, status), true);
   }
 
   toggleHidden(id: Id): void {
