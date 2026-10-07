@@ -23,7 +23,7 @@ Events she was invited to, recurring events, and events on a calendar she can't 
 | Form writes | Server-confirmed. The form stays open and disabled until the call returns; an error stays in the form. | The user is waiting on the form anyway. |
 | New event calendar | The user's default calendar (`isDefault`), else the first writable one. The picker lists writable calendars only. | |
 | Time zone | A new timed event uses the browser's zone. A moved or resized event keeps its own `timeZone`. All-day events stay all-day (`showWithoutTime`). | The client never converts an event into another zone behind the user's back. |
-| Default length | A click without a drag in week/day view creates a 1-hour event; dragging uses the selection. | |
+| Default length | The selection is used as it is. A click in week/day view selects one 30-minute slot. | A click and a deliberate one-slot drag cannot be told apart, so no special case. |
 
 ## Probed on Stalwart 0.16 (2026-10-07, local stack)
 
@@ -32,7 +32,8 @@ Events she was invited to, recurring events, and events on a calendar she can't 
 - `Calendar/get` returns `myRights` (`mayWriteAll`, `mayWriteOwn`, `mayDelete`, `mayRSVP`, …). The Team calendar and the default calendar both grant everything to alice. Slice 1's `Calendar` type doesn't carry `myRights` yet.
 - An event the user organises has `isOrigin: true`, `organizerCalendarAddress`, and an `owner` role on the user's participant. Other participants have no `owner` role.
 - `sendSchedulingMessages: false` on create sends nothing. A later update with `true` emails each guest the message **"Invitation: …"** (not "Updated"), because no invitation had been sent. `destroy` with `true` emails **"Cancelled: …"**.
-- Not probed, and left to the plan: rights on a shared calendar owned by someone else, and an event the user was invited to. The editable rule treats missing `myRights` or `isOrigin` as read-only.
+- An event organised by bob with alice as a guest appears in alice's default calendar with `isOrigin: false` and the same `organizerCalendarAddress`, but only when bob's create sent scheduling messages (`true`); with `false` nothing is delivered. Alice also gets an "Invitation: …" email.
+- Not probed: rights on a calendar shared by someone else (needs sharing set up). The editable rule treats missing `myRights` or `isOrigin` as read-only, and that case is unit-tested only.
 
 ## Components
 
@@ -74,7 +75,7 @@ Events she was invited to, recurring events, and events on a calendar she can't 
 
 - **Unit:** `edit.ts` (editability for every reason; guests; drop patches for timed, all-day, zone-keeping, all-day↔timed); `CalendarStore` writes with a fake client (flags sent, error mapping, no throw).
 - **e2e (Playwright, real Stalwart):** drag to create and Enter to save; move; resize; edit title and calendar; delete; a recurring event and an invited event show no handles; a guest event asks to notify (Notify, Don't notify and Cancel each checked; Notify checked by reading bob's inbox through `e2e/support/mail.ts`); Cancel reverts; a rejected write reverts (by forcing a failure with a route intercept).
-- The seed script gets an event alice organises with bob (it exists: "Design review") and an event in the "Team" calendar; a read-only calendar and an invited event need a second seeded user's event shared to alice, if Stalwart allows it in the seed. If it doesn't, those two cases stay unit-tested only, and the spec's "Not probed" note is resolved in the plan.
+- The seed script gets an event alice organises with bob (it exists: "Design review") and an event in the "Team" calendar; a read-only calendar and an invited event need an invited event is created in the test through bob (with scheduling messages on, which emails alice; the test removes the event and the email). A read-only calendar stays unit-tested only.
 
 ## Rozie
 
