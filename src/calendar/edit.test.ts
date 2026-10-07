@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Calendar } from '../jmap/types';
 import type { DisplayEvent } from './instances';
-import { defaultCalendarId, editability, formatDuration, hasGuests, localDateTime, newEventFromSelection, patchForDrop, writableCalendars } from './edit';
+import { calendarPatch, defaultCalendarId, editability, formatDuration, initialCalendarId, hasGuests, localDateTime, newEventFromSelection, patchForDrop, writableCalendars } from './edit';
 
 const cal = (id: string, over: Partial<Calendar> = {}): Calendar => ({
   id, name: id, color: null, sortOrder: 0, isDefault: false, isVisible: true, myRights: { mayWriteAll: true }, ...over,
@@ -47,7 +47,9 @@ describe('time helpers', () => {
     expect(formatDuration(30 * 60_000)).toBe('PT30M');
     expect(formatDuration(3_600_000)).toBe('PT1H');
     expect(formatDuration(90 * 60_000)).toBe('PT1H30M');
-    expect(formatDuration(26 * 3_600_000)).toBe('P1DT2H');
+    // Hours, never nominal days: a day is not always 24 hours.
+    expect(formatDuration(26 * 3_600_000)).toBe('PT26H');
+    expect(formatDuration(48 * 3_600_000)).toBe('PT48H');
     expect(formatDuration(0)).toBe('PT0S');
   });
   it('renders an instant as local time in a zone', () => {
@@ -84,6 +86,37 @@ describe('patchForDrop', () => {
     const allDay = ev({ allDay: true, start: '2026-10-08', end: '2026-10-09', timeZone: null });
     const patch = patchForDrop(allDay, new Date('2026-10-09T18:00:00Z'), null, false, NY);
     expect(patch).toEqual({ start: '2026-10-09T14:00:00', duration: 'PT1H', showWithoutTime: false, timeZone: NY });
+  });
+});
+
+describe('patchForDrop edge cases', () => {
+  const NY = 'America/New_York';
+  it("uses the browser zone, not the event's, when an all-day event becomes timed", () => {
+    const allDay = ev({ allDay: true, start: '2026-10-08', end: '2026-10-09', timeZone: 'Europe/London' });
+    const patch = patchForDrop(allDay, new Date('2026-10-09T18:00:00Z'), null, false, NY);
+    expect(patch).toEqual({ start: '2026-10-09T14:00:00', duration: 'PT1H', showWithoutTime: false, timeZone: NY });
+  });
+  it('falls back to the browser zone when the event names a zone the browser does not know', () => {
+    const odd = ev({ timeZone: 'Not/AZone' });
+    const patch = patchForDrop(odd, new Date('2026-10-07T18:00:00Z'), new Date('2026-10-07T19:00:00Z'), false, NY);
+    expect(patch).toEqual({ start: '2026-10-07T14:00:00', duration: 'PT1H' });
+  });
+  it('keeps a zero-length timed event zero-length', () => {
+    const point = ev({ end: '2026-10-06T18:00:00.000Z' });
+    const patch = patchForDrop(point, new Date('2026-10-07T18:00:00Z'), null, false, NY);
+    expect(patch).toEqual({ start: '2026-10-07T14:00:00', duration: 'PT0S' });
+  });
+});
+
+describe('calendar choice for an event in several calendars', () => {
+  it('moves the event to exactly one calendar', () => {
+    expect(calendarPatch(['a', 'b'], 'c')).toEqual({ 'calendarIds/a': null, 'calendarIds/b': null, 'calendarIds/c': true });
+    expect(calendarPatch(['a', 'b'], 'b')).toEqual({ 'calendarIds/a': null });
+    expect(calendarPatch(['a'], 'a')).toEqual({});
+  });
+  it('starts the picker on a calendar it offers', () => {
+    expect(initialCalendarId(ev({ calendarIds: ['ro', 'c2'] }), calendars)).toBe('c2');
+    expect(initialCalendarId(ev({ calendarIds: ['gone', 'ro'] }), calendars)).toBe('gone');
   });
 });
 

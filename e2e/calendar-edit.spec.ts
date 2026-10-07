@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { waitLive } from './support/app';
-import { bobMailAbout, createEvent, createGuestEvent, createInvitedEvent, destroyBobMailAbout, destroyE2eEvents, eventsByTitle, todayIn } from './support/calendar';
+import { bobMailAbout, calendarIdByName, createEvent, createGuestEvent, createInvitedEvent, destroyBobMailAbout, destroyE2eEvents, eventsByTitle, patchEvent, todayIn } from './support/calendar';
 
 const TZ = 'America/New_York';
 test.use({ timezoneId: TZ });
@@ -91,6 +91,22 @@ test('an event can be renamed and moved to another calendar from its card', asyn
   const [stored] = await eventsByTitle(`${title} renamed`);
   expect(Object.keys(stored!.calendarIds)).toHaveLength(1);
   expect(Object.keys(stored!.calendarIds)[0]).not.toBe(Object.keys(before.calendarIds)[0]);
+});
+
+test('an event in two calendars ends up in exactly the one chosen', async ({ page }) => {
+  const title = tag();
+  const id = await createEvent(title, `${todayIn(TZ)}T09:00:00`, TZ);
+  await patchEvent(id, { [`calendarIds/${await calendarIdByName('Team')}`]: true });
+  expect(Object.keys((await eventsByTitle(title))[0]!.calendarIds)).toHaveLength(2);
+  await openWeek(page);
+  await event(page, title).first().click();
+  await page.getByRole('button', { name: 'Edit' }).click();
+  const picker = page.getByRole('form', { name: 'Event' }).getByRole('combobox', { name: 'Calendar' });
+  const current = await picker.inputValue();
+  const other = (await picker.locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))).find((v) => v !== current)!;
+  await picker.selectOption(other);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect.poll(async () => Object.keys((await eventsByTitle(title))[0]!.calendarIds)).toEqual([other]);
 });
 
 test('an event can be deleted from its card', async ({ page }) => {
@@ -221,6 +237,19 @@ test.describe('events with guests', () => {
     expect(await bobMailAbout(quiet)).toHaveLength(0);
   });
 
+  test('the guest dialog starts on Cancel, so a stray Enter emails nobody', async ({ page }) => {
+    const title = tag();
+    await createGuestEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await dragEventTo(page, title, '21:00');
+    const dialog = page.getByRole('dialog', { name: 'Change this event?' });
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toHaveCount(0);
+    expect(await bobMailAbout(title)).toHaveLength(0);
+    expect((await eventsByTitle(title))[0]!.start).toMatch(/T17:00:00$/);
+  });
+
   test('Cancel after a refetch leaves exactly one copy of the event', async ({ page }) => {
     const title = tag();
     await createGuestEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
@@ -234,5 +263,108 @@ test.describe('events with guests', () => {
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toHaveCount(0);
     await expect(event(page, title)).toHaveCount(1);
+  });
+});
+
+test.describe('an open card follows its event', () => {
+  test('the edit form closes with a notice when its event is deleted elsewhere', async ({ page }) => {
+    const title = tag();
+    await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByRole('form', { name: 'Event' })).toBeVisible();
+    await destroyE2eEvents();
+    await expect(page.getByRole('form', { name: 'Event' })).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.toast', { hasText: 'no longer exists' })).toBeVisible();
+  });
+
+  test('the edit form closes with a notice when its event becomes read-only', async ({ page }) => {
+    const title = tag();
+    const id = await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByRole('form', { name: 'Event' })).toBeVisible();
+    await patchEvent(id, { recurrenceRule: { '@type': 'RecurrenceRule', frequency: 'weekly' } });
+    await expect(page.getByRole('form', { name: 'Event' })).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('.toast', { hasText: "can't be edited" })).toBeVisible();
+  });
+
+  test('the details card stays beside its event after a refetch', async ({ page }) => {
+    const title = tag();
+    await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).click();
+    const card = page.getByRole('dialog', { name: title });
+    await expect(card).toBeVisible();
+    const other = `${tag()} other`;
+    await createEvent(other, `${todayIn(TZ)}T08:00:00`, TZ);
+    await expect(event(page, other)).toBeVisible({ timeout: 15_000 });
+    await expect(card).toBeVisible();
+    const e = (await boxOf(page, title))!;
+    const d = (await card.boundingBox())!;
+    const touches = Math.abs(d.x - (e.x + e.width)) < 12 || Math.abs(d.x + d.width - e.x) < 12;
+    expect(touches && d.y < e.y + e.height && d.y + d.height > e.y).toBe(true);
+  });
+});
+
+test('with no writable calendar a drag explains itself and leaves no highlight', async ({ page }) => {
+  await page.route('**/jmap/', async (route) => {
+    if (!route.request().postData()?.includes('"Calendar/get"')) return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const [name, result] of body.methodResponses as [string, { list?: { myRights?: Record<string, boolean> }[] }][]) {
+      if (name === 'Calendar/get') for (const c of result.list ?? []) c.myRights = { ...c.myRights, mayWriteAll: false };
+    }
+    return route.fulfill({ response, json: body });
+  });
+  await openWeek(page);
+  await dragSlot(page, '20:00', '20:30');
+  await expect(page.locator('.toast', { hasText: 'No calendar here accepts new events' })).toBeVisible();
+  await expect(page.locator('.calendar-view .fc-highlight')).toHaveCount(0);
+});
+
+test.describe('focus', () => {
+  test('the create form focuses its title', async ({ page }) => {
+    await openWeek(page);
+    await dragSlot(page, '20:00', '20:30');
+    await expect(page.getByRole('textbox', { name: 'Title' })).toBeFocused();
+  });
+
+  test('Cancel in the edit form returns focus to Edit', async ({ page }) => {
+    const title = tag();
+    await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByRole('textbox', { name: 'Title' })).toBeFocused();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Edit' })).toBeFocused();
+  });
+
+  test('opening the card from the keyboard and pressing Escape leaves focus on the event', async ({ page }) => {
+    const title = tag();
+    await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: title })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: title })).toHaveCount(0);
+    await expect(event(page, title)).toBeFocused();
+  });
+
+  test('focus inside the card goes back to its event when the card closes', async ({ page }) => {
+    const title = tag();
+    await createEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+    await openWeek(page);
+    await event(page, title).click();
+    await page.getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Edit' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: title })).toHaveCount(0);
+    await expect(event(page, title)).toBeFocused();
   });
 });

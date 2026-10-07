@@ -21,7 +21,12 @@ export function EventForm(props: EventFormProps) {
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   let input: HTMLInputElement | undefined;
-  onMount(() => queueMicrotask(() => input?.select()));
+  onMount(() =>
+    queueMicrotask(() => {
+      input?.focus();
+      input?.select();
+    }),
+  );
 
   const submit = async (e: SubmitEvent) => {
     e.preventDefault();

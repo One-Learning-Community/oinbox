@@ -33,7 +33,8 @@ export function createNotifyDialog(): { ask: (a: NotifyAsk) => Promise<NotifyAns
           <h2 id="notify-title">{p().ask.title}</h2>
           <p>{p().ask.message}</p>
           <div class="dialog-actions">
-            <button onClick={() => answer('cancel')}>Cancel</button>
+            {/* With guests, start on the choice that sends nothing: a stray Enter must not email anyone. */}
+            <button onClick={() => answer('cancel')} autofocus={p().ask.guests}>Cancel</button>
             <Show
               when={p().ask.guests}
               fallback={
@@ -43,7 +44,7 @@ export function createNotifyDialog(): { ask: (a: NotifyAsk) => Promise<NotifyAns
               }
             >
               <button onClick={() => answer('silent')}>Don't notify</button>
-              <button class="primary" onClick={() => answer('notify')} autofocus>Notify guests</button>
+              <button class="primary" onClick={() => answer('notify')}>Notify guests</button>
             </Show>
           </div>
         </Dialog>

@@ -32,16 +32,17 @@ export function defaultCalendarId(calendars: Record<Id, Calendar>): Id | undefin
 
 const DAY_MS = 86_400_000;
 
-/** JSCalendar duration for a whole number of milliseconds (seconds precision). */
+/**
+ * JSCalendar duration for a whole number of milliseconds (seconds precision). Hours, never days:
+ * a nominal day is not always 24 hours, so "P1DT2H" would drift by an hour across a DST change.
+ */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
-  const days = Math.floor(total / 86_400);
-  const h = Math.floor((total % 86_400) / 3600);
+  const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const time = `${h ? `${h}H` : ''}${m ? `${m}M` : ''}${s ? `${s}S` : ''}`;
-  if (!days && !time) return 'PT0S';
-  return `P${days ? `${days}D` : ''}${time ? `T${time}` : ''}`;
+  const sec = total % 60;
+  const time = `${h ? `${h}H` : ''}${m ? `${m}M` : ''}${sec ? `${sec}S` : ''}`;
+  return `PT${time || '0S'}`;
 }
 
 /** An instant as "YYYY-MM-DDTHH:mm:ss" wall time in an IANA zone. */
@@ -67,6 +68,17 @@ function allDayLength(start: Date, end: Date | null): number {
   return Math.max(1, Math.round((b - a) / DAY_MS));
 }
 
+/** The zone name if this browser knows it, else null (a server may send a zone Intl doesn't). */
+function knownZone(zone: string | null): string | null {
+  if (!zone) return null;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+    return zone;
+  } catch {
+    return null;
+  }
+}
+
 /** The default length of a timed event dropped from the all-day row. */
 const DEFAULT_TIMED_MS = 3_600_000;
 
@@ -80,8 +92,10 @@ export function patchForDrop(ev: DisplayEvent, start: Date, end: Date | null, al
     if (!ev.allDay) Object.assign(patch, { showWithoutTime: true, timeZone: null });
     return patch;
   }
-  const zone = ev.timeZone ?? browserZone;
-  const ms = end ? end.getTime() - start.getTime() : DEFAULT_TIMED_MS;
+  // An all-day event has no zone of its own that matters: it becomes a timed event in the browser's.
+  const zone = ev.allDay ? browserZone : knownZone(ev.timeZone) ?? browserZone;
+  // A timed event without an end keeps its (zero) length; one leaving the all-day row gets a default.
+  const ms = end ? end.getTime() - start.getTime() : ev.allDay ? DEFAULT_TIMED_MS : 0;
   const patch: Record<string, unknown> = { start: localDateTime(start, zone), duration: formatDuration(ms) };
   if (ev.allDay) Object.assign(patch, { showWithoutTime: false, timeZone: browserZone });
   return patch;
@@ -94,4 +108,18 @@ export function newEventFromSelection(sel: { start: Date; end: Date; allDay: boo
     return { ...base, start: `${localDate(sel.start)}T00:00:00`, showWithoutTime: true, duration: `P${allDayLength(sel.start, sel.end)}D` };
   }
   return { ...base, start: localDateTime(sel.start, browserZone), timeZone: browserZone, duration: formatDuration(sel.end.getTime() - sel.start.getTime()) };
+}
+
+/** Patch that leaves an event in exactly one calendar: drop every other one, add the chosen one. */
+export function calendarPatch(from: Id[], to: Id): Record<string, null | true> {
+  const patch: Record<string, null | true> = {};
+  for (const id of from) if (id !== to) patch[`calendarIds/${id}`] = null;
+  if (!from.includes(to)) patch[`calendarIds/${to}`] = true;
+  return patch;
+}
+
+/** The calendar a form starts on: the first of the event's that the picker offers, else its first. */
+export function initialCalendarId(ev: DisplayEvent, calendars: Record<Id, Calendar>): Id {
+  const offered = new Set(writableCalendars(calendars).map((c) => c.id));
+  return ev.calendarIds.find((id) => offered.has(id)) ?? ev.calendarIds[0]!;
 }

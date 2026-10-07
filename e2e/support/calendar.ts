@@ -142,3 +142,15 @@ export async function destroyBobMailAbout(text: string): Promise<void> {
   const ids = r.q.ids as string[];
   if (ids.length) await jmap([['Email/set', { accountId: mail, destroy: ids }, 'd']], BOB);
 }
+
+/** Change an event of alice's behind the app's back (no scheduling messages). */
+export async function patchEvent(id: string, patch: Record<string, unknown>): Promise<void> {
+  const account = await calendarAccount();
+  await jmap([['CalendarEvent/set', { accountId: account, sendSchedulingMessages: false, update: { [id]: patch } }, 'u']], ALICE, CAL_USING);
+}
+
+export async function calendarIdByName(name: string): Promise<string> {
+  const account = await calendarAccount();
+  const r = await jmap([['Calendar/get', { accountId: account }, 'c']], ALICE, CAL_USING);
+  return (r.c.list as { id: string; name: string }[]).find((c) => c.name === name)!.id;
+}

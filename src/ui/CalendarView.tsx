@@ -1,13 +1,21 @@
 import { FullCalendar, type FullCalendarHandle } from '@rozie-ui/fullcalendar-solid';
 import { Popover } from '@rozie-ui/popover-solid';
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { formatWhen, STATUS_LABELS } from '../calendar/format';
-import { defaultCalendarId, editability, hasGuests, localDate, newEventFromSelection, patchForDrop, writableCalendars } from '../calendar/edit';
+import { calendarPatch, defaultCalendarId, editability, hasGuests, initialCalendarId, localDate, newEventFromSelection, patchForDrop, writableCalendars } from '../calendar/edit';
 import { toCalendarInput, toUtcDate, type DisplayEvent } from '../calendar/instances';
 import { loadView, saveView } from '../calendar/prefs';
 import { EventForm } from './EventForm';
 import { createNotifyDialog, type NotifyAnswer, type NotifyAsk } from './NotifyDialog';
+
+/** FullCalendar re-creates every event element on a refetch; the id on the element lets a card find its event again. */
+const CALENDAR_OPTIONS = {
+  eventDidMount: ({ event, el }: { event: { id: string }; el: HTMLElement }) => {
+    el.dataset.eventId = event.id;
+  },
+};
+const eventElement = (id: string) => document.querySelector<HTMLElement>(`.calendar-host [data-event-id="${CSS.escape(id)}"]`);
 
 const TOOLBAR = { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' };
 
@@ -84,6 +92,39 @@ export function CalendarView() {
   }
 
   const [selected, setSelected] = createSignal<Selected | null>(null);
+  /** The selected event as the store has it now: the card follows refetches. */
+  const selectedEvent = createMemo(() => {
+    const id = selected()?.id;
+    return id ? (calendar.state.events.find((e) => e.id === id) ?? null) : null;
+  });
+
+  // A refetch replaces the event elements, so the card's anchor is looked up again once they exist.
+  createEffect(
+    on(events, () =>
+      requestAnimationFrame(() => {
+        const s = selected();
+        const el = s && eventElement(s.id);
+        if (s && el && el !== s.el) setSelected({ id: s.id, el });
+      }),
+    { defer: true }),
+  );
+
+  // The event was deleted (here or elsewhere) while its card was open.
+  createEffect(() => {
+    if (selected() && !calendar.state.loading && !selectedEvent()) {
+      setSelected(null);
+      toast('That event no longer exists.');
+    }
+  });
+
+  const closeSelected = () => {
+    const s = selected();
+    setSelected(null);
+    // Focus was inside the card; give it back to the event unless the user already moved it.
+    if (s) queueMicrotask(() => {
+      if (!document.activeElement || document.activeElement === document.body) (eventElement(s.id) ?? s.el).focus();
+    });
+  };
 
   return (
     <section class="calendar-view" aria-label="Calendar">
@@ -96,13 +137,17 @@ export function CalendarView() {
             saveView(v);
           }}
           events={events()}
+          options={CALENDAR_OPTIONS}
           ref={setHandle}
           editable
           onEventDrop={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}
           onEventResize={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}
           selectable
           onSelect={({ start, end, allDay }) => {
-            if (!defaultCalendarId(calendar.state.calendars)) return toast('No calendar here accepts new events.', 'error');
+            if (!defaultCalendarId(calendar.state.calendars)) {
+              handle()?.clearSelection();
+              return toast('No calendar here accepts new events.', 'error');
+            }
             // After the click that ends the drag (the popover would count it as an outside click),
             // when FullCalendar has also drawn the highlight element the form anchors to.
             setTimeout(() => {
@@ -115,13 +160,12 @@ export function CalendarView() {
           defaultColor="var(--cal-default)"
           headerToolbar={TOOLBAR}
           onEventClick={({ event, el }) => {
-            const ev = calendar.state.events.find((e) => e.id === event.id);
-            if (ev) setSelected({ event: ev, el });
+            if (calendar.state.events.some((e) => e.id === event.id)) setSelected({ id: event.id, el });
           }}
           onDatesSet={({ start, end }) => void calendar.show({ start: toUtcDate(start), end: toUtcDate(end) })}
         />
       </div>
-      <EventPopover selected={selected()} onClose={() => setSelected(null)} notify={ask} keepOpen={keepOpen} onBusy={trackBusy} />
+      <EventPopover selected={selected()} event={selectedEvent()} onClose={closeSelected} notify={ask} keepOpen={keepOpen} onBusy={trackBusy} />
       <Popover open={!!draft()} disableDismiss={keepOpen()} bare onOpenChange={(open) => !open && closeDraft()} trigger="manual" strategy="fixed" placement="right-start" reference={draft()?.anchor ?? null}>
         <Show when={draft()} keyed>
           {(d) => (
@@ -149,7 +193,7 @@ export function CalendarView() {
 
 /** The event whose details are showing, and its element in the calendar. */
 interface Selected {
-  event: DisplayEvent;
+  id: string;
   el: HTMLElement;
 }
 
@@ -158,27 +202,44 @@ interface Selected {
  * event: it decides an outside click a tick after the press, and by then a click on another
  * event has pointed `reference` at that event, so the card moves there instead of closing.
  */
-function EventPopover(props: { selected: Selected | null; onClose: () => void; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; keepOpen: () => boolean; onBusy: (busy: boolean) => void }) {
+function EventPopover(props: { selected: Selected | null; event: DisplayEvent | null; onClose: () => void; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; keepOpen: () => boolean; onBusy: (busy: boolean) => void }) {
   return (
     <Popover open={!!props.selected} disableDismiss={props.keepOpen()} bare onOpenChange={(open) => !open && props.onClose()} trigger="manual" strategy="fixed" placement="right-start" reference={props.selected?.el ?? null}>
-      <Show when={props.selected?.event} keyed>
-        {(event) => <EventCard event={event} notify={props.notify} onClose={props.onClose} onBusy={props.onBusy} />}
+      {/* Keyed by id, not by the event object: a refetch must not reset an open form. */}
+      <Show when={props.selected?.id} keyed>
+        {(_id) => <EventCard event={props.event} notify={props.notify} onClose={props.onClose} onBusy={props.onBusy} />}
       </Show>
     </Popover>
   );
 }
 
-function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; onClose: () => void; onBusy: (busy: boolean) => void }) {
+function EventCard(props: { event: DisplayEvent | null; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; onClose: () => void; onBusy: (busy: boolean) => void }) {
   const { calendar, toast } = useApp();
-  const state = () => editability(props.event, calendar.state.calendars);
+  // The last event the store had, so the card still renders for the moment before it closes itself.
+  const event = createMemo<DisplayEvent>((previous) => props.event ?? previous, props.event!);
+  const state = () => editability(event(), calendar.state.calendars);
   const [editing, setEditing] = createSignal(false);
+  let editButton: HTMLButtonElement | undefined;
+
+  const cancelEdit = () => {
+    setEditing(false);
+    queueMicrotask(() => editButton?.focus());
+  };
+
+  // The event changed under an open form: it can't be edited any more.
+  createEffect(() => {
+    const s = state();
+    if (editing() && !s.editable) {
+      setEditing(false);
+      toast(s.reason);
+    }
+  });
 
   async function save(title: string, calendarId: string): Promise<string | null> {
-    const ev = props.event;
+    const ev = event();
     const patch: Record<string, unknown> = {};
     if (title !== ev.title && !(ev.title === '(No title)' && title === '')) patch.title = title;
-    const from = ev.calendarIds[0]!;
-    if (calendarId !== from) Object.assign(patch, { [`calendarIds/${from}`]: null, [`calendarIds/${calendarId}`]: true });
+    if (calendarId !== initialCalendarId(ev, calendar.state.calendars)) Object.assign(patch, calendarPatch(ev.calendarIds, calendarId));
     if (!Object.keys(patch).length) {
       setEditing(false);
       return null;
@@ -199,7 +260,7 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
   }
 
   async function remove() {
-    const ev = props.event;
+    const ev = event();
     const guests = hasGuests(ev);
     const answer = await props.notify({
       title: 'Delete this event?',
@@ -215,31 +276,31 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
   }
 
   const calendarName = () =>
-    props.event.calendarIds.map((id) => calendar.state.calendars[id]?.name).find((n) => n) ?? '';
+    event().calendarIds.map((id) => calendar.state.calendars[id]?.name).find((n) => n) ?? '';
   return (
     <Show
       when={!editing()}
       fallback={
         <EventForm
-          when={formatWhen(props.event)}
+          when={formatWhen(event())}
           calendars={writableCalendars(calendar.state.calendars)}
-          title={props.event.title === '(No title)' ? '' : props.event.title}
-          calendarId={props.event.calendarIds[0]!}
+          title={event().title === '(No title)' ? '' : event().title}
+          calendarId={initialCalendarId(event(), calendar.state.calendars)}
           saveLabel="Save"
-          onCancel={() => setEditing(false)}
+          onCancel={cancelEdit}
           onBusy={props.onBusy}
           onSave={save}
         />
       }
     >
-    <div class="event-card" role="dialog" aria-label={props.event.title}>
-      <h3>{props.event.title}</h3>
-      <p class="when">{formatWhen(props.event)}</p>
-      <Show when={props.event.location}>{(l) => <p class="where">{l()}</p>}</Show>
-      <Show when={props.event.description}>{(d) => <p class="description">{d()}</p>}</Show>
-      <Show when={props.event.participants.length}>
+    <div class="event-card" role="dialog" aria-label={event().title}>
+      <h3>{event().title}</h3>
+      <p class="when">{formatWhen(event())}</p>
+      <Show when={event().location}>{(l) => <p class="where">{l()}</p>}</Show>
+      <Show when={event().description}>{(d) => <p class="description">{d()}</p>}</Show>
+      <Show when={event().participants.length}>
         <ul class="participants">
-          <For each={props.event.participants}>
+          <For each={event().participants}>
             {(p) => (
               <li>
                 <span class="who" title={p.address}>{p.name}</span>
@@ -254,7 +315,7 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
         {(s) =>
           s.editable ? (
             <div class="card-actions">
-              <button onClick={() => setEditing(true)}>Edit</button>
+              <button ref={editButton} onClick={() => setEditing(true)}>Edit</button>
               <button class="danger-link" onClick={() => void remove()}>Delete</button>
             </div>
           ) : (
