@@ -6,6 +6,7 @@ export type Editability = { editable: true } | { editable: false; reason: string
 
 /** Whether the user may drag, rename or delete this event, and why not when they may not. */
 export function editability(ev: DisplayEvent, calendars: Record<Id, Calendar>): Editability {
+  if (ev.status === 'cancelled') return { editable: false, reason: 'This event was cancelled.' };
   if (ev.recurring) return { editable: false, reason: "Recurring events can't be edited yet." };
   if (!ev.isOrigin) return { editable: false, reason: 'You were invited to this event, so only its organizer can change it.' };
   if (!ev.calendarIds.some((id) => calendars[id]?.myRights?.mayWriteAll === true)) {

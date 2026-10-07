@@ -161,13 +161,18 @@ describe('toCalendarInput', () => {
   };
   const ev: DisplayEvent = {
     id: 'o1', baseEventId: 'b1', calendarIds: ['c1', 'c2'], title: 'T', start: '2026-10-07T08:00:00.000Z', end: '2026-10-07T09:00:00.000Z',
-    allDay: false, color: null, location: null, description: null, participants: [], isOrigin: true, recurring: false, timeZone: null,
+    allDay: false, color: null, location: null, description: null, participants: [], isOrigin: true, recurring: false, timeZone: null, sequence: 0, status: null,
   };
 
   it("uses the event's colour, then the first visible calendar's colour, then none (defaultColor)", () => {
     expect(toCalendarInput({ ...ev, color: '#ff0000' }, calendars, new Set())!.color).toBe('#ff0000');
     expect(toCalendarInput(ev, calendars, new Set())!.color).toBe('#1a73e8');
     expect(toCalendarInput(ev, calendars, new Set(['c1']))!.color).toBeUndefined();
+  });
+
+  it('marks cancelled events for the grid, and only those', () => {
+    expect(toCalendarInput({ ...ev, status: 'cancelled' }, calendars, new Set())!.classNames).toEqual(['cancelled']);
+    expect(toCalendarInput(ev, calendars, new Set())).not.toHaveProperty('classNames');
   });
 
   // Review focus 3
@@ -203,5 +208,15 @@ describe('range helpers', () => {
 
   it('refuses ranges longer than six weeks', () => {
     expect(() => addRangeCalls(new RequestBuilder(), 'a1', { start: '2026-01-01T00:00:00Z', end: '2026-03-01T00:00:00Z' }, 'UTC')).toThrow(/42 days/);
+  });
+});
+
+describe('sequence and status', () => {
+  it('come from the base event', () => {
+    const [e] = toDisplayEvents(
+      [{ id: 'o', baseEventId: 'b', start: '2026-10-05T09:00:00', utcStart: '2026-10-05T09:00:00Z' }],
+      [{ id: 'b', title: 'X', start: '2026-10-05T09:00:00', timeZone: 'UTC', duration: 'PT1H', sequence: 3, status: 'cancelled' }],
+    );
+    expect(e).toMatchObject({ sequence: 3, status: 'cancelled' });
   });
 });

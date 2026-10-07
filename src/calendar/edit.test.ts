@@ -10,12 +10,15 @@ const calendars = { c1: cal('c1', { isDefault: true }), ro: cal('ro', { myRights
 
 const ev = (over: Partial<DisplayEvent> = {}): DisplayEvent => ({
   id: 'o1', baseEventId: 'b1', calendarIds: ['c1'], title: 'T', start: '2026-10-06T18:00:00.000Z', end: '2026-10-06T19:00:00.000Z',
-  allDay: false, color: null, location: null, description: null, participants: [], isOrigin: true, recurring: false, timeZone: 'America/New_York', ...over,
+  allDay: false, color: null, location: null, description: null, participants: [], isOrigin: true, recurring: false, timeZone: 'America/New_York', sequence: 0, status: null, ...over,
 });
 
 describe('editability', () => {
   it('allows an organised single event on a writable calendar', () => {
     expect(editability(ev(), calendars)).toEqual({ editable: true });
+  });
+  it('refuses a cancelled event first, whatever else is true', () => {
+    expect(editability(ev({ status: 'cancelled', recurring: true }), calendars)).toEqual({ editable: false, reason: 'This event was cancelled.' });
   });
   it('refuses recurring events', () => {
     expect(editability(ev({ recurring: true }), calendars)).toMatchObject({ editable: false, reason: expect.stringMatching(/recurring/i) });

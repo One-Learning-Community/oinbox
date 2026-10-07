@@ -36,6 +36,9 @@ export interface DisplayEvent {
   recurring: boolean;
   /** The event's own zone; null for all-day and floating events. */
   timeZone: string | null;
+  sequence: number;
+  /** JSCalendar status, e.g. "confirmed" or "cancelled". */
+  status: string | null;
 }
 
 /** The event shape handed to FullCalendar. */
@@ -46,6 +49,7 @@ export interface CalendarInput {
   end: string;
   allDay: boolean;
   color?: string;
+  classNames?: string[];
 }
 
 const DAY_MS = 86_400_000;
@@ -55,7 +59,7 @@ const MAX_RANGE_DAYS = 42;
 const OCCURRENCE_PROPS = ['id', 'baseEventId', 'recurrenceId', 'calendarIds', 'start', 'utcStart'];
 const BASE_PROPS = [
   'id', 'calendarIds', 'title', 'description', 'start', 'timeZone', 'duration', 'showWithoutTime',
-  'color', 'locations', 'participants', 'recurrenceOverrides', 'isOrigin', 'recurrenceRule',
+  'color', 'locations', 'participants', 'recurrenceOverrides', 'isOrigin', 'recurrenceRule', 'uid', 'sequence', 'status',
 ];
 
 export function toUtcDate(d: Date): string {
@@ -131,6 +135,8 @@ function toDisplayEvent(occurrence: CalendarEvent, base: CalendarEvent | undefin
     isOrigin: source.isOrigin === true,
     recurring: !!source.recurrenceRule,
     timeZone: e.timeZone ?? null,
+    sequence: source.sequence ?? 0,
+    status: source.status ?? null,
     participants: Object.values(e.participants ?? {}).map((p) => {
       const address = (p.calendarAddress ?? '').replace(/^mailto:/i, '');
       return { name: p.name?.trim() || address, address, status: p.participationStatus ?? 'needs-action', owner: !!p.roles?.owner };
@@ -161,5 +167,5 @@ export function toCalendarInput(ev: DisplayEvent, calendars: Record<Id, Calendar
   const calendarId = ev.calendarIds.find((id) => !hidden.has(id));
   if (!calendarId) return null;
   const color = ev.color ?? calendars[calendarId]?.color ?? undefined;
-  return { id: ev.id, title: ev.title, start: ev.start, end: ev.end, allDay: ev.allDay, ...(color ? { color } : {}) };
+  return { id: ev.id, title: ev.title, start: ev.start, end: ev.end, allDay: ev.allDay, ...(color ? { color } : {}), ...(ev.status === 'cancelled' ? { classNames: ['cancelled'] } : {}) };
 }
