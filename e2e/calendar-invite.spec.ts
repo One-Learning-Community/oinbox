@@ -49,12 +49,15 @@ test('an invitation shows a card; answering reaches the organiser; updates and c
   await expect(card).toContainText('Organizer: ');
   await expect(card).toContainText('(Europe/London)');
 
+  await expect(card).not.toContainText('Updated');
+
   // Answer: the button lights up, a toast confirms, and bob's copy shows it.
   await card.getByRole('button', { name: 'Accept' }).click();
   await expect(page.locator('.toast', { hasText: 'Reply sent to' })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Accept' })).toHaveAttribute('aria-pressed', 'true');
   await waitFor(async () => (await bobSeesStatuses(made.bobEventId))[ALICE] === 'accepted', 15_000, "bob's copy shows accepted");
   expect(BOB).toContain('bob');
+  await expect(card).not.toContainText('Updated');
 
   // Bob moves the meeting: the old email now says so.
   await bobUpdateEvent(made.bobEventId, { start: londonIn(5) });

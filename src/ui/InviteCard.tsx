@@ -1,7 +1,7 @@
 import { createMemo, createResource, createSignal, For, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { STATUS_LABELS } from '../calendar/format';
-import { describeWhen, findInvitePart, inviteState, myParticipant, type InviteState } from '../calendar/invite';
+import { canRsvp, describeWhen, findInvitePart, inviteState, myParticipant, type InviteState } from '../calendar/invite';
 import type { CalendarEvent } from '../jmap/types';
 import type { EmailRec } from '../sync/engine';
 
@@ -112,8 +112,7 @@ export function InviteCard(props: { email: EmailRec }) {
     let note: string | null = null;
     if (state.kind === 'missing') note = "This event isn't in your calendar";
     else if (state.kind === 'active' && !mine) note = "You aren't listed as a guest";
-    const canAnswer =
-      !!d.copy && !!mine && Object.keys(d.copy.calendarIds ?? {}).some((id) => calendar.state.calendars[id]?.myRights?.mayRSVP === true);
+    const canAnswer = canRsvp(d.copy, mine, calendar.state.calendars);
     return {
       d, mine, state, note, canAnswer, organizer,
       props: {

@@ -1,5 +1,5 @@
 // Pure invitation logic: finding the calendar part, the card's state, and its time text. No Solid imports.
-import type { CalendarEvent, CalendarParticipant, EmailBodyPart } from '../jmap/types';
+import type { Calendar, CalendarEvent, CalendarParticipant, EmailBodyPart, Id } from '../jmap/types';
 import { parseDuration } from './instances';
 
 export type ParticipationStatus = NonNullable<CalendarParticipant['participationStatus']>;
@@ -31,6 +31,12 @@ export function inviteState(
   if (!copy) return { kind: 'missing' };
   if (parsed.method === 'cancel' || copy.status === 'cancelled') return { kind: 'cancelled' };
   return { kind: 'active', answer: mine?.status ?? 'needs-action', updated: (copy.sequence ?? 0) > (parsed.sequence ?? 0) };
+}
+
+/** Whether the user may answer: a guest (not the organiser, whose answer would email everyone) on a calendar that allows it. */
+export function canRsvp(copy: CalendarEvent | null, mine: { id: string } | null, calendars: Record<Id, Calendar>): boolean {
+  if (!copy || !mine || copy.isOrigin === true) return false;
+  return Object.keys(copy.calendarIds ?? {}).some((id) => calendars[id]?.myRights?.mayRSVP === true);
 }
 
 export function rsvpPatch(participantId: string, status: 'accepted' | 'tentative' | 'declined'): Record<string, string> {
@@ -73,6 +79,19 @@ function clock12(a: Date, b: Date, zone: string): string {
 
 /** "Tue 8 Dec, 10:00–11:00 (Europe/London) · 5:00–6:00 AM your time"; the second part only when the zones differ. */
 export function describeWhen(event: Pick<CalendarEvent, 'start' | 'timeZone' | 'duration' | 'showWithoutTime'>, viewerZone: string): string {
+  try {
+    return describe(event, viewerZone);
+  } catch {
+    // A zone Intl doesn't know (a custom id such as "/Customized Time Zone"): show the wall time as floating.
+    try {
+      return describe({ ...event, timeZone: null }, viewerZone);
+    } catch {
+      return '';
+    }
+  }
+}
+
+function describe(event: Pick<CalendarEvent, 'start' | 'timeZone' | 'duration' | 'showWithoutTime'>, viewerZone: string): string {
   if (!event.start) return '';
   const { days, ms } = parseDuration(event.duration);
   if (event.showWithoutTime) {

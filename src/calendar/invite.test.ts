@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEvent } from '../jmap/types';
-import { describeWhen, findInvitePart, inviteState, myParticipant, rsvpPatch } from './invite';
+import { canRsvp, describeWhen, findInvitePart, inviteState, myParticipant, rsvpPatch } from './invite';
 
 const part = (type: string, blobId: string | null = 'b1') => ({ partId: 'p', blobId, size: 1, type, name: null, cid: null, disposition: null });
 
@@ -83,5 +83,32 @@ describe('describeWhen', () => {
   });
   it('returns an empty string for an event without a start', () => {
     expect(describeWhen({}, 'UTC')).toBe('');
+  });
+});
+
+describe('canRsvp', () => {
+  const calendars = { c1: { id: 'c1', name: 'c', color: null, sortOrder: 0, isDefault: true, isVisible: true, myRights: { mayRSVP: true } } };
+  const mine = { id: 'a', status: 'needs-action' as const };
+  const guestCopy = (p: Partial<CalendarEvent> = {}): CalendarEvent => ({ id: 'e', calendarIds: { c1: true }, isOrigin: false, ...p });
+  it('allows a guest on a calendar that permits answering', () => {
+    expect(canRsvp(guestCopy(), mine, calendars)).toBe(true);
+  });
+  it('refuses the organiser: answering would email every guest', () => {
+    expect(canRsvp(guestCopy({ isOrigin: true }), mine, calendars)).toBe(false);
+  });
+  it('refuses without a copy, a participant, or mayRSVP', () => {
+    expect(canRsvp(null, mine, calendars)).toBe(false);
+    expect(canRsvp(guestCopy(), null, calendars)).toBe(false);
+    expect(canRsvp(guestCopy(), mine, { c1: { ...calendars.c1, myRights: { mayRSVP: false } } })).toBe(false);
+  });
+});
+
+describe('describeWhen with a zone or start Intl rejects', () => {
+  it('does not throw on a custom time zone id; it shows the wall time as floating', () => {
+    expect(describeWhen({ start: '2026-12-08T10:00:00', timeZone: '/Customized Time Zone', duration: 'PT1H' }, 'UTC')).toBe('Tue 8 Dec, 10:00–11:00');
+    expect(describeWhen({ start: '2026-12-08T10:00:00', timeZone: 'W. Europe Standard Time', duration: 'PT1H' }, 'UTC')).toBe('Tue 8 Dec, 10:00–11:00');
+  });
+  it('does not throw on an unparsable start', () => {
+    expect(describeWhen({ start: 'garbage', timeZone: 'UTC', duration: 'PT1H' }, 'UTC')).toBe('');
   });
 });

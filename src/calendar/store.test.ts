@@ -229,6 +229,14 @@ describe('invitations', () => {
     expect((await store.findByUid('u-far', '2026-10-05T09:00:00'))?.id).toBe('far');
     expect(await store.findByUid('missing', '2026-10-05T09:00:00')).toBeNull();
   });
+  it('rejects when the lookup itself fails, instead of reporting the copy missing, and retries next time', async () => {
+    const { server, store } = setup();
+    server.baseEvents.set('b1', { ...server.baseEvents.get('b1')!, uid: 'u1' });
+    server.failCalendarQueries = true;
+    await expect(store.findByUid('u1')).rejects.toThrow();
+    server.failCalendarQueries = false;
+    expect((await store.findByUid('u1'))?.id).toBe('b1');
+  });
   it('caches a lookup until the store is refreshed', async () => {
     const { server, store } = setup();
     server.baseEvents.set('b1', { ...server.baseEvents.get('b1')!, uid: 'u1' });

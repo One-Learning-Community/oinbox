@@ -172,11 +172,12 @@ export class CalendarStore {
   findByUid(uid: string, near?: string): Promise<CalendarEvent | null> {
     let hit = this.byUid.get(uid);
     if (!hit) {
-      hit = this.lookup(uid, near).catch((e) => {
-        this.byUid.delete(uid);
-        if (e instanceof UnauthorizedError) throw e;
-        return null;
+      // A failed lookup rejects (the caller must not read it as "not in your calendar") and isn't cached.
+      const p: Promise<CalendarEvent | null> = this.lookup(uid, near).catch((e) => {
+        if (this.byUid.get(uid) === p) this.byUid.delete(uid);
+        throw e;
       });
+      hit = p;
       this.byUid.set(uid, hit);
     }
     return hit;
