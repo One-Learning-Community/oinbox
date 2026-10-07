@@ -7,6 +7,7 @@ import { displayName } from '../mail/participants';
 import type { EmailRec } from '../sync/engine';
 import { hiddenMailboxIds, isHidden, isLabel, type View } from '../sync/selectors';
 import { Icon } from './icons';
+import { InviteCard } from './InviteCard';
 import { MessageBody } from './MessageBody';
 
 const ComposerView = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposerView })));
@@ -296,6 +297,7 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
       </div>
       <Show when={props.expanded}>
         <div class="msg-body">
+          <InviteCard email={props.email} />
           <MessageBody email={props.email} />
           <Attachments email={props.email} />
           <Show when={isDraft()}>
