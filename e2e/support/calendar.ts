@@ -78,8 +78,8 @@ export async function destroyE2eEvents(): Promise<void> {
   if (ids.length) await jmap([['CalendarEvent/set', { accountId: account, sendSchedulingMessages: false, destroy: ids }, 'd']], ALICE, CAL_USING);
 }
 
-/** bob organises an event and invites alice. The invitation email is sent: that is how it reaches alice's calendar. Returns the cleanup. */
-export async function createInvitedEvent(title: string, start: string, timeZone: string): Promise<() => Promise<void>> {
+/** bob organises an event and invites alice. The invitation email is sent: that is how it reaches alice's calendar. Returns bob's event id and the cleanup. */
+export async function createInvitedEvent(title: string, start: string, timeZone: string): Promise<{ cleanup: () => Promise<void>; bobEventId: string }> {
   const bobAccount = await calendarAccount(BOB);
   const calendarId = await defaultCalendar(bobAccount, BOB);
   const r = await jmap(
@@ -94,14 +94,16 @@ export async function createInvitedEvent(title: string, start: string, timeZone:
     CAL_USING,
   );
   const bobEventId = r.s.created.x.id as string;
-  return async () => {
-    await jmap([['CalendarEvent/set', { accountId: bobAccount, sendSchedulingMessages: false, destroy: [bobEventId] }, 'd']], BOB, CAL_USING);
+  const cleanup = async () => {
+    // A test may have cancelled the event already.
+    await jmap([['CalendarEvent/set', { accountId: bobAccount, sendSchedulingMessages: false, destroy: [bobEventId] }, 'd']], BOB, CAL_USING).catch(() => undefined);
     await destroyE2eEvents();
     const mail = await accountId();
     const found = await jmap([['Email/query', { accountId: mail, filter: { subject: title } }, 'q']], ALICE);
     const ids = found.q.ids as string[];
     if (ids.length) await jmap([['Email/set', { accountId: mail, destroy: ids }, 'd']], ALICE);
   };
+  return { cleanup, bobEventId };
 }
 
 /** An event alice organises with bob as a guest. Nothing is emailed or delivered (scheduling messages off). */
@@ -153,4 +155,24 @@ export async function calendarIdByName(name: string): Promise<string> {
   const account = await calendarAccount();
   const r = await jmap([['Calendar/get', { accountId: account }, 'c']], ALICE, CAL_USING);
   return (r.c.list as { id: string; name: string }[]).find((c) => c.name === name)!.id;
+}
+
+/** Bob (the organiser) changes his copy; the update is emailed to alice. */
+export async function bobUpdateEvent(bobEventId: string, patch: Record<string, unknown>): Promise<void> {
+  const account = await calendarAccount(BOB);
+  await jmap([['CalendarEvent/set', { accountId: account, sendSchedulingMessages: true, update: { [bobEventId]: patch } }, 'u']], BOB, CAL_USING);
+}
+
+/** Bob deletes his event; alice is emailed a cancellation. */
+export async function bobCancelEvent(bobEventId: string): Promise<void> {
+  const account = await calendarAccount(BOB);
+  await jmap([['CalendarEvent/set', { accountId: account, sendSchedulingMessages: true, destroy: [bobEventId] }, 'd']], BOB, CAL_USING);
+}
+
+/** The participation statuses on bob's copy, keyed by lower-case address. */
+export async function bobSeesStatuses(bobEventId: string): Promise<Record<string, string>> {
+  const account = await calendarAccount(BOB);
+  const r = await jmap([['CalendarEvent/get', { accountId: account, ids: [bobEventId], properties: ['participants'] }, 'g']], BOB, CAL_USING);
+  const ps = (r.g.list[0]?.participants ?? {}) as Record<string, { calendarAddress: string; participationStatus: string }>;
+  return Object.fromEntries(Object.values(ps).map((p) => [p.calendarAddress.replace(/^mailto:/i, '').toLowerCase(), p.participationStatus]));
 }

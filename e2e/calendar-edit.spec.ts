@@ -122,7 +122,7 @@ test('an event can be deleted from its card', async ({ page }) => {
 
 test('a recurring event and an invited event are read-only, with a reason', async ({ page }) => {
   const title = tag();
-  const cleanup = await createInvitedEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+  const { cleanup } = await createInvitedEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
   try {
     await openWeek(page);
     await event(page, 'Weekly sync').click();

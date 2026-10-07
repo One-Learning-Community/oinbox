@@ -30,7 +30,7 @@ If an invitation's event isn't in Alice's calendar (a message from outside, or o
 - Bob updating the title and time (send on): Alice's copy changes in place (`sequence` 0 → 1) and she gets "Updated invitation: …".
 - Bob destroying the event (send on): Alice's copy stays, with `status: "cancelled"`, and she gets "Cancelled: …".
 - The `uid` filter of `CalendarEvent/query` matches nothing (slice 1 finding), so the copy is found by listing events and reading their `uid`.
-- Not probed, left to the plan: whether the calendar part appears in `email.attachments` (the engine already fetches that property), and whether `CalendarEvent/query` accepts a `before`/`after` window without `expandRecurrences`.
+- Probed while building (2026-10-07): the `text/calendar` part is in `email.attachments` (next to an `application/ics` `event.ics` part). `CalendarEvent/query` with an `after`/`before` window and no `expandRecurrences` works and returns base event ids; an unfiltered query with `limit` works. Stalwart delivers no invitation for an event that is already in the past, so e2e fixtures must start in the future.
 
 ## Components
 
