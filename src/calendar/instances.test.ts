@@ -123,6 +123,37 @@ describe('toDisplayEvents', () => {
   });
 });
 
+describe('edit-relevant fields', () => {
+  const plain: CalendarEvent = { id: 'p1', calendarIds: { c1: true }, title: 'Dentist', start: '2026-10-06T14:00:00', timeZone: 'America/New_York', duration: 'PT1H', isOrigin: true };
+  const plainOcc: CalendarEvent = { id: 'o9', baseEventId: 'p1', calendarIds: { c1: true }, start: '2026-10-06T14:00:00', utcStart: '2026-10-06T18:00:00Z' };
+
+  it('exposes isOrigin, timeZone and a non-recurring flag', () => {
+    const [e] = toDisplayEvents([plainOcc], [plain]);
+    expect(e).toMatchObject({ isOrigin: true, recurring: false, timeZone: 'America/New_York' });
+  });
+
+  it('flags a series as recurring, and a missing isOrigin as false', () => {
+    const [e] = toDisplayEvents([occ('o1', '2026-10-05T09:00:00', '2026-10-05T09:00:00', '2026-10-05T13:00:00Z')], [base]);
+    expect(e).toMatchObject({ recurring: true, isOrigin: false });
+  });
+
+  it('marks owner participants', () => {
+    const withGuests: CalendarEvent = { ...plain, participants: {
+      a: { calendarAddress: 'mailto:alice@x.test', roles: { owner: true, attendee: true } },
+      b: { calendarAddress: 'mailto:bob@x.test', roles: { attendee: true } },
+    } };
+    const [e] = toDisplayEvents([plainOcc], [withGuests]);
+    expect(e!.participants.map((p) => [p.address, p.owner])).toEqual([['alice@x.test', true], ['bob@x.test', false]]);
+  });
+
+  it('asks the server for the new base properties', () => {
+    const b = new RequestBuilder();
+    addRangeCalls(b, 'a1', { start: '2026-10-04T00:00:00Z', end: '2026-10-11T00:00:00Z' }, 'UTC');
+    const bases = b.build([]).methodCalls[2]!;
+    expect(bases[1].properties).toEqual(expect.arrayContaining(['isOrigin', 'recurrenceRule']));
+  });
+});
+
 describe('toCalendarInput', () => {
   const calendars: Record<string, Calendar> = {
     c1: { id: 'c1', name: 'Personal', color: '#1a73e8', sortOrder: 0, isDefault: true, isVisible: true },
@@ -130,7 +161,7 @@ describe('toCalendarInput', () => {
   };
   const ev: DisplayEvent = {
     id: 'o1', baseEventId: 'b1', calendarIds: ['c1', 'c2'], title: 'T', start: '2026-10-07T08:00:00.000Z', end: '2026-10-07T09:00:00.000Z',
-    allDay: false, color: null, location: null, description: null, participants: [],
+    allDay: false, color: null, location: null, description: null, participants: [], isOrigin: true, recurring: false, timeZone: null,
   };
 
   it("uses the event's colour, then the first visible calendar's colour, then none (defaultColor)", () => {

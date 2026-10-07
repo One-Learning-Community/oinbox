@@ -280,6 +280,17 @@ export interface EmailSubmissionSetArgs extends SetArgs<EmailSubmission> {
   onSuccessDestroyEmail?: string[];
 }
 
+export interface CalendarRights {
+  mayReadFreeBusy?: boolean;
+  mayReadItems?: boolean;
+  mayWriteAll?: boolean;
+  mayWriteOwn?: boolean;
+  mayUpdatePrivate?: boolean;
+  mayRSVP?: boolean;
+  mayShare?: boolean;
+  mayDelete?: boolean;
+}
+
 export interface Calendar {
   id: Id;
   name: string;
@@ -287,6 +298,7 @@ export interface Calendar {
   sortOrder: number;
   isDefault: boolean;
   isVisible: boolean;
+  myRights?: CalendarRights;
 }
 
 export interface CalendarLocation {
@@ -312,6 +324,8 @@ export interface CalendarEvent {
   recurrenceId?: string | null;
   calendarIds?: Record<Id, boolean>;
   uid?: string;
+  /** True when this copy is the organizer's (or the event has no other participants). */
+  isOrigin?: boolean;
   title?: string;
   description?: string;
   /** LocalDateTime, e.g. "2026-10-05T09:00:00". */
@@ -328,6 +342,11 @@ export interface CalendarEvent {
   recurrenceRule?: Record<string, unknown> | null;
   /** recurrenceId → PatchObject. Keys are property names or JSON-pointer paths ("participants/p1/…"). */
   recurrenceOverrides?: Record<string, Record<string, unknown>> | null;
+}
+
+export interface CalendarEventSetArgs extends SetArgs<CalendarEvent> {
+  /** Email guests the invitation, change or cancellation. Stalwart sends nothing when false. */
+  sendSchedulingMessages?: boolean;
 }
 
 export interface CalendarEventFilter {
@@ -364,6 +383,7 @@ export interface Methods {
   'Calendar/get': { args: GetArgs; result: GetResult<Calendar> };
   'CalendarEvent/query': { args: CalendarEventQueryArgs; result: QueryResult };
   'CalendarEvent/get': { args: GetArgs; result: GetResult<CalendarEvent> };
+  'CalendarEvent/set': { args: CalendarEventSetArgs; result: SetResult<CalendarEvent> };
 }
 
 export type MethodName = keyof Methods;

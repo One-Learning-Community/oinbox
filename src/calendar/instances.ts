@@ -12,6 +12,8 @@ export interface DisplayParticipant {
   name: string;
   address: string;
   status: string;
+  /** Has the iCalendar `owner` role: the organizer, not a guest. */
+  owner: boolean;
 }
 
 /** One occurrence, merged with its base event, ready for display. */
@@ -29,6 +31,11 @@ export interface DisplayEvent {
   location: string | null;
   description: string | null;
   participants: DisplayParticipant[];
+  /** This copy is the organizer's, or the event has no other participants. */
+  isOrigin: boolean;
+  recurring: boolean;
+  /** The event's own zone; null for all-day and floating events. */
+  timeZone: string | null;
 }
 
 /** The event shape handed to FullCalendar. */
@@ -48,7 +55,7 @@ const MAX_RANGE_DAYS = 42;
 const OCCURRENCE_PROPS = ['id', 'baseEventId', 'recurrenceId', 'calendarIds', 'start', 'utcStart'];
 const BASE_PROPS = [
   'id', 'calendarIds', 'title', 'description', 'start', 'timeZone', 'duration', 'showWithoutTime',
-  'color', 'locations', 'participants', 'recurrenceOverrides',
+  'color', 'locations', 'participants', 'recurrenceOverrides', 'isOrigin', 'recurrenceRule',
 ];
 
 export function toUtcDate(d: Date): string {
@@ -121,9 +128,12 @@ function toDisplayEvent(occurrence: CalendarEvent, base: CalendarEvent | undefin
     color: e.color ?? null,
     location: Object.values(e.locations ?? {}).find((l) => l?.name)?.name ?? null,
     description: e.description?.trim() || null,
+    isOrigin: source.isOrigin === true,
+    recurring: !!source.recurrenceRule,
+    timeZone: e.timeZone ?? null,
     participants: Object.values(e.participants ?? {}).map((p) => {
       const address = (p.calendarAddress ?? '').replace(/^mailto:/i, '');
-      return { name: p.name?.trim() || address, address, status: p.participationStatus ?? 'needs-action' };
+      return { name: p.name?.trim() || address, address, status: p.participationStatus ?? 'needs-action', owner: !!p.roles?.owner };
     }),
   };
   if (e.showWithoutTime) {
