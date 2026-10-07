@@ -2,7 +2,7 @@ import { createSignal, type Accessor } from 'solid-js';
 import { createStore, reconcile, type SetStoreFunction } from 'solid-js/store';
 import type { ToastFn } from '../app/actions';
 import { UnauthorizedError, type JmapClient } from '../jmap/client';
-import { CALENDARS, CORE, type Calendar, type Id, type StateChange } from '../jmap/types';
+import { CALENDARS, CORE, type Calendar, type CalendarEvent, type CalendarEventSetArgs, type Id, type StateChange } from '../jmap/types';
 import { addRangeCalls, rangeKey, toDisplayEvents, type DisplayEvent, type Range } from './instances';
 import { loadHidden, saveHidden } from './prefs';
 
@@ -13,6 +13,8 @@ export interface CalendarState {
   range: Range | null;
   loading: boolean;
 }
+
+export type WriteResult = { ok: true } | { ok: false; error: string };
 
 /** Recently viewed ranges kept in memory, least recently used dropped first. */
 const CACHE_SIZE = 8;
@@ -99,6 +101,40 @@ export class CalendarStore {
     if (!this.accountId) return;
     void this.loadCalendars().catch(() => undefined);
     void this.refresh();
+  }
+
+  /** Create one event. Never emails anyone: slice 2 has no way to add guests. */
+  createEvent(event: Partial<CalendarEvent>): Promise<WriteResult> {
+    return this.write({ create: { new: event } }, false, 'new');
+  }
+
+  /** `baseEventId` is the event's (or series') id, not an occurrence id. */
+  updateEvent(baseEventId: Id, patch: Record<string, unknown>, notify: boolean): Promise<WriteResult> {
+    return this.write({ update: { [baseEventId]: patch } }, notify, baseEventId);
+  }
+
+  deleteEvent(baseEventId: Id, notify: boolean): Promise<WriteResult> {
+    return this.write({ destroy: [baseEventId] }, notify, baseEventId);
+  }
+
+  /** One CalendarEvent/set. The refetch starts here; the push event that follows is then a no-op. */
+  private async write(args: Pick<CalendarEventSetArgs, 'create' | 'update' | 'destroy'>, notify: boolean, key: string): Promise<WriteResult> {
+    const accountId = this.accountId;
+    if (!accountId) return { ok: false, error: 'Calendars are not available.' };
+    try {
+      const b = this.client.batch();
+      const call = b.call('CalendarEvent/set', { accountId, sendSchedulingMessages: notify, ...args });
+      const res = (await this.client.send(b, [CORE, CALENDARS])).get(call);
+      const err = res.notCreated?.[key] ?? res.notUpdated?.[key] ?? res.notDestroyed?.[key];
+      void this.refresh();
+      if (err) {
+        return { ok: false, error: err.type === 'notFound' ? 'That event no longer exists.' : (err.description ?? `The server refused the change (${err.type}).`) };
+      }
+      return { ok: true };
+    } catch (e) {
+      if (e instanceof UnauthorizedError) throw e;
+      return { ok: false, error: (e as Error).message };
+    }
   }
 
   toggleHidden(id: Id): void {

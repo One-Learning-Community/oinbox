@@ -31,6 +31,10 @@ export class FakeJmap {
   baseEvents = new Map<string, CalendarEvent>();
   calendarEventState = 0;
   failCalendarQueries = false;
+  /** The arguments of every CalendarEvent/set received. */
+  calendarSets: Record<string, unknown>[] = [];
+  failCalendarSets = false;
+  private nextCalendarEventId = 0;
   /** Each request's response waits for the next promise here, if any (for race tests). */
   holds: Promise<void>[] = [];
   identities = new Map<string, Identity>([['id1', identityRec('id1', 'Alice', 'alice@example.test')]]);
@@ -199,6 +203,62 @@ export class FakeJmap {
         const all = new Map<string, CalendarEvent>([...this.baseEvents, ...this.occurrences.map((o) => [o.id, o] as const)]);
         const list = [...new Set(ids ?? [])].map((id) => all.get(id)).filter((e): e is CalendarEvent => !!e).map((e) => structuredClone(e));
         return [name, { accountId: 'a1', state: `ce${this.calendarEventState}`, list, notFound: [] }];
+      }
+      case 'CalendarEvent/set': {
+        this.calendarSets.push(structuredClone(args));
+        if (this.failCalendarSets) return ['error', { type: 'serverFail', description: 'calendar store unavailable' }];
+        const a = args as { create?: Record<string, CalendarEvent>; update?: Record<string, Record<string, unknown>>; destroy?: string[] };
+        const created: Record<string, { id: string }> = {};
+        const updated: Record<string, null> = {};
+        const notUpdated: Record<string, { type: string }> = {};
+        const destroyed: string[] = [];
+        const notDestroyed: Record<string, { type: string }> = {};
+        for (const [key, ev] of Object.entries(a.create ?? {})) {
+          const id = `n${++this.nextCalendarEventId}`;
+          this.baseEvents.set(id, { ...structuredClone(ev), id });
+          this.occurrences.push({ id: `${id}o`, baseEventId: id, calendarIds: ev.calendarIds, start: ev.start, utcStart: `${ev.start}Z` });
+          created[key] = { id };
+        }
+        for (const [id, patch] of Object.entries(a.update ?? {})) {
+          const base = this.baseEvents.get(id);
+          if (!base) {
+            notUpdated[id] = { type: 'notFound' };
+            continue;
+          }
+          const next: Record<string, unknown> = { ...base, calendarIds: { ...base.calendarIds } };
+          for (const [k, v] of Object.entries(patch)) {
+            if (k.startsWith('calendarIds/')) {
+              const calId = k.slice('calendarIds/'.length);
+              if (v) (next.calendarIds as Record<string, boolean>)[calId] = true;
+              else delete (next.calendarIds as Record<string, boolean>)[calId];
+            } else next[k] = v;
+          }
+          this.baseEvents.set(id, next as unknown as CalendarEvent);
+          for (const o of this.occurrences) {
+            if (o.baseEventId !== id) continue;
+            o.calendarIds = (next as unknown as CalendarEvent).calendarIds;
+            if (typeof patch.start === 'string') {
+              o.start = patch.start;
+              o.utcStart = `${patch.start}Z`;
+            }
+          }
+          updated[id] = null;
+        }
+        for (const id of a.destroy ?? []) {
+          if (!this.baseEvents.delete(id)) {
+            notDestroyed[id] = { type: 'notFound' };
+            continue;
+          }
+          this.occurrences = this.occurrences.filter((o) => o.baseEventId !== id);
+          destroyed.push(id);
+        }
+        this.calendarEventState++;
+        const some = <T extends object>(o: T) => (Object.keys(o).length ? o : null);
+        return [name, {
+          accountId: 'a1', oldState: null, newState: `ce${this.calendarEventState}`,
+          created: some(created), updated: some(updated), destroyed: destroyed.length ? destroyed : null,
+          notCreated: null, notUpdated: some(notUpdated), notDestroyed: some(notDestroyed),
+        }];
       }
       case 'Mailbox/set': {
         const oldState = `m${this.mailboxState}`;

@@ -155,3 +155,47 @@ describe('CalendarStore', () => {
     expect(store.hidden().has('c1')).toBe(false);
   });
 });
+
+describe('CalendarStore writes', () => {
+  it('creates an event without notifying, then refetches the range', async () => {
+    const { server, store, queries } = setup();
+    await store.show(WEEK1);
+    const before = queries();
+    const r = await store.createEvent({ calendarIds: { c1: true }, title: 'Dentist', start: '2026-10-06T14:00:00', timeZone: 'UTC', duration: 'PT1H' });
+    expect(r).toEqual({ ok: true });
+    expect(server.calendarSets[0]).toMatchObject({ sendSchedulingMessages: false, create: { new: { title: 'Dentist' } } });
+    await vi.waitFor(() => expect(queries()).toBeGreaterThan(before));
+    await vi.waitFor(() => expect(store.state.events.map((e) => e.title)).toContain('Dentist'));
+  });
+
+  it('updates by base event id and passes the notify choice', async () => {
+    const { server, store } = setup();
+    await store.show(WEEK1);
+    expect(await store.updateEvent('b1', { start: '2026-10-05T10:00:00' }, true)).toEqual({ ok: true });
+    expect(server.calendarSets[0]).toMatchObject({ sendSchedulingMessages: true, update: { b1: { start: '2026-10-05T10:00:00' } } });
+  });
+
+  it('deletes by base event id', async () => {
+    const { server, store } = setup();
+    await store.show(WEEK1);
+    expect(await store.deleteEvent('b1', false)).toEqual({ ok: true });
+    expect(server.calendarSets[0]).toMatchObject({ sendSchedulingMessages: false, destroy: ['b1'] });
+    await vi.waitFor(() => expect(store.state.events).toEqual([]));
+  });
+
+  it('reports a vanished event and refetches', async () => {
+    const { store, queries } = setup();
+    await store.show(WEEK1);
+    const before = queries();
+    expect(await store.updateEvent('nope', { title: 'x' }, false)).toEqual({ ok: false, error: 'That event no longer exists.' });
+    await vi.waitFor(() => expect(queries()).toBeGreaterThan(before));
+  });
+
+  it('returns a server failure instead of throwing', async () => {
+    const { server, store } = setup();
+    server.failCalendarSets = true;
+    const r = await store.updateEvent('b1', { title: 'x' }, false);
+    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({ error: expect.stringContaining('calendar store unavailable') });
+  });
+});
