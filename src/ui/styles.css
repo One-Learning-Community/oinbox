@@ -436,6 +436,10 @@ a { color: var(--accent); }
 .event-card .card-actions button:hover { background: var(--hover); }
 .event-card .card-actions .danger-link { color: var(--danger); }
 .event-card .why-readonly { color: var(--text-3); font-size: 13px; margin-top: 12px; }
+.event-form input[type='text'], .event-form select { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
+.event-form input[type='text']:focus, .event-form select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.event-form select { margin: 4px 0; }
+.event-form .form-error { color: var(--danger); font-size: 13px; min-height: 1em; margin: 4px 0; }
 
 /* Signature under the composer's text; contain: content keeps a signature's own styles (even position: fixed) inside its box. */
 .compose-signature { display: flex; align-items: flex-start; gap: 4px; margin: 0 12px 8px; padding-top: 8px; border-top: 1px dashed var(--border); }

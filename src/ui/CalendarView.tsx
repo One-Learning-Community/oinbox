@@ -3,9 +3,10 @@ import { Popover } from '@rozie-ui/popover-solid';
 import { createMemo, createSignal, For, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { formatWhen, STATUS_LABELS } from '../calendar/format';
-import { editability, hasGuests, patchForDrop } from '../calendar/edit';
+import { defaultCalendarId, editability, hasGuests, localDate, newEventFromSelection, patchForDrop, writableCalendars } from '../calendar/edit';
 import { toCalendarInput, toUtcDate, type DisplayEvent } from '../calendar/instances';
 import { loadView, saveView } from '../calendar/prefs';
+import { EventForm } from './EventForm';
 import { createNotifyDialog, type NotifyAnswer, type NotifyAsk } from './NotifyDialog';
 
 const TOOLBAR = { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' };
@@ -24,6 +25,18 @@ export function CalendarView() {
       return input ? [{ ...input, editable: editability(e, calendar.state.calendars).editable }] : [];
     }),
   );
+
+  interface Draft {
+    start: Date;
+    end: Date;
+    allDay: boolean;
+    anchor: HTMLElement;
+  }
+  const [draft, setDraft] = createSignal<Draft | null>(null);
+  const closeDraft = () => {
+    setDraft(null);
+    handle()?.clearSelection();
+  };
 
   /** A drop or resize: write it, asking about guests first; put the event back if it isn't written. */
   async function commitTimes(id: string, start: Date | null, end: Date | null, revert: () => void) {
@@ -65,7 +78,15 @@ export function CalendarView() {
           editable
           onEventDrop={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}
           onEventResize={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}
-          selectable={false}
+          selectable
+          onSelect={({ start, end, allDay }) => {
+            if (!defaultCalendarId(calendar.state.calendars)) return toast('No calendar here accepts new events.', 'error');
+            // The highlight element exists once FullCalendar has drawn the selection.
+            queueMicrotask(() => {
+              const anchor = document.querySelector<HTMLElement>('.calendar-host .fc-highlight') ?? document.querySelector<HTMLElement>('.calendar-host')!;
+              setDraft({ start, end, allDay, anchor });
+            });
+          }}
           nowIndicator
           height="100%"
           defaultColor="var(--cal-default)"
@@ -78,6 +99,25 @@ export function CalendarView() {
         />
       </div>
       <EventPopover selected={selected()} onClose={() => setSelected(null)} notify={notify.ask} />
+      <Popover open={!!draft()} bare onOpenChange={(open) => !open && closeDraft()} trigger="manual" strategy="fixed" placement="right-start" reference={draft()?.anchor ?? null}>
+        <Show when={draft()} keyed>
+          {(d) => (
+            <EventForm
+              when={formatWhen({ start: d.allDay ? localDate(d.start) : d.start.toISOString(), end: d.allDay ? localDate(d.end) : d.end.toISOString(), allDay: d.allDay })}
+              calendars={writableCalendars(calendar.state.calendars)}
+              title=""
+              calendarId={defaultCalendarId(calendar.state.calendars)!}
+              saveLabel="Create"
+              onCancel={closeDraft}
+              onSave={async (title, calendarId) => {
+                const r = await calendar.createEvent(newEventFromSelection(d, calendarId, title, zone));
+                if (r.ok) closeDraft();
+                return r.ok ? null : r.error;
+              }}
+            />
+          )}
+        </Show>
+      </Popover>
       <notify.Host />
     </section>
   );
@@ -107,6 +147,32 @@ function EventPopover(props: { selected: Selected | null; onClose: () => void; n
 function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promise<NotifyAnswer>; onClose: () => void }) {
   const { calendar, toast } = useApp();
   const state = () => editability(props.event, calendar.state.calendars);
+  const [editing, setEditing] = createSignal(false);
+
+  async function save(title: string, calendarId: string): Promise<string | null> {
+    const ev = props.event;
+    const patch: Record<string, unknown> = {};
+    if (title !== ev.title && !(ev.title === '(No title)' && title === '')) patch.title = title;
+    const from = ev.calendarIds[0]!;
+    if (calendarId !== from) Object.assign(patch, { [`calendarIds/${from}`]: null, [`calendarIds/${calendarId}`]: true });
+    if (!Object.keys(patch).length) {
+      setEditing(false);
+      return null;
+    }
+    let sendMessages = false;
+    if (patch.title !== undefined && hasGuests(ev)) {
+      const answer = await props.notify({ title: 'Rename this event?', message: `"${ev.title}" has guests. Email them the change?`, guests: true, confirmLabel: 'Rename' });
+      if (answer === 'cancel') return null;
+      sendMessages = answer === 'notify';
+    }
+    const r = await calendar.updateEvent(ev.baseEventId, patch, sendMessages);
+    if (r.ok) {
+      setEditing(false);
+      props.onClose();
+      return null;
+    }
+    return r.error;
+  }
 
   async function remove() {
     const ev = props.event;
@@ -127,6 +193,20 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
   const calendarName = () =>
     props.event.calendarIds.map((id) => calendar.state.calendars[id]?.name).find((n) => n) ?? '';
   return (
+    <Show
+      when={!editing()}
+      fallback={
+        <EventForm
+          when={formatWhen(props.event)}
+          calendars={writableCalendars(calendar.state.calendars)}
+          title={props.event.title === '(No title)' ? '' : props.event.title}
+          calendarId={props.event.calendarIds[0]!}
+          saveLabel="Save"
+          onCancel={() => setEditing(false)}
+          onSave={save}
+        />
+      }
+    >
     <div class="event-card" role="dialog" aria-label={props.event.title}>
       <h3>{props.event.title}</h3>
       <p class="when">{formatWhen(props.event)}</p>
@@ -149,6 +229,7 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
         {(s) =>
           s.editable ? (
             <div class="card-actions">
+              <button onClick={() => setEditing(true)}>Edit</button>
               <button class="danger-link" onClick={() => void remove()}>Delete</button>
             </div>
           ) : (
@@ -157,5 +238,6 @@ function EventCard(props: { event: DisplayEvent; notify: (a: NotifyAsk) => Promi
         }
       </Show>
     </div>
+    </Show>
   );
 }

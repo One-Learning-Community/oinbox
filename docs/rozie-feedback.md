@@ -252,3 +252,12 @@ Resolved: 0.5.2 leaves an unhandled Escape alone; the workaround in `IdentityDia
 
 ## Switch 0.1.4 — no gaps found (2026-10-02)
 `id` passes through to the `role="switch"` button, so a plain `<label for>` names it; Space toggles.
+
+## No Select package (2026-10-07)
+The calendar event form's calendar picker is a native `<select>`: there is no `@rozie-ui/select-*`
+package to dogfood. Not blocking.
+
+## FullCalendar 0.2.0 — `eventDrop`/`eventResize` payload has no `allDay` (2026-10-07)
+`FullCalendarEventRef` is `{ id, title, start, end }`. A drop onto the all-day row (or off it) can't
+be told apart from a plain move, so oinbox reads `ref.getApi().getEventById(id).allDay` through the
+handle. An `allDay` field on the payload would remove that lookup. Not blocking.
