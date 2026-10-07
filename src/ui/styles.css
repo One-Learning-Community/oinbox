@@ -431,6 +431,11 @@ a { color: var(--accent); }
 .event-card .participants { list-style: none; margin: 8px 0; padding: 0; }
 .event-card .participants li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
 .event-card .rsvp { color: var(--text-3); font-size: 13px; }
+.event-card .card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.event-card .card-actions button { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.event-card .card-actions button:hover { background: var(--hover); }
+.event-card .card-actions .danger-link { color: var(--danger); }
+.event-card .why-readonly { color: var(--text-3); font-size: 13px; margin-top: 12px; }
 
 /* Signature under the composer's text; contain: content keeps a signature's own styles (even position: fixed) inside its box. */
 .compose-signature { display: flex; align-items: flex-start; gap: 4px; margin: 0 12px 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
