@@ -226,7 +226,7 @@ Every wrapper's props now extend `ComponentProps<'div'>` (or `'dialog'`), which 
    in Dialog, CommandPalette, DataTable, TipTap and Toast.
 
 
-## OPEN, BLOCKING (2026-10-02): DatePicker 0.1.14 — `focus()` doesn't move DOM focus
+## FIXED in 0.1.15 (2026-10-06): DatePicker 0.1.14 — `focus()` doesn't move DOM focus
 Wanted: the vacation form opens a DatePicker in a Popover and calls the handle's `focus()` so a
 keyboard user lands in the grid (the README: "Move keyboard focus into the calendar grid … Useful
 right after the picker becomes visible").
@@ -242,12 +242,13 @@ from the button doesn't go there either). The settings slice's vacation dates ar
 Expected: `focus()` focuses the active day cell unconditionally (it's an explicit request), e.g. by
 marking the next settle as "apply focus".
 
-## TipTap 0.5.1 — Escape inside the editor never reaches a surrounding `<dialog>`
+## FIXED in 0.5.2 (2026-10-06): TipTap 0.5.1 — Escape inside the editor never reaches a surrounding `<dialog>`
 ProseMirror's `captureKeyDown` calls `preventDefault()` on Escape (and Enter) in every editor, so a
 native `<dialog>` (rozie Dialog) doesn't fire `cancel` while the focus is in a TipTap field. oinbox's
 identity dialog closes itself on an Escape keydown whose target is the contenteditable
 (`src/ui/IdentityDialog.tsx`). A wrapper option (or Dialog listening for Escape regardless of
 `defaultPrevented` from a ProseMirror target) would make this unnecessary. Not blocking.
+Resolved: 0.5.2 leaves an unhandled Escape alone; the workaround in `IdentityDialog.tsx` is removed.
 
 ## Switch 0.1.4 — no gaps found (2026-10-02)
 `id` passes through to the `role="switch"` button, so a plain `<label for>` names it; Space toggles.

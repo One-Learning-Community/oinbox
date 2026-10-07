@@ -65,8 +65,6 @@ export function IdentityDialog(props: { id: Id | null; onClose: () => void }) {
         onSubmit={submit}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void submit(e);
-          // ProseMirror prevents Escape in the editor, so the dialog's own cancel never fires from there.
-          else if (e.key === 'Escape' && (e.target as HTMLElement).isContentEditable) close();
         }}
       >
         <h2 id="identity-dialog-title">{creating ? 'Add identity' : 'Edit identity'}</h2>
