@@ -81,11 +81,12 @@ export function CalendarView() {
           selectable
           onSelect={({ start, end, allDay }) => {
             if (!defaultCalendarId(calendar.state.calendars)) return toast('No calendar here accepts new events.', 'error');
-            // The highlight element exists once FullCalendar has drawn the selection.
-            queueMicrotask(() => {
+            // After the click that ends the drag (the popover would count it as an outside click),
+            // when FullCalendar has also drawn the highlight element the form anchors to.
+            setTimeout(() => {
               const anchor = document.querySelector<HTMLElement>('.calendar-host .fc-highlight') ?? document.querySelector<HTMLElement>('.calendar-host')!;
               setDraft({ start, end, allDay, anchor });
-            });
+            }, 0);
           }}
           nowIndicator
           height="100%"

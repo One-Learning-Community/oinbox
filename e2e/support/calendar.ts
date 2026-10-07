@@ -1,5 +1,5 @@
 // Calendar helpers for specs: JMAP Calendars over Basic auth against the dev stack.
-import { ALICE, BASE, PASSWORD, jmap } from './mail';
+import { ALICE, BASE, BOB, PASSWORD, accountId, jmap } from './mail';
 
 export const CAL_USING = ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:calendars'];
 
@@ -9,8 +9,8 @@ async function calendarAccount(user = ALICE): Promise<string> {
   return s.primaryAccounts['urn:ietf:params:jmap:calendars']!;
 }
 
-async function defaultCalendar(accountId: string): Promise<string> {
-  const r = await jmap([['Calendar/get', { accountId }, 'c']], ALICE, CAL_USING);
+async function defaultCalendar(accountId: string, user = ALICE): Promise<string> {
+  const r = await jmap([['Calendar/get', { accountId }, 'c']], user, CAL_USING);
   const list = r.c.list as { id: string; isDefault: boolean }[];
   return (list.find((c) => c.isDefault) ?? list[0]!).id;
 }
@@ -35,4 +35,71 @@ export async function createEvent(title: string, start: string, timeZone: string
 export async function destroyEvent(id: string): Promise<void> {
   const accountId = await calendarAccount();
   await jmap([['CalendarEvent/set', { accountId, destroy: [id] }, 'd']], ALICE, CAL_USING);
+}
+
+const E2E_PREFIX = 'E2E ';
+
+export interface StoredEvent {
+  id: string;
+  title: string;
+  start: string;
+  duration: string;
+  timeZone: string | null;
+  showWithoutTime?: boolean;
+  calendarIds: Record<string, boolean>;
+}
+
+/** Alice's events with exactly this title, in any calendar. */
+export async function eventsByTitle(title: string): Promise<StoredEvent[]> {
+  const account = await calendarAccount();
+  const r = await jmap(
+    [
+      ['CalendarEvent/query', { accountId: account }, 'q'],
+      ['CalendarEvent/get', { accountId: account, '#ids': { resultOf: 'q', name: 'CalendarEvent/query', path: '/ids' }, properties: ['id', 'title', 'start', 'duration', 'timeZone', 'showWithoutTime', 'calendarIds'] }, 'g'],
+    ],
+    ALICE,
+    CAL_USING,
+  );
+  return (r.g.list as StoredEvent[]).filter((e) => e.title === title);
+}
+
+/** Delete every event of alice's whose title starts with "E2E " (no guests are emailed). */
+export async function destroyE2eEvents(): Promise<void> {
+  const account = await calendarAccount();
+  const r = await jmap(
+    [
+      ['CalendarEvent/query', { accountId: account }, 'q'],
+      ['CalendarEvent/get', { accountId: account, '#ids': { resultOf: 'q', name: 'CalendarEvent/query', path: '/ids' }, properties: ['id', 'title'] }, 'g'],
+    ],
+    ALICE,
+    CAL_USING,
+  );
+  const ids = (r.g.list as { id: string; title?: string }[]).filter((e) => e.title?.startsWith(E2E_PREFIX)).map((e) => e.id);
+  if (ids.length) await jmap([['CalendarEvent/set', { accountId: account, sendSchedulingMessages: false, destroy: ids }, 'd']], ALICE, CAL_USING);
+}
+
+/** bob organises an event and invites alice. The invitation email is sent: that is how it reaches alice's calendar. Returns the cleanup. */
+export async function createInvitedEvent(title: string, start: string, timeZone: string): Promise<() => Promise<void>> {
+  const bobAccount = await calendarAccount(BOB);
+  const calendarId = await defaultCalendar(bobAccount, BOB);
+  const r = await jmap(
+    [['CalendarEvent/set', { accountId: bobAccount, sendSchedulingMessages: true, create: { x: {
+      calendarIds: { [calendarId]: true }, title, start, timeZone, duration: 'PT1H', organizerCalendarAddress: `mailto:${BOB}`,
+      participants: {
+        b: { calendarAddress: `mailto:${BOB}`, roles: { owner: true, attendee: true }, participationStatus: 'accepted' },
+        a: { calendarAddress: `mailto:${ALICE}`, roles: { attendee: true }, participationStatus: 'needs-action' },
+      },
+    } } }, 's']],
+    BOB,
+    CAL_USING,
+  );
+  const bobEventId = r.s.created.x.id as string;
+  return async () => {
+    await jmap([['CalendarEvent/set', { accountId: bobAccount, sendSchedulingMessages: false, destroy: [bobEventId] }, 'd']], BOB, CAL_USING);
+    await destroyE2eEvents();
+    const mail = await accountId();
+    const found = await jmap([['Email/query', { accountId: mail, filter: { subject: title } }, 'q']], ALICE);
+    const ids = found.q.ids as string[];
+    if (ids.length) await jmap([['Email/set', { accountId: mail, destroy: ids }, 'd']], ALICE);
+  };
 }
