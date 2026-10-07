@@ -487,3 +487,5 @@ a { color: var(--accent); }
   .day-popover { --rozie-datepicker-day-size: 44px; --rozie-datepicker-cell-size: 44px; }
   .switch-row { min-height: 44px; }
 }
+.vacation-banner { margin: 0; padding: 8px 16px; background: var(--surface-2); font-size: 13px; color: var(--text-2); }
+.vacation-banner a { color: var(--accent); margin-left: 8px; }

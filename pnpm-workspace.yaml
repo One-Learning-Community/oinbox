@@ -1,3 +1,4 @@
+# Rozie is our own library: its releases are used the day they ship, so they skip the release-age wait.
 minimumReleaseAgeExclude:
   - '@rozie-ui/combobox-solid@0.6.0 || 0.7.0'
   - '@rozie-ui/command-palette-solid@0.4.10 || 0.5.0'

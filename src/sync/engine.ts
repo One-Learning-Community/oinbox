@@ -121,6 +121,9 @@ export class MailEngine {
   private catchUpAgain = false;
   /** Last Identity state seen, so our own writes don't trigger a refetch. */
   private identityState: string | null = null;
+  /** Counts local identity edits, so a refresh that raced one can tell its answer is stale. */
+  private identityEdits = 0;
+  private settingsRefresh: Promise<void> | null = null;
   /** Last vacation state seen. Stalwart reports vacation changes as SieveScript, with the same state string. */
   private vacationState: string | null = null;
   /** Visible ranges per query, for refetching after cannotCalculateChanges. */
@@ -724,17 +727,24 @@ export class MailEngine {
   }
 
   async refreshIdentities(): Promise<void> {
+    const edits = this.identityEdits;
     const b = this.client.batch();
     const call = b.call('Identity/get', { accountId: this.accountId, ids: null });
     const r = (await this.client.send(b)).get(call);
+    // An edit made while this was in flight is newer than the answer; the next push brings in anything else.
+    if (edits !== this.identityEdits) return;
     this.identityState = r.state;
     this.set('identities', r.list);
     this.persistSoon();
   }
 
   /** Identities and the vacation response, after a warm start or a reconnect. */
-  async refreshSettings(): Promise<void> {
-    await Promise.all([this.refreshIdentities(), this.loadVacation()]);
+  refreshSettings(): Promise<void> {
+    // The warm start and the push connection both ask; they share one round trip.
+    this.settingsRefresh ??= Promise.all([this.refreshIdentities(), this.loadVacation()])
+      .then(() => undefined)
+      .finally(() => { this.settingsRefresh = null; });
+    return this.settingsRefresh;
   }
 
   async createIdentity(v: IdentityValue): Promise<Id> {
@@ -745,6 +755,7 @@ export class MailEngine {
     if (err) throw failure(err);
     const id = r.created!.c!.id;
     this.identityState = r.newState;
+    this.identityEdits++;
     this.set('identities', (list) => [...list, { id, ...v, email: v.email.toLowerCase(), replyTo: null, bcc: null, mayDelete: true }]);
     this.persistSoon();
     return id;
@@ -758,6 +769,7 @@ export class MailEngine {
     const err = r.notUpdated?.[id];
     if (err) throw failure(err);
     this.identityState = r.newState;
+    this.identityEdits++;
     this.set('identities', (i) => i.id === id, patch);
     this.persistSoon();
   }
@@ -771,6 +783,7 @@ export class MailEngine {
     const err = r.notDestroyed?.[id];
     if (err && err.type !== 'notFound') throw failure(err);
     this.identityState = r.newState;
+    this.identityEdits++;
     this.set('identities', (list) => list.filter((i) => i.id !== id));
     this.persistSoon();
   }

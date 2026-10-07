@@ -571,6 +571,13 @@ describe('MailEngine settings', () => {
     expect(engine.state.identities[1]).toMatchObject({ ...value, mayDelete: true, replyTo: null, bcc: null });
   });
 
+  it('shares one round trip between overlapping settings refreshes', async () => {
+    server.calls = [];
+    await Promise.all([engine.refreshSettings(), engine.refreshSettings()]);
+    expect(server.calls.filter((c) => c === 'Identity/get')).toHaveLength(1);
+    expect(server.calls.filter((c) => c === 'VacationResponse/get')).toHaveLength(1);
+  });
+
   it('throws a SetFailure carrying the type and property', async () => {
     const err = await engine.createIdentity({ ...value, email: 'bob@example.test' }).catch((e) => e);
     expect(err).toBeInstanceOf(SetFailure);

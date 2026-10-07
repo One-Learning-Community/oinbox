@@ -144,7 +144,7 @@ export function buildEmailCreate(draft: Draft, from: EmailAddress, draftsId: str
     htmlToText(draft.bodyHtml).trimEnd(),
     draft.signatureHtml ? `-- \n${htmlToText(draft.signatureHtml).trimEnd()}` : '',
     draft.quoteHtml ? htmlToText(draft.quoteHtml).trim() : '',
-  ].filter(Boolean).join('\n') + '\n';
+  ].filter(Boolean).join('\n\n') + '\n';
   return {
     mailboxIds: { [draftsId]: true },
     keywords: { $draft: true, $seen: true },

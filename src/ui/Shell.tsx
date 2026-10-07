@@ -3,6 +3,8 @@ import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, Show,
 import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
 import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
+import { bannerText, vacationStatus } from '../mail/settings';
+import { now } from './clock';
 import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
@@ -22,6 +24,7 @@ const ROLE_ICONS: Record<string, IconName> = {
 
 export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; confirmHost: () => JSX.Element }) {
   const app = useApp();
+  const vacationBanner = createMemo(() => bannerText(vacationStatus(app.engine.state.vacation, now())));
   const [navOpen, setNavOpen] = createSignal(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -72,7 +75,12 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         </button>
         <Sidebar current={location.pathname} />
       </nav>
-      <main class="main">{props.children}</main>
+      <main class="main">
+        <Show when={vacationBanner()}>
+          {(text) => <p class="vacation-banner">{text()} <A href="/settings">Settings</A></p>}
+        </Show>
+        {props.children}
+      </main>
       <props.toasts />
       <Show when={app.composers.list().length}>
         <ComposeDock />

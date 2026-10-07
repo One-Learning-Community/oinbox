@@ -111,7 +111,7 @@ describe('the signature in a saved draft', () => {
     const e = buildEmailCreate({ ...draft, signatureHtml: '<b>Alice</b>', quoteHtml: '<br><div class="gmail_quote">Old</div>' }, { name: 'A', email: 'alice@example.test' }, 'D');
     const { html, text } = parts(e);
     expect(html).toBe('<p>Hello</p><div class="oinbox-signature"><b>Alice</b></div><br><div class="gmail_quote">Old</div>');
-    expect(text).toBe('Hello\n-- \nAlice\nOld\n');
+    expect(text).toBe('Hello\n\n-- \nAlice\n\nOld\n');
   });
 
   it('adds nothing without a signature', () => {

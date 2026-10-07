@@ -5,6 +5,7 @@ import { createEffect, createMemo, createSignal, on, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { FieldError, type Field } from '../app/settings';
 import { browserTimeZone, describeVacation, LIMITS, localDay, utf8Length, vacationInput, vacationStatus, type VacationInput } from '../mail/settings';
+import { now } from './clock';
 
 const sameInput = (a: VacationInput, b: VacationInput) => JSON.stringify(a) === JSON.stringify(b);
 const dayLabel = (day: string) =>
@@ -58,7 +59,7 @@ export function VacationForm() {
     }
   };
 
-  const status = createMemo(() => describeVacation(vacationStatus(engine.state.vacation, new Date())));
+  const status = createMemo(() => describeVacation(vacationStatus(engine.state.vacation, now())));
   const bytes = () => utf8Length(form().message);
   const today = () => localDay(new Date(), browserTimeZone());
   const err = (f: Field) => errors()[f] ?? '';

@@ -73,4 +73,16 @@ describe('composer signatures', () => {
     c.setIdentityId('id2');
     expect(c.draft().signatureHtml).toBe('');
   });
+
+  it('adds a signature to a reopened draft from an identity that has none when From changes to one that does', async () => {
+    await engine.updateIdentity('id2', { name: 'Support', htmlSignature: '', textSignature: '' });
+    composers.openDraft({
+      id: 'd3', threadId: 't9', from: [{ name: null, email: 'support@example.test' }], to: [], receivedAt: '2026-09-01T10:00:00Z',
+      htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+      bodyValues: { h: { value: '<p>Plain</p>', isEncodingProblem: false, isTruncated: false } },
+    });
+    const c = composers.list().at(-1)!;
+    c.setIdentityId('id1');
+    expect(c.draft().signatureHtml).toBe('<b>Alice</b>');
+  });
 });

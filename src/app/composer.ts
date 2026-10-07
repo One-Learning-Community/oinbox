@@ -81,7 +81,7 @@ export function createComposers(
       restore?.draft ?? { ...initialDraft(mode, original, engine.myAddresses()), signatureHtml: signatureOf(startIdentity) },
     );
     const [identityId, setIdentityId] = createSignal<Id | null>(startIdentity);
-    let signatureMode: SignatureMode = restore?.signatureMode ?? 'auto';
+    const [signatureMode, setSignatureMode] = createSignal<SignatureMode>(restore?.signatureMode ?? 'auto');
     const [status, setStatus] = createSignal<SaveStatus>(restore ? 'saved' : 'idle');
     const [uploading, setUploading] = createSignal(0);
     const [draftId, setDraftId] = createSignal<Id | null>(restore?.draftId ?? null);
@@ -129,16 +129,16 @@ export function createComposers(
       identityId,
       setIdentityId: (v) => {
         setIdentityId(v);
-        if (signatureMode === 'auto') setDraft({ ...draft(), signatureHtml: signatureOf(v) });
+        if (signatureMode() === 'auto') setDraft({ ...draft(), signatureHtml: signatureOf(v) });
         scheduleSave();
       },
       removeSignature: () => {
-        signatureMode = 'removed';
+        setSignatureMode('removed');
         setDraft({ ...draft(), signatureHtml: '' });
         scheduleSave();
       },
       inlineSignature: (bodyHtml) => {
-        signatureMode = 'inline';
+        setSignatureMode('inline');
         setDraft({ ...draft(), bodyHtml, signatureHtml: '' });
         scheduleSave();
       },
@@ -166,7 +166,7 @@ export function createComposers(
       draftId,
       save,
       cancelAutosave: () => clearTimeout(timer),
-      signatureMode: () => signatureMode,
+      signatureMode,
     };
     return composer;
   };
@@ -282,7 +282,9 @@ export function createComposers(
       attachments: (email.attachments ?? []).filter((a) => a.blobId).map((a) => ({ blobId: a.blobId!, name: a.name ?? 'attachment', type: a.type, size: a.size })),
     };
     const identity = identities().find((i) => i.email.toLowerCase() === email.from?.[0]?.email.toLowerCase());
-    const c = create('new', null, { draft, draftId: email.id, identityId: identity?.id ?? defaultIdentity(null), signatureMode: parts.signatureHtml ? 'auto' : 'removed' });
+    const identityId = identity?.id ?? defaultIdentity(null);
+    // Without a block there is nothing to say whether it was removed or never there: an identity with a signature means removed.
+    const c = create('new', null, { draft, draftId: email.id, identityId, signatureMode: parts.signatureHtml || !signatureOf(identityId) ? 'auto' : 'removed' });
     setList([...list(), c]);
   };
 
