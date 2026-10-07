@@ -112,3 +112,24 @@ describe('describeWhen with a zone or start Intl rejects', () => {
     expect(describeWhen({ start: 'garbage', timeZone: 'UTC', duration: 'PT1H' }, 'UTC')).toBe('');
   });
 });
+
+describe('describeWhen details', () => {
+  const flat = (s: string) => s.replace(/[\u202f\u2009\u00a0]/g, ' ');
+  it('names the viewer day when it differs from the event day', () => {
+    const s = describeWhen({ start: '2026-12-08T01:00:00', timeZone: 'Europe/London', duration: 'PT1H' }, 'America/New_York');
+    expect(flat(s)).toBe('Tue 8 Dec, 01:00–02:00 (Europe/London) · Mon 7 Dec 8:00–9:00 PM your time');
+  });
+  it('shows the end day of an overnight or multi-day event', () => {
+    expect(describeWhen({ start: '2026-12-08T23:00:00', timeZone: 'Europe/London', duration: 'PT2H' }, 'Europe/London')).toBe('Tue 8 Dec, 23:00 – Wed 9 Dec, 01:00 (Europe/London)');
+    expect(describeWhen({ start: '2026-12-08T10:00:00', timeZone: 'Europe/London', duration: 'P2D' }, 'Europe/London')).toBe('Tue 8 Dec, 10:00 – Thu 10 Dec, 10:00 (Europe/London)');
+  });
+  it('shows only the start of an event without a duration', () => {
+    expect(describeWhen({ start: '2026-12-08T10:00:00', timeZone: 'Europe/London' }, 'Europe/London')).toBe('Tue 8 Dec, 10:00 (Europe/London)');
+  });
+  it('moves a start inside the spring-forward gap to the hour after it', () => {
+    expect(describeWhen({ start: '2026-03-08T02:30:00', timeZone: 'America/New_York', duration: 'PT1H' }, 'America/New_York')).toBe('Sun 8 Mar, 03:30–04:30 (America/New_York)');
+  });
+  it('treats zone names that mean the same time as the same zone', () => {
+    expect(describeWhen({ start: '2026-12-08T10:00:00', timeZone: 'Etc/UTC', duration: 'PT1H' }, 'UTC')).toBe('Tue 8 Dec, 10:00–11:00 (Etc/UTC)');
+  });
+});

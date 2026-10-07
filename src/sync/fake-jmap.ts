@@ -32,6 +32,8 @@ export class FakeJmap {
   calendarEventState = 0;
   /** Parsed invitations served by CalendarEvent/parse, keyed by blob id. */
   parsedBlobs = new Map<string, CalendarEvent[]>();
+  /** Whether the session advertises the calendars:parse capability. */
+  parseSupported = true;
   failCalendarQueries = false;
   /** The arguments of every CalendarEvent/set received. */
   calendarSets: Record<string, unknown>[] = [];
@@ -200,9 +202,9 @@ export class FakeJmap {
         const f = (args.filter ?? {}) as { after?: string; before?: string };
         const inRange = (o: CalendarEvent) => (!f.after || o.utcStart! >= f.after) && (!f.before || o.utcStart! < f.before);
         if (args.expandRecurrences !== true) {
-          // Not expanded: base events, matched on their (zone-naive) start.
+          // Not expanded: base events, matched on their zone-naive start (the real server compares UTC instants and handles recurrence).
           const inWindow = (e: CalendarEvent) => (!f.after || `${e.start}Z` >= f.after) && (!f.before || `${e.start}Z` < f.before);
-          const ids = [...this.baseEvents.values()].filter(inWindow).map((e) => e.id).slice(0, (args.limit as number | undefined) ?? Infinity);
+          const ids = [...this.baseEvents.values()].filter(inWindow).map((e) => e.id).slice((args.position as number | undefined) ?? 0).slice(0, (args.limit as number | undefined) ?? Infinity);
           return [name, { accountId: 'a1', queryState: `ce${this.calendarEventState}`, canCalculateChanges: false, position: 0, ids }];
         }
         return [name, { accountId: 'a1', queryState: `ce${this.calendarEventState}`, canCalculateChanges: false, position: 0, ids: this.occurrences.filter(inRange).map((o) => o.id) }];
@@ -525,8 +527,11 @@ export class FakeJmap {
   }
 
   client(): JmapClient {
+    const fake = this;
     const session: Session = {
-      capabilities: { [CALENDARS_PARSE]: {} },
+      get capabilities() {
+        return fake.parseSupported ? { [CALENDARS_PARSE]: {} } : {};
+      },
       accounts: { a1: { name: 'alice', isPersonal: true, isReadOnly: false, accountCapabilities: this.vacationSupported ? { [VACATION]: {} } : {} } },
       primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',

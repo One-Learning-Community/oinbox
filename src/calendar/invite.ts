@@ -45,19 +45,25 @@ export function rsvpPatch(participantId: string, status: 'accepted' | 'tentative
 
 const DAY_MS = 86_400_000;
 
-/** The UTC instant at which a wall-clock time ("YYYY-MM-DDTHH:mm:ss") occurs in an IANA zone. */
+/** The wall clock of an instant in a zone, "YYYY-MM-DDTHH:mm:ss". */
+function wallClock(t: number, zone: string): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(new Date(t)).map((x) => [x.type, x.value]),
+  );
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+}
+
+/**
+ * The UTC instant at which a wall-clock time ("YYYY-MM-DDTHH:mm:ss") occurs in an IANA zone.
+ * A time inside a spring-forward gap uses the offset from before the change (RFC 5545), so it lands an hour later.
+ */
 function zonedInstant(local: string, zone: string): number {
   const asUtc = Date.parse(`${local}Z`);
-  const offsetAt = (t: number) => {
-    const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-CA', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        .formatToParts(new Date(t)).map((x) => [x.type, x.value]),
-    );
-    return Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`) - t;
-  };
-  // Two passes settle across a DST boundary.
+  const offsetAt = (t: number) => Date.parse(`${wallClock(t, zone)}Z`) - t;
   const first = asUtc - offsetAt(asUtc);
-  return asUtc - offsetAt(first);
+  const second = asUtc - offsetAt(first);
+  return wallClock(second, zone) === local ? second : first;
 }
 
 const dayText = (d: Date, zone: string) => {
@@ -67,17 +73,32 @@ const dayText = (d: Date, zone: string) => {
 
 const clock24 = (d: Date, zone: string) => new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
 
-function clock12(a: Date, b: Date, zone: string): string {
-  const part = (d: Date) => {
-    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(d).map((x) => [x.type, x.value]));
-    return { time: `${p.hour}:${p.minute}`, period: String(p.dayPeriod).toUpperCase() };
-  };
-  const s = part(a);
-  const e = part(b);
-  return s.period === e.period ? `${s.time}–${e.time} ${e.period}` : `${s.time} ${s.period}–${e.time} ${e.period}`;
+function clock12(d: Date, zone: string): { time: string; period: string } {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(d).map((x) => [x.type, x.value]));
+  return { time: `${p.hour}:${p.minute}`, period: String(p.dayPeriod).toUpperCase() };
 }
 
-/** "Tue 8 Dec, 10:00–11:00 (Europe/London) · 5:00–6:00 AM your time"; the second part only when the zones differ. */
+/** "Tue 8 Dec, 10:00–11:00", "Tue 8 Dec, 23:00 – Wed 9 Dec, 01:00", or just the start when the event has no length. */
+function ownText(start: Date, end: Date, zone: string): string {
+  const sd = dayText(start, zone);
+  if (end.getTime() === start.getTime()) return `${sd}, ${clock24(start, zone)}`;
+  const ed = dayText(end, zone);
+  return sd === ed ? `${sd}, ${clock24(start, zone)}–${clock24(end, zone)}` : `${sd}, ${clock24(start, zone)} – ${ed}, ${clock24(end, zone)}`;
+}
+
+/** The same range in the viewer's zone, 12-hour, with the day only when it isn't the event's own start day. */
+function viewerText(start: Date, end: Date, zone: string, ownDay: string): string {
+  const sd = dayText(start, zone);
+  const prefix = sd === ownDay ? '' : `${sd} `;
+  const s = clock12(start, zone);
+  if (end.getTime() === start.getTime()) return `${prefix}${s.time} ${s.period}`;
+  const e = clock12(end, zone);
+  const ed = dayText(end, zone);
+  if (sd !== ed) return `${sd} ${s.time} ${s.period} – ${ed} ${e.time} ${e.period}`;
+  return `${prefix}${s.period === e.period ? `${s.time}–${e.time} ${e.period}` : `${s.time} ${s.period}–${e.time} ${e.period}`}`;
+}
+
+/** "Tue 8 Dec, 10:00–11:00 (Europe/London) · 5:00–6:00 AM your time"; the second part only when the viewer's clock differs. */
 export function describeWhen(event: Pick<CalendarEvent, 'start' | 'timeZone' | 'duration' | 'showWithoutTime'>, viewerZone: string): string {
   try {
     return describe(event, viewerZone);
@@ -102,8 +123,10 @@ function describe(event: Pick<CalendarEvent, 'start' | 'timeZone' | 'duration' |
   const zone = event.timeZone || viewerZone;
   const start = new Date(zonedInstant(event.start, zone));
   const end = new Date(start.getTime() + days * DAY_MS + ms);
-  const own = `${dayText(start, zone)}, ${clock24(start, zone)}–${clock24(end, zone)}`;
+  const own = ownText(start, end, zone);
   if (!event.timeZone) return own;
   const base = `${own} (${event.timeZone})`;
-  return event.timeZone === viewerZone ? base : `${base} · ${clock12(start, end, viewerZone)} your time`;
+  // Zone names that mean the same clock (Etc/UTC and UTC) read the same in both zones.
+  if (ownText(start, end, viewerZone) === own) return base;
+  return `${base} · ${viewerText(start, end, viewerZone, dayText(start, zone))} your time`;
 }

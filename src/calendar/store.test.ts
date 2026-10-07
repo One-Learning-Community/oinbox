@@ -257,6 +257,44 @@ describe('invitations', () => {
     expect(await store.rsvp('b1', 'a', 'accepted')).toEqual({ ok: true });
     expect(server.calendarSets.at(-1)).toMatchObject({ sendSchedulingMessages: true, update: { b1: { 'participants/a/participationStatus': 'accepted' } } });
   });
+  it('parses a blob once; a parsed invitation never changes', async () => {
+    const { server, store } = setup();
+    server.parsedBlobs.set('b', [invite()]);
+    await store.parseInvite('b');
+    await store.parseInvite('b');
+    expect(server.calls.filter((c) => c === 'CalendarEvent/parse')).toHaveLength(1);
+  });
+  it('does not cache a failed parse', async () => {
+    const { server, store } = setup();
+    expect(await store.parseInvite('late')).toEqual({ ok: false });
+    server.parsedBlobs.set('late', [invite()]);
+    expect((await store.parseInvite('late')).ok).toBe(true);
+  });
+  it('reads a server without the parse capability as no invitation', async () => {
+    const { server, store } = setup();
+    server.parseSupported = false;
+    server.parsedBlobs.set('b', [invite()]);
+    expect(await store.parseInvite('b')).toEqual({ ok: false });
+    expect(server.calls).not.toContain('CalendarEvent/parse');
+  });
+  it('finds a copy beyond the first page of a scan', async () => {
+    const { server, store } = setup();
+    for (let i = 0; i < 650; i++) server.baseEvents.set(`bulk${i}`, { id: `bulk${i}`, uid: `bulk-uid-${i}`, calendarIds: { c1: true }, title: 'x', start: '2030-01-01T09:00:00', timeZone: 'UTC' });
+    server.baseEvents.set('late', { id: 'late', uid: 'u-late', calendarIds: { c1: true }, title: 'L', start: '2031-01-01T09:00:00', timeZone: 'UTC' });
+    expect((await store.findByUid('u-late'))?.id).toBe('late');
+  });
+  it('refuses a second answer for the same event while one is in flight', async () => {
+    const { server, store } = setup();
+    let release!: () => void;
+    server.holds.push(new Promise<void>((r) => (release = r)));
+    const first = store.rsvp('b1', 'a', 'accepted');
+    expect(store.answering().has('b1')).toBe(true);
+    expect(await store.rsvp('b1', 'a', 'declined')).toEqual({ ok: false, error: 'A reply is already being sent.' });
+    release();
+    await first;
+    expect(store.answering().has('b1')).toBe(false);
+    expect(server.calendarSets).toHaveLength(1);
+  });
   it('reports a refused answer', async () => {
     const { server, store } = setup();
     expect(await store.rsvp('gone', 'a', 'declined')).toEqual({ ok: false, error: 'That event no longer exists.' });

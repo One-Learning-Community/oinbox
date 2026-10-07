@@ -2,6 +2,7 @@ import { createMemo, createResource, createSignal, For, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { STATUS_LABELS } from '../calendar/format';
 import { canRsvp, describeWhen, findInvitePart, inviteState, myParticipant, type InviteState } from '../calendar/invite';
+import { UnauthorizedError } from '../jmap/client';
 import type { CalendarEvent } from '../jmap/types';
 import type { EmailRec } from '../sync/engine';
 
@@ -93,7 +94,9 @@ export function InviteCard(props: { email: EmailRec }) {
         const parsed = await calendar.parseInvite(blobId);
         if (!parsed.ok || !parsed.event.uid || !['request', 'cancel'].includes(parsed.event.method ?? '')) return null;
         return { parsed: parsed.event, copy: await calendar.findByUid(parsed.event.uid, parsed.event.start) };
-      } catch {
+      } catch (e) {
+        // Sign-out is handled where unhandled rejections land (index.tsx); the card just goes away.
+        if (e instanceof UnauthorizedError) void Promise.reject(e);
         return null;
       }
     },
@@ -113,6 +116,7 @@ export function InviteCard(props: { email: EmailRec }) {
     if (state.kind === 'missing') note = "This event isn't in your calendar";
     else if (state.kind === 'active' && !mine) note = "You aren't listed as a guest";
     const canAnswer = canRsvp(d.copy, mine, calendar.state.calendars);
+    if (state.kind === 'active' && mine && !canAnswer) note = d.copy?.isOrigin ? "You're the organizer of this event" : "This calendar doesn't let you answer invitations";
     return {
       d, mine, state, note, canAnswer, organizer,
       props: {
@@ -141,7 +145,7 @@ export function InviteCard(props: { email: EmailRec }) {
   return (
     <Show when={view()}>
       {(v) => (
-        <InviteCardView {...v().props} organizer={v().organizer} state={v().state} note={v().note} canAnswer={v().canAnswer} busy={busy()} onAnswer={(s) => void answer(s)} />
+        <InviteCardView {...v().props} organizer={v().organizer} state={v().state} note={v().note} canAnswer={v().canAnswer} busy={busy() || (v().d.copy ? calendar.answering().has(v().d.copy!.id) : false)} onAnswer={(s) => void answer(s)} />
       )}
     </Show>
   );

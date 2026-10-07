@@ -21,8 +21,9 @@ export type WriteResult = { ok: true } | { ok: false; error: string };
 const CACHE_SIZE = 8;
 
 const DAY_MS = 86_400_000;
-/** The most events a by-uid scan looks at. */
-const SCAN_LIMIT = 2000;
+/** A by-uid scan reads pages of this many events, up to SCAN_LIMIT in all. */
+const SCAN_PAGE = 500;
+const SCAN_LIMIT = 5000;
 const LOOKUP_PROPS = [
   'id', 'uid', 'sequence', 'status', 'calendarIds', 'title', 'description', 'start', 'timeZone', 'duration',
   'showWithoutTime', 'locations', 'participants', 'organizerCalendarAddress', 'recurrenceRule', 'isOrigin',
@@ -44,6 +45,10 @@ export class CalendarStore {
   private calendarState: string | null = null;
   private failing = false;
   private byUid = new Map<string, Promise<CalendarEvent | null>>();
+  private parsed = new Map<Id, CalendarEvent>();
+  private readonly answeringSignal = createSignal<ReadonlySet<Id>>(new Set());
+  /** Events with a reply in flight. */
+  readonly answering: Accessor<ReadonlySet<Id>> = this.answeringSignal[0];
   private readonly versionSignal = createSignal(0);
   /** Bumps on every refresh, so UI holding a looked-up event can re-read it. */
   readonly version: Accessor<number> = this.versionSignal[0];
@@ -156,12 +161,16 @@ export class CalendarStore {
   async parseInvite(blobId: Id): Promise<{ ok: true; event: CalendarEvent } | { ok: false }> {
     const accountId = this.accountId;
     if (!accountId || !this.client.session.capabilities[CALENDARS_PARSE]) return { ok: false };
+    const known = this.parsed.get(blobId);
+    if (known) return { ok: true, event: known };
     try {
       const b = this.client.batch();
       const call = b.call('CalendarEvent/parse', { accountId, blobIds: [blobId] });
       const res = (await this.client.send(b, [CORE, CALENDARS, CALENDARS_PARSE])).get(call);
       const event = res.parsed?.[blobId]?.[0];
-      return event ? { ok: true, event } : { ok: false };
+      if (!event) return { ok: false };
+      this.parsed.set(blobId, event); // a blob never changes
+      return { ok: true, event };
     } catch (e) {
       if (e instanceof UnauthorizedError) throw e;
       return { ok: false };
@@ -186,13 +195,16 @@ export class CalendarStore {
   private async lookup(uid: string, near?: string): Promise<CalendarEvent | null> {
     const accountId = this.accountId;
     if (!accountId) return null;
-    const find = async (filter?: { after: string; before: string }) => {
+    const find = async (filter?: { after: string; before: string }, position = 0): Promise<CalendarEvent | null> => {
       const b = this.client.batch();
-      const q = b.call('CalendarEvent/query', { accountId, ...(filter ? { filter } : { limit: SCAN_LIMIT }) });
+      const q = b.call('CalendarEvent/query', { accountId, ...(filter ? { filter } : { limit: SCAN_PAGE, position }) });
       const g = b.call('CalendarEvent/get', { accountId, '#ids': q.ref('/ids'), properties: LOOKUP_PROPS });
       const res = await this.client.send(b, [CORE, CALENDARS]);
-      res.get(q); // surfaces a failed query instead of a dangling back-reference
-      return res.get(g).list.find((e) => e.uid === uid) ?? null;
+      const page = res.get(q); // surfaces a failed query instead of a dangling back-reference
+      const found = res.get(g).list.find((e) => e.uid === uid);
+      if (found) return found;
+      // A scan reads on while pages come back full.
+      return !filter && page.ids.length >= SCAN_PAGE && position + SCAN_PAGE < SCAN_LIMIT ? find(undefined, position + SCAN_PAGE) : null;
     };
     const t = near ? Date.parse(`${near}Z`) : NaN;
     if (!Number.isNaN(t)) {
@@ -203,8 +215,21 @@ export class CalendarStore {
   }
 
   /** Answer an invitation (the whole series). Always emails the organizer. */
-  rsvp(eventId: Id, participantId: string, status: 'accepted' | 'tentative' | 'declined'): Promise<WriteResult> {
-    return this.updateEvent(eventId, rsvpPatch(participantId, status), true);
+  async rsvp(eventId: Id, participantId: string, status: 'accepted' | 'tentative' | 'declined'): Promise<WriteResult> {
+    if (this.answeringSignal[0]().has(eventId)) return { ok: false, error: 'A reply is already being sent.' };
+    const mark = (on: boolean) =>
+      this.answeringSignal[1]((cur) => {
+        const next = new Set(cur);
+        if (on) next.add(eventId);
+        else next.delete(eventId);
+        return next;
+      });
+    mark(true);
+    try {
+      return await this.updateEvent(eventId, rsvpPatch(participantId, status), true);
+    } finally {
+      mark(false);
+    }
   }
 
   toggleHidden(id: Id): void {
