@@ -52,7 +52,9 @@ test('the switcher lists the shared mailbox, and switching shows its inbox', asy
   // And back, by the browser's own button.
   await page.goBack();
   await expect(switcher(page)).toContainText('You');
-  await expect(rows(page).filter({ hasText: 'Q3 planning offsite' })).toBeVisible();
+  // Her own inbox again (which seeded thread is on screen depends on what other specs left in it).
+  await expect(rows(page).first()).toBeVisible();
+  await expect(rows(page).filter({ hasText: "Can't reset my password" })).toHaveCount(0);
   await expect(page.locator('.sidebar').getByRole('link', { name: 'Calendar' })).toBeVisible();
 });
 
