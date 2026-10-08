@@ -354,6 +354,8 @@ a { color: var(--accent); }
 .account-address { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .account-draft { color: var(--text-2); font-size: 12px; }
 @media (pointer: coarse) { .account-button, .account-item { min-height: 44px; } }
+/* A height, not a min-height: WebKit sizes a native select from its line and ignores the minimum. */
+@media (pointer: coarse) { .compose-field select { height: 44px; } }
 @media (max-width: 800px) {
   .compose-dock { inset: 0; right: 0; }
   .compose-dock .composer { width: 100%; height: 100%; max-height: none; border-radius: 0; }

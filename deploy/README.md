@@ -55,6 +55,7 @@ Caddy serves `/srv/oinbox/dist` and falls back to `index.html` for unknown paths
 | SMTP for tests | `localhost:2525` (plain MTA, no auth, local delivery to `@example.test`) |
 | Stalwart WebUI | http://localhost:8080/admin/ |
 | Users | `alice@example.test`, `bob@example.test`, and `carol@example.test` (empty; see "Large mailbox"), password `oinbox-dev-pass` |
+| Shared mailbox | `support@example.test`, a group with Alice and Bob as members and three seeded messages. It has no password: members open it from the switcher above Compose |
 | Admin | `admin` / `oinbox-admin-pass` (`STALWART_RECOVERY_ADMIN`, for dev only) |
 | OAuth client | `client_id=oinbox`, public (no secret), PKCE S256 required. Redirect URIs: `http://localhost:8080/auth/callback` and `http://localhost:5173/auth/callback` |
 

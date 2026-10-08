@@ -12,7 +12,9 @@ export const recipientInput = (c: Locator, field: 'To' | 'Cc' | 'Bcc' = 'To') =>
 export const recipientChips = (c: Locator, field: 'To' | 'Cc' | 'Bcc' = 'To') =>
   c.getByRole('group', { name: field, exact: true }).locator('.rozie-combobox-chip');
 /** The visible suggestion rows (only the field being typed in shows a list). */
-export const suggestions = (c: Locator) => c.getByRole('option');
+// By attribute, not by role: the From picker's native <option>s have the role too (alice has two
+// identities, her own and support@, so the picker is shown).
+export const suggestions = (c: Locator) => c.locator('[role="option"]');
 export const subjectInput = (c: Locator) => c.getByLabel('Subject');
 export const bodyEditor = (c: Locator) => c.locator('[contenteditable="true"]');
 export const saveStatus = (c: Locator) => c.locator('.compose-status');

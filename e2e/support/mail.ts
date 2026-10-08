@@ -230,3 +230,12 @@ export async function deliverToAlice(m: Omit<OutgoingMail, 'to'>): Promise<Email
     `delivery of "${m.subject}"`,
   );
 }
+
+/** The id of a shared account (a Stalwart group) as `user` sees it in their session. */
+export async function sharedAccountId(address = 'support@example.test', user = ALICE): Promise<string> {
+  const res = await fetch(`${BASE}/jmap/session`, { headers: { authorization: `Basic ${Buffer.from(`${user}:${PASSWORD}`).toString('base64')}` } });
+  const session = (await res.json()) as { accounts: Record<string, { name: string }> };
+  const id = Object.entries(session.accounts).find(([, a]) => a.name === address)?.[0];
+  if (!id) throw new Error(`${user} has no shared account ${address}`);
+  return id;
+}

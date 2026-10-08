@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { AccountSpace, Spaces } from '../app/accounts';
 
 /** Which mailbox is open, and the way to another: the user's own and the shared ones they belong to. */
@@ -15,6 +15,12 @@ export function AccountSwitcher(props: { spaces: Spaces; onSwitch: (space: Accou
     setOpen(false);
     button.focus();
   };
+  const outside = (e: PointerEvent) => {
+    const at = e.target as Node;
+    if (open() && !menu?.contains(at) && !button.contains(at)) setOpen(false);
+  };
+  document.addEventListener('pointerdown', outside);
+  onCleanup(() => document.removeEventListener('pointerdown', outside));
   const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])];
   const move = (by: number) => {
     const all = items();
@@ -63,7 +69,10 @@ export function AccountSwitcher(props: { spaces: Spaces; onSwitch: (space: Accou
               }
             }}
             onFocusOut={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null) && e.relatedTarget !== button) setOpen(false);
+              // Focus going nowhere is not leaving: Safari does not focus a button that is pressed,
+              // so closing here would take the menu away before the click on one of its items.
+              const to = e.relatedTarget as Node | null;
+              if (to && !e.currentTarget.contains(to) && to !== button) setOpen(false);
             }}
           >
             <For each={props.spaces.list()}>

@@ -41,6 +41,15 @@ export function accountForPath(pathname: string, accounts: AccountInfo[]): Accou
   return accounts.find((a) => a.base && (pathname === a.base || pathname.startsWith(`${a.base}/`))) ?? accounts[0]!;
 }
 
+/**
+ * Where to go instead of `pathname`, or null when it is fine: a /shared/ address for an account the
+ * user can no longer open (left the group, an old bookmark) has no route in their own mailbox.
+ */
+export function homePath(pathname: string, accounts: AccountInfo[]): string | null {
+  const shared = pathname === '/shared' || pathname.startsWith('/shared/');
+  return shared && !accountForPath(pathname, accounts).base ? '/inbox' : null;
+}
+
 export function withinAccount(pathname: string, account: AccountInfo): string {
   if (!account.base) return pathname;
   return pathname.slice(account.base.length) || '/';

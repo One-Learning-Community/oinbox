@@ -16,6 +16,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Labels**: create, rename, nest and delete; label from the list or an open thread.
 - **Keyboard**: Gmail's shortcuts (`j k o u x e # ! s I U v l c r a f / g+i ?`).
 - **Settings**: identities and signatures, vacation responder, notifications.
+- **Shared mailboxes**: a Stalwart group you belong to (`support@`, say) appears in a switcher above Compose. Work its inbox and send from it; unread counts for every mailbox are always in view.
 - **Notifications**: the unread count in the tab title, and desktop notifications for new Inbox mail while oinbox is open in a tab you're not looking at (switched on in Settings).
 - **Branding**: your own name and logo in place of "oinbox", set by the operator.
 - **Calendar**: month, week and day views of your Stalwart calendars; create, move, resize, rename and delete single events; invitations shown in the message with Accept, Maybe and Decline, and updates and cancellations followed.
@@ -24,7 +25,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 
 ### Not in v1
 
-Contacts and an address book, a filter (Sieve) editor, several accounts at once, offline use, PGP and S/MIME, editing recurring events or answering one occurrence of a series, free/busy, an installable app, and translations.
+Contacts and an address book, a filter (Sieve) editor, accounts on more than one server, a combined inbox across mailboxes, offline use, PGP and S/MIME, editing recurring events or answering one occurrence of a series, free/busy, an installable app, and translations.
 
 ## Install
 

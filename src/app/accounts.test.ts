@@ -1,7 +1,7 @@
 import { createRoot } from 'solid-js';
 import { describe, expect, it } from 'vitest';
 import type { Session } from '../jmap/types';
-import { accountForPath, createSpaces, mailAccounts, storageKey, withinAccount } from './accounts';
+import { accountForPath, createSpaces, homePath, mailAccounts, storageKey, withinAccount } from './accounts';
 
 const MAIL = 'urn:ietf:params:jmap:mail';
 const session = (accounts: Record<string, { name: string; isPersonal: boolean; mail?: boolean }>, primary = 'b') =>
@@ -94,5 +94,19 @@ describe('storageKey', () => {
     const [own, shared] = aliceAndSupport();
     expect(storageKey('alice@example.test', own!)).toBe('alice@example.test:b');
     expect(storageKey('alice@example.test', shared!)).toBe('alice@example.test:s');
+  });
+});
+
+describe('homePath', () => {
+  const list = aliceAndSupport();
+  it('leaves an address alone when its account can be opened', () => {
+    expect(homePath('/shared/s/inbox/t/t1', list)).toBeNull();
+    expect(homePath('/inbox', list)).toBeNull();
+    expect(homePath('/label/shared', list)).toBeNull();
+  });
+  it("sends a shared address whose account is gone to the user's own inbox", () => {
+    expect(homePath('/shared/gone/inbox/t/t1', list)).toBe('/inbox');
+    expect(homePath('/shared/sx', list)).toBe('/inbox');
+    expect(homePath('/shared', list)).toBe('/inbox');
   });
 });

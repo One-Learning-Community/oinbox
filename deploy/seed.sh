@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Idempotent bootstrap for the oinbox dev stack.
-#   1. applies stalwart/plan.ndjson (domain, OAuth clients, Meilisearch FTS, ...) and
-#      creates the users from stalwart/accounts.ndjson only if they don't exist yet
+#   1. applies stalwart/plan.ndjson (domain, OAuth clients, Meilisearch FTS, ...),
+#      creates the users from stalwart/accounts.ndjson only if they don't exist yet, and
+#      the shared mailbox support@ (stalwart/groups.ndjson) with alice and bob as members
 #   2. restarts Stalwart once if the search store had to be switched to Meilisearch
 #   3. delivers the seed mail (skipped if already present)
 # Requires only docker. Run from anywhere after `docker compose up -d`.
@@ -57,6 +58,18 @@ if [ -n "$missing_ops" ]; then
 else
   echo "seed: accounts already exist (left untouched so existing OAuth sessions stay valid)"
 fi
+# The shared mailbox: a group, with alice and bob as members. Membership is set with an update that
+# carries no credentials, so open sessions survive (re-applying an Account would reset its password).
+{ echo '{"@type":"upsert","object":"Domain","matchOn":["name"],"value":{"dom-example-grp":{"name":"example.test"}}}'; cat stalwart/groups.ndjson; } \
+  | cli apply --stdin --quiet
+accounts_json=$(cli query Account --json)
+id_of() { printf '%s\n' "$accounts_json" | grep "\"emailAddress\":\"$1\"" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'; }
+group_id=$(id_of support@example.test)
+for member in alice bob; do
+  cli update Account "$(id_of "$member@example.test")" --json "{\"memberGroupIds\":{\"$group_id\":true}}" >/dev/null
+done
+echo "seed: support@example.test is shared with alice and bob"
+
 # Listener/OAuth/MTA settings are compiled into the running core; rebuild it.
 cli create Action/ReloadSettings >/dev/null
 

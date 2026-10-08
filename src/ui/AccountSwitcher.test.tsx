@@ -62,6 +62,25 @@ describe('AccountSwitcher', () => {
     fireEvent.click(getByRole('button', { name: /^You/ }));
     expect(getAllByRole('menuitemradio')[1]).toHaveAccessibleName('Support, support@example.test, draft open');
   });
+  it('stays open when focus leaves for nowhere, as in Safari, where pressing a button does not focus it', () => {
+    const { getByRole, getAllByRole, switched } = setup([you, support], {});
+    fireEvent.click(getByRole('button', { name: /^You/ }));
+    fireEvent.focusOut(getByRole('menu'), { relatedTarget: null });
+    fireEvent.click(getAllByRole('menuitemradio')[1]!);
+    expect(switched).toEqual(['s']);
+  });
+  it('closes when the pointer goes down outside it', () => {
+    const { getByRole, queryByRole } = setup([you, support], {});
+    fireEvent.click(getByRole('button', { name: /^You/ }));
+    fireEvent.pointerDown(document.body);
+    expect(queryByRole('menu')).toBeNull();
+  });
+  it('closes when focus moves on to something else', () => {
+    const { getByRole, queryByRole } = setup([you, support], {});
+    fireEvent.click(getByRole('button', { name: /^You/ }));
+    fireEvent.focusOut(getByRole('menu'), { relatedTarget: document.body });
+    expect(queryByRole('menu')).toBeNull();
+  });
   it('closes on Escape and gives the focus back to the button', () => {
     const { getByRole, queryByRole } = setup([you, support], {});
     const button = getByRole('button', { name: /^You/ });

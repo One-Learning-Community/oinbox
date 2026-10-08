@@ -26,6 +26,7 @@ PASSWORD = os.environ.get("SEED_PASSWORD", "oinbox-dev-pass")
 DOMAIN = "example.test"
 ALICE = f"alice@{DOMAIN}"
 BOB = f"bob@{DOMAIN}"
+SUPPORT = f"support@{DOMAIN}"
 USING = [
     "urn:ietf:params:jmap:core",
     "urn:ietf:params:jmap:mail",
@@ -237,13 +238,31 @@ def scenario():
     for i, (frm, subj, date, body) in enumerate(singles):
         out.append(("smtp", build(frm, [A], subj, date, f"single-{i}@seed.test", body), [ALICE]))
 
+    # The shared mailbox (a group alice and bob belong to): delivered to the group's Inbox only.
+    shared = [
+        ("Nora Quinn <nora@customer.test>", "Can't reset my password", ago(2, 4),
+         "The reset link says it has expired. Could you send a new one?"),
+        ("Omar Diaz <omar@customer.test>", "Invoice address change", ago(1, 6),
+         "Please update our billing address before the next invoice."),
+        ("Nora Quinn <nora@customer.test>", "Thank you!", ago(0, 3),
+         "The new link worked. Thanks for the quick help."),
+    ]
+    for i, (frm, subj, date, body) in enumerate(shared):
+        out.append(("smtp", build(frm, [SUPPORT], subj, date, f"shared-{i}@seed.test", body), [SUPPORT]))
+
     out.sort(key=lambda x: x[1]["Date"].datetime)
     return out
 
 
 # ---------------------------------------------------------------- main
-def existing_message_ids(user):
-    acct = session(user)
+def shared_accounts(user):
+    req = urllib.request.Request(f"{JMAP_BASE}/jmap/session", headers={"Authorization": _auth(user)})
+    with urllib.request.urlopen(req) as r:
+        return [a for a, v in json.load(r)["accounts"].items() if not v["isPersonal"]]
+
+
+def existing_message_ids(user, acct=None):
+    acct = acct or session(user)
     r = jmap(user, [
         ["Email/query", {"accountId": acct}, "q"],
         ["Email/get", {"accountId": acct, "#ids": {"resultOf": "q", "name": "Email/query", "path": "/ids"},
@@ -257,10 +276,14 @@ def main():
     # Per-message idempotency keyed on Message-ID (note: Stalwart 0.16 returns no results
     # for the Email/query `header` filter, so we compare Email/get messageId instead).
     present = existing_message_ids(ALICE) | existing_message_ids(BOB)
+    for acct in shared_accounts(ALICE):
+        present |= existing_message_ids(ALICE, acct)
 
     boxes = jmap(ALICE, [["Mailbox/get", {"accountId": alice_acct, "properties": ["role"]}, "m"]])["m"]["list"]
     sent_id = next(b["id"] for b in boxes if b["role"] == "sent")
-    identity_id = jmap(ALICE, [["Identity/get", {"accountId": alice_acct}, "i"]])["i"]["list"][0]["id"]
+    # Her own address: as a member of support@ she has an identity for that address too.
+    identity_id = next(i["id"] for i in jmap(ALICE, [["Identity/get", {"accountId": alice_acct}, "i"]])["i"]["list"]
+                       if i["email"] == ALICE)
 
     msgs = scenario()
     n_smtp = n_sent = 0

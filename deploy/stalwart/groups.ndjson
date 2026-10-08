@@ -1,0 +1,1 @@
+{"@type":"upsert","object":"Account","matchOn":["name","domainId"],"value":{"acct-support":{"@type":"Group","name":"support","domainId":"#dom-example-grp","description":"Support (shared mailbox)"}}}

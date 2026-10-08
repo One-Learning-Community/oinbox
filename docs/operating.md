@@ -162,6 +162,17 @@ oinbox has nothing to back up. Back up **Stalwart** (its data volume and setting
 
 In the browser, oinbox keeps: the sign-in tokens, a small cache of the first page of the mailbox for fast start-up, the list of senders whose images you allowed, a few preferences, and, only after being signed out mid-draft, that draft's text for up to seven days. Signing out removes the tokens, the cache and any saved draft.
 
+## Shared mailboxes
+
+A shared mailbox is a Stalwart **group** account. In Stalwart's WebUI, create a group with the address the team shares (`support`, on your mail domain), then add each person to it under their own account's groups. From their next page load, the group appears in oinbox's switcher above Compose.
+
+- Mail to the group's address is delivered to the group's Inbox only, not to each member.
+- A reply written there is sent as the group and filed in the group's Sent, where every member sees it. Drafts, labels, signatures and the vacation responder of the shared mailbox are shared too.
+- Each member's own account also gains the group's address as an identity, for sending as the group from their own mailbox.
+- Nothing stops two people answering the same message; each sees the other's reply arrive in the conversation.
+
+With the command line, membership is `update Account <user id> --json '{"memberGroupIds":{"<group id>":true}}'`. Unlike setting a password, this does not sign the user out.
+
 ## Limits worth knowing
 
 These are Stalwart defaults that users of a web client run into:

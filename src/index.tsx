@@ -2,7 +2,7 @@
 import { Navigate, Route, Router } from '@solidjs/router';
 import { ErrorBoundary, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { accountForPath, createSpaces, mailAccounts, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
+import { accountForPath, createSpaces, homePath, mailAccounts, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createErrorReporter } from './app/errors';
@@ -171,6 +171,12 @@ async function boot() {
   }
 
   const accounts = mailAccounts(client.session);
+  /** A shared address for a mailbox that is no longer the user's goes to their own inbox. */
+  const goHomeIfLost = () => {
+    const home = homePath(location.pathname, accounts);
+    if (home) history.replaceState(null, '', home);
+  };
+  goHomeIfLost();
   const all = createSpaces(
     accounts,
     (info) => {
@@ -345,7 +351,10 @@ async function boot() {
 
   rendered = true;
   // Back and forward can cross from one mailbox to another.
-  window.addEventListener('popstate', () => all.show(accountForPath(location.pathname, accounts).id));
+  window.addEventListener('popstate', () => {
+    goHomeIfLost();
+    all.show(accountForPath(location.pathname, accounts).id);
+  });
   mount(
     () => (
       <ErrorBoundary
