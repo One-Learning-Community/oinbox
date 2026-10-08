@@ -66,3 +66,7 @@ Found while building against Stalwart 0.16.23:
   keeps one disabled throttle instead (`deploy/stalwart/plan.ndjson`).
 - There's no Archive mailbox by default; archiving creates one on first use, since JMAP has no
   "All Mail" and an email must stay in at least one mailbox.
+
+## License
+
+MIT, see [LICENSE](LICENSE). oinbox talks to Stalwart only over JMAP and contains none of its code; Stalwart itself is licensed separately (AGPL-3.0 or the Stalwart Enterprise License).
