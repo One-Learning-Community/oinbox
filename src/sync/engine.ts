@@ -1,6 +1,6 @@
 import { batch as solidBatch } from 'solid-js';
 import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
-import type { BatchResult, JmapClient } from '../jmap/client';
+import type { BatchResult, JmapClient, UploadResult } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
 import { CORE, MAIL, VACATION, type Comparator, type Email, type EmailFilter, type Id, type Identity, type Mailbox, type MailboxRole, type SetError, type StateChange, type Thread, type VacationResponse } from '../jmap/types';
 import type { IdentityValue, VacationPatch } from '../mail/settings';
@@ -143,10 +143,13 @@ export class MailEngine {
   private readonly collapsedQueryChanges: boolean;
   private readonly settleDelayMs: number;
 
+  private readonly ownAccountId: Id | null;
+
   constructor(
     private readonly client: JmapClient,
-    opts: { collapsedQueryChanges?: boolean; settleDelayMs?: number } = {},
+    opts: { accountId?: Id; collapsedQueryChanges?: boolean; settleDelayMs?: number } = {},
   ) {
+    this.ownAccountId = opts.accountId ?? null;
     this.collapsedQueryChanges = opts.collapsedQueryChanges ?? false;
     this.settleDelayMs = opts.settleDelayMs ?? 500;
     const [state, set] = createStore<MailState>({
@@ -166,8 +169,17 @@ export class MailEngine {
     this.set = set;
   }
 
+  /** The account this engine reads and writes: a shared one when given, else the user's own. */
   get accountId(): Id {
-    return this.client.accountId;
+    return this.ownAccountId ?? this.client.accountId;
+  }
+
+  upload(blob: Blob): Promise<UploadResult> {
+    return this.client.upload(blob, this.accountId);
+  }
+
+  fetchBlob(blobId: string, name: string, type: string): Promise<Blob> {
+    return this.client.fetchBlob(blobId, name, type, this.accountId);
   }
 
   /** Addresses that count as "me" in participant lists. */

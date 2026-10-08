@@ -142,6 +142,12 @@ describe('labelLimits', () => {
     accounts: { a1: { name: 'u', isPersonal: true, isReadOnly: false, ...(mail ? { accountCapabilities: { 'urn:ietf:params:jmap:mail': mail } } : {}) } },
   });
 
+  it('reads the limits of the account asked for', () => {
+    const two = session({ maxMailboxDepth: 10, maxSizeMailboxName: 200 });
+    two.accounts.g = { name: 'support', isPersonal: false, isReadOnly: false, accountCapabilities: { 'urn:ietf:params:jmap:mail': { maxMailboxDepth: 3, maxSizeMailboxName: 50 } } };
+    expect(labelLimits(two, 'g')).toEqual({ maxDepth: 3, maxNameBytes: 50 });
+    expect(labelLimits(two)).toEqual({ maxDepth: 10, maxNameBytes: 200 });
+  });
   it('reads the limits from the mail capability', () => {
     expect(labelLimits(session({ maxMailboxDepth: 4, maxSizeMailboxName: 100 }))).toEqual({ maxDepth: 4, maxNameBytes: 100 });
   });

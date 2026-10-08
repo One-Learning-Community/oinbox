@@ -21,8 +21,8 @@ export type PlanResult =
   | { ok: true; plan: LabelPlan; path: string; noop: boolean }
   | { ok: false; error: string };
 
-export function labelLimits(session: Session): LabelLimits {
-  const account = session.primaryAccounts[MAIL];
+export function labelLimits(session: Session, accountId?: string): LabelLimits {
+  const account = accountId ?? session.primaryAccounts[MAIL];
   const mail = account ? session.accounts[account]?.accountCapabilities?.[MAIL] : undefined;
   const num = (v: unknown, fallback: number) => (typeof v === 'number' && v > 0 ? v : fallback);
   return {

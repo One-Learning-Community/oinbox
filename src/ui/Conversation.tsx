@@ -361,13 +361,13 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
 }
 
 function Attachments(props: { email: EmailRec }) {
-  const { client, toast } = useApp();
+  const { engine, toast } = useApp();
   // Inline images referenced by the HTML body aren't listed as attachments.
   const list = () => (props.email.attachments ?? []).filter((a) => !(a.disposition === 'inline' && a.cid && a.type.startsWith('image/')));
 
   const download = async (a: EmailBodyPart) => {
     try {
-      const blob = await client.fetchBlob(a.blobId!, a.name ?? 'attachment', a.type);
+      const blob = await engine.fetchBlob(a.blobId!, a.name ?? 'attachment', a.type);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

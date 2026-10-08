@@ -7,6 +7,9 @@ import { CALENDARS_PARSE, VACATION, type Calendar, type CalendarEvent, type Emai
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
 export class FakeJmap {
+  /** This fake's account, as a session built by fakeClient() names it. */
+  accountId = 'a1';
+  accountName = 'alice@example.test';
   mailboxes = new Map<string, Mailbox>();
   emails = new Map<string, Rec>();
   emailState = 0;
@@ -519,6 +522,11 @@ export class FakeJmap {
   }
 
   /** Resolve back-references (RFC 8620 §3.7) including `*` path segments. */
+  /** Resolve a call's back-references against earlier answers, then handle it. */
+  dispatch(name: string, args: Record<string, unknown>, done: Map<string, Invocation>, using: string[]): [string, unknown] {
+    return this.handle(name, this.resolve(args, done), using);
+  }
+
   private resolve(args: Record<string, unknown>, done: Map<string, Invocation>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(args)) {
@@ -571,4 +579,34 @@ export class FakeJmap {
 
 function identityRec(id: string, name: string, email: string): Identity {
   return { id, name, email, replyTo: null, bcc: null, textSignature: '', htmlSignature: '', mayDelete: true };
+}
+
+/** One session over several fakes: the first is the user's own account, the rest are shared ones. */
+export function fakeClient(fakes: FakeJmap[]): JmapClient {
+  const first = fakes[0]!;
+  const caps = (f: FakeJmap) => ({ 'urn:ietf:params:jmap:mail': {}, ...(f.vacationSupported ? { [VACATION]: {} } : {}) });
+  const session: Session = {
+    capabilities: {},
+    accounts: Object.fromEntries(fakes.map((f, i) => [f.accountId, { name: f.accountName, isPersonal: i === 0, isReadOnly: false, accountCapabilities: caps(f) }])),
+    primaryAccounts: { 'urn:ietf:params:jmap:mail': first.accountId, 'urn:ietf:params:jmap:calendars': first.accountId },
+    username: first.accountName,
+    apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
+  };
+  const fetchImpl = async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(init!.body as string) as { using: string[]; methodCalls: Invocation[] };
+    const done = new Map<string, Invocation>();
+    const responses: Invocation[] = [];
+    for (const [name, args, id] of body.methodCalls) {
+      const fake = fakes.find((f) => f.accountId === args.accountId) ?? first;
+      fake.usings.push(body.using);
+      const [rname, result] = fake.dispatch(name, args, done, body.using);
+      const inv: Invocation = [rname, result as Record<string, unknown>, id];
+      done.set(id, inv);
+      responses.push(inv);
+    }
+    return new Response(JSON.stringify({ methodResponses: responses, sessionState: 's' }), { status: 200 });
+  };
+  const c = new JmapClient({ sessionUrl: 'http://fake/session', getToken: async () => 't', fetch: fetchImpl as typeof fetch });
+  c.useSession(session);
+  return c;
 }

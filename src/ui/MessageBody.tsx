@@ -19,7 +19,7 @@ function bodyOf(email: EmailRec): { kind: 'html' | 'text'; value: string } {
 }
 
 export function MessageBody(props: { email: EmailRec }) {
-  const { client, images, isDark } = useApp();
+  const { engine, images, isDark } = useApp();
   const sender = () => props.email.from?.[0]?.email ?? '';
   const [forceImages, setForceImages] = createSignal(false);
   const allowRemote = () => forceImages() || images.allowed(sender());
@@ -66,7 +66,7 @@ export function MessageBody(props: { email: EmailRec }) {
       const cid = img.dataset.oinboxCid!;
       const part = parts.find((p) => p.cid?.replace(/^<|>$/g, '') === cid && p.blobId);
       if (!part) continue;
-      client
+      engine
         .fetchBlob(part.blobId!, part.name ?? 'image', part.type)
         .then((blob) => {
           const url = URL.createObjectURL(blob);

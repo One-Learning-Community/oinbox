@@ -185,8 +185,9 @@ export class JmapClient {
     return new BatchResult(answer.methodResponses, answer.sessionState !== this.session.state);
   }
 
-  async upload(blob: Blob): Promise<UploadResult> {
-    const url = this.session.uploadUrl.replace('{accountId}', encodeURIComponent(this.accountId));
+  /** `accountId` is the account to act in: the user's own unless a shared one is named. */
+  async upload(blob: Blob, accountId = this.accountId): Promise<UploadResult> {
+    const url = this.session.uploadUrl.replace('{accountId}', encodeURIComponent(accountId));
     const res = await this.authFetch(url, {
       method: 'POST',
       headers: { 'content-type': blob.type || 'application/octet-stream' },
@@ -196,17 +197,17 @@ export class JmapClient {
     return (await res.json()) as UploadResult;
   }
 
-  downloadUrl(blobId: string, name: string, type: string): string {
+  downloadUrl(blobId: string, name: string, type: string, accountId = this.accountId): string {
     return this.session.downloadUrl
-      .replace('{accountId}', encodeURIComponent(this.accountId))
+      .replace('{accountId}', encodeURIComponent(accountId))
       .replace('{blobId}', encodeURIComponent(blobId))
       .replace('{name}', encodeURIComponent(name))
       .replace('{type}', encodeURIComponent(type));
   }
 
   /** Fetch a blob with auth (downloads can't carry a bearer token via a plain <img src>). */
-  async fetchBlob(blobId: string, name: string, type: string): Promise<Blob> {
-    const res = await this.authFetch(this.downloadUrl(blobId, name, type), {}, false, true);
+  async fetchBlob(blobId: string, name: string, type: string, accountId = this.accountId): Promise<Blob> {
+    const res = await this.authFetch(this.downloadUrl(blobId, name, type, accountId), {}, false, true);
     if (!res.ok) throw new RequestError(res.status, await res.text());
     return res.blob();
   }

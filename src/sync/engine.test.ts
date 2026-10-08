@@ -2,7 +2,7 @@ import { createRoot } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VACATION } from '../jmap/types';
 import { DEFAULT_SORT, MailEngine, SetFailure } from './engine';
-import { FakeJmap } from './fake-jmap';
+import { fakeClient, FakeJmap } from './fake-jmap';
 import { archivePatch, keywordPatch, unlabelPatch } from './patch';
 
 const inboxSpec = { filter: { inMailbox: 'I' }, sort: DEFAULT_SORT, collapseThreads: true };
@@ -681,5 +681,54 @@ describe('draftState', () => {
     expect(await engine.draftState('d1')).toBe('draft');
     expect(await engine.draftState('s1')).toBe('sent');
     expect(await engine.draftState('nope')).toBe('gone');
+  });
+});
+
+describe('an engine for a shared account', () => {
+  const two = () => {
+    const mine = new FakeJmap();
+    const shared = new FakeJmap();
+    shared.accountId = 'g';
+    shared.accountName = 'support@example.test';
+    for (const s of [mine, shared]) {
+      s.addMailbox('I', 'Inbox', 'inbox');
+      s.addMailbox('S', 'Sent', 'sent');
+    }
+    mine.addEmail({ id: 'm1', threadId: 'tm1', receivedAt: '2026-09-01T00:00:00Z', mailboxIds: { I: true } });
+    shared.addEmail({ id: 'g1', threadId: 'tg1', receivedAt: '2026-09-01T00:00:00Z', mailboxIds: { I: true } });
+    const client = fakeClient([mine, shared]);
+    return { mine, shared, client, own: new MailEngine(client), group: new MailEngine(client, { accountId: 'g' }) };
+  };
+
+  it('reads only its own account', async () => {
+    const { group, own } = two();
+    await Promise.all([own.start(), group.start()]);
+    const key = group.openQuery(inboxSpec);
+    await group.ensureRange(key, 0, 10);
+    expect(group.accountId).toBe('g');
+    expect(own.accountId).toBe('a1');
+    expect(group.state.queries[key]!.slots).toEqual(['g1']);
+    expect(own.state.emails.g1).toBeUndefined();
+  });
+
+  it('ignores a state change for the other account', async () => {
+    const { group, own, mine, shared } = two();
+    await Promise.all([own.start(), group.start()]);
+    await own.ensureRange(own.openQuery(inboxSpec), 0, 10);
+    await group.ensureRange(group.openQuery(inboxSpec), 0, 10);
+    shared.addEmail({ id: 'g2', threadId: 'tg2', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { I: true } });
+    mine.calls = [];
+    const change = { '@type': 'StateChange' as const, changed: { g: { Email: 'new', Mailbox: 'new', Thread: 'new' } } };
+    own.onStateChange(change);
+    group.onStateChange(change);
+    await vi.waitFor(() => expect(group.state.emails.g2).toBeDefined());
+    expect(mine.calls).toEqual([]);
+  });
+
+  it('uploads into its own account', async () => {
+    const { group, client } = two();
+    const upload = vi.spyOn(client, 'upload').mockResolvedValue({ accountId: 'g', blobId: 'b', type: 't', size: 1 });
+    await group.upload(new Blob(['x']));
+    expect(upload).toHaveBeenCalledWith(expect.any(Blob), 'g');
   });
 });

@@ -23,7 +23,7 @@ describe('composer signatures', () => {
     server.identities.set('id2', { id: 'id2', name: 'Support', email: 'support@example.test', replyTo: null, bcc: null, textSignature: 'Support team', htmlSignature: '', mayDelete: true });
     engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
     await engine.start();
-    composers = createRoot(() => createComposers(engine, server.client(), vi.fn(), vi.fn(async () => true), vi.fn()));
+    composers = createRoot(() => createComposers(engine, vi.fn(), vi.fn(async () => true), vi.fn()));
   });
   afterEach(() => vi.useRealTimers());
 
@@ -100,7 +100,7 @@ describe('composer safety', () => {
     await engine.start();
     const toast = vi.fn();
     const confirm = vi.fn(async () => true);
-    const composers = createRoot(() => createComposers(engine, server.client(), toast, confirm, vi.fn(), opts.onRecovered));
+    const composers = createRoot(() => createComposers(engine, toast, confirm, vi.fn(), opts.onRecovered));
     return { server, engine, toast, confirm, composers };
   }
   afterEach(() => vi.useRealTimers());

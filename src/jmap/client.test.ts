@@ -245,6 +245,18 @@ describe('JmapClient outcomes', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(signal?.aborted ?? false).toBe(false);
   });
+  it('uploads to and downloads from the account it is told to, and the primary one otherwise', async () => {
+    const urls: string[] = [];
+    const { client } = make(async (u) => { urls.push(String(u)); return Response.json({ accountId: 'g', blobId: 'b1', type: 'text/plain', size: 1 }); }, vi.fn(), 5);
+    client.useSession({ uploadUrl: 'http://x/upload/{accountId}/', downloadUrl: 'http://x/download/{accountId}/{blobId}/{name}?accept={type}', primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1' } } as never);
+    await client.upload(new Blob(['x']), 'g');
+    await client.upload(new Blob(['x']));
+    expect(urls).toEqual(['http://x/upload/g/', 'http://x/upload/a1/']);
+    expect(client.downloadUrl('b1', 'n.txt', 'text/plain', 'g')).toBe('http://x/download/g/b1/n.txt?accept=text%2Fplain');
+    expect(client.downloadUrl('b1', 'n.txt', 'text/plain')).toContain('/download/a1/');
+    await client.fetchBlob('b1', 'n.txt', 'text/plain', 'g');
+    expect(urls.at(-1)).toBe('http://x/download/g/b1/n.txt?accept=text%2Fplain');
+  });
 });
 
 describe('JmapClient and the concurrent request limit', () => {

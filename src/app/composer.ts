@@ -1,5 +1,4 @@
 import { createSignal, type Accessor } from 'solid-js';
-import type { JmapClient } from '../jmap/client';
 import type { EmailAddress, Id, Identity } from '../jmap/types';
 import { buildEmailCreate, initialDraft, splitDraftHtml, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
 import { signatureForCompose } from '../mail/settings';
@@ -54,7 +53,6 @@ export interface Composer {
 /** Open composers plus the delayed-send queue. */
 export function createComposers(
   engine: MailEngine,
-  client: JmapClient,
   toast: ToastFn,
   confirm: ConfirmFn,
   /** Called once a message has been submitted, with everyone it went to. */
@@ -197,7 +195,7 @@ export function createComposers(
         for (const file of [...files]) {
           setUploading((n) => n + 1);
           try {
-            const r = await client.upload(file);
+            const r = await engine.upload(file);
             const att: DraftAttachment = { blobId: r.blobId, name: file.name, type: file.type || r.type, size: file.size };
             setDraft({ ...draft(), attachments: [...draft().attachments, att] });
             scheduleSave();
