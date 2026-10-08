@@ -65,6 +65,21 @@ describe('notificationFor', () => {
   });
 });
 
+const support = { id: 'g', address: 'support@example.test', personal: false, label: 'Support', base: '/shared/g' };
+
+describe('notificationFor a shared account', () => {
+  it('leads with the mailbox and opens the conversation there', () => {
+    expect(notificationFor([mail('a')], support)).toEqual({ title: 'Support: Bob Builder', body: 'Subject a', path: '/shared/g/inbox/t/t-a', tag: 'oinbox-g-t-a' });
+  });
+  it('counts several under the mailbox', () => {
+    expect(notificationFor([mail('a'), mail('b')], support)).toMatchObject({ title: 'Support: 2 new messages', path: '/shared/g/inbox', tag: 'oinbox-g-new' });
+  });
+  it("is unchanged for the user's own account", () => {
+    const own = { id: 'b', address: 'alice@example.test', personal: true, label: 'You', base: '' };
+    expect(notificationFor([mail('a')], own)).toEqual(notificationFor([mail('a')]));
+  });
+});
+
 describe('createNotifyPrefs', () => {
   it('is off until switched on, and asks the browser when it is', async () => {
     const { api } = fakeApi('default', 'granted');
@@ -133,6 +148,15 @@ describe('createNotifier', () => {
     const { notify, shown } = setup({ away: true, enabled: true });
     notify([mail('a', { keywords: { $seen: true } })]);
     expect(shown).toEqual([]);
+  });
+  it("opens a shared account's conversation under its base", () => {
+    const { api, shown } = fakeApi('granted');
+    const opened: string[] = [];
+    const notify = createNotifier({ api, enabled: () => true, away: () => true, inboxId: () => 'I', open: (p) => opened.push(p), account: () => support });
+    notify([mail('a')]);
+    expect(shown[0]!.title).toBe('Support: Bob Builder');
+    shown[0]!.onclick!();
+    expect(opened).toEqual(['/shared/g/inbox/t/t-a']);
   });
   it('opens the conversation when the notification is clicked', () => {
     const { notify, shown, opened } = setup({ away: true, enabled: true });

@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js';
 import type { Email, Id } from '../jmap/types';
+import type { AccountInfo } from './accounts';
 
 /** The part of the browser's Notification that oinbox uses, so tests can stand in for it. */
 export interface NotificationApi {
@@ -37,14 +38,19 @@ export interface NotificationText {
   tag: string;
 }
 
-export function notificationFor(emails: Email[]): NotificationText {
+/** For a shared account the text leads with its name, and a click goes to that account. */
+export function notificationFor(emails: Email[], account?: AccountInfo): NotificationText {
+  const shared = account && !account.personal ? account : null;
+  const lead = shared ? `${shared.label}: ` : '';
+  const base = shared?.base ?? '';
+  const tag = shared ? `oinbox-${shared.id}-` : 'oinbox-';
   if (emails.length === 1) {
     const e = emails[0]!;
-    return { title: sender(e), body: e.subject || '(no subject)', path: `/inbox/t/${e.threadId}`, tag: `oinbox-${e.threadId}` };
+    return { title: lead + sender(e), body: e.subject || '(no subject)', path: `${base}/inbox/t/${e.threadId}`, tag: `${tag}${e.threadId}` };
   }
   const senders = [...new Set(emails.map(sender))];
   const named = senders.slice(0, 3).join(', ') + (senders.length > 3 ? ` and ${senders.length - 3} more` : '');
-  return { title: `${emails.length} new messages`, body: named, path: '/inbox', tag: 'oinbox-new' };
+  return { title: `${lead}${emails.length} new messages`, body: named, path: `${base}/inbox`, tag: `${tag}new` };
 }
 
 const KEY = 'oinbox.notify';
@@ -79,13 +85,16 @@ export function createNotifier(deps: {
   /** The user is not looking at oinbox: the tab is hidden or the window is not in front. */
   away: () => boolean;
   inboxId: () => Id | undefined;
+  /** The account the mail arrives in; none means the user's own. */
+  account?: () => AccountInfo | undefined;
+  /** Called with the full path, the account's base included. */
   open: (path: string) => void;
 }) {
   return (arrived: Email[]): void => {
     if (!deps.api || !deps.enabled() || !deps.away()) return;
     const fresh = newInboxMail(arrived, deps.inboxId());
     if (!fresh.length) return;
-    const text = notificationFor(fresh);
+    const text = notificationFor(fresh, deps.account?.());
     const shown = deps.api.show(text.title, { body: text.body, tag: text.tag });
     shown.onclick = () => deps.open(text.path);
   };
