@@ -551,7 +551,7 @@ export class FakeJmap {
       get capabilities() {
         return fake.parseSupported ? { [CALENDARS_PARSE]: {} } : {};
       },
-      accounts: { a1: { name: 'alice', isPersonal: true, isReadOnly: false, accountCapabilities: this.vacationSupported ? { [VACATION]: {} } : {} } },
+      accounts: { a1: { name: 'alice@example.test', isPersonal: true, isReadOnly: false, accountCapabilities: this.vacationSupported ? { [VACATION]: {} } : {} } },
       primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
     };

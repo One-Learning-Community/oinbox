@@ -72,7 +72,10 @@ export function createComposers(
     if (!ids.length) return null;
     // Reply from whichever of my addresses the message was sent to.
     const addressed = new Set([...(original?.to ?? []), ...(original?.cc ?? [])].map((a) => a.email.toLowerCase()));
-    return (ids.find((i) => addressed.has(i.email.toLowerCase())) ?? ids[0]!).id;
+    // Otherwise the mailbox's own address, not whichever identity the server lists first: a member
+    // of a group has the group's address as an identity too, and must not write as it by default.
+    const own = engine.accountAddress.toLowerCase();
+    return (ids.find((i) => addressed.has(i.email.toLowerCase())) ?? ids.find((i) => i.email.toLowerCase() === own) ?? ids[0]!).id;
   };
 
   const signatureOf = (id: Id | null): string => {

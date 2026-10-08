@@ -73,6 +73,7 @@ Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwa
 
 * `STALWART_PUBLIC_URL=http://localhost:8080` controls the base of every URL in the JMAP session and in the OAuth/OIDC discovery documents.
 * `stalwart/config.json` names only the datastore (RocksDB). In Stalwart 0.16, every other setting lives in the database and is applied from `plan.ndjson`. There is no TOML and no `/api` REST management API any more.
+* `Http.rateLimitAuthenticated` is raised to 10,000 requests a minute (Stalwart's default is 1,000). The e2e suite loads the app hundreds of times in a few minutes as one user, and with an engine per mailbox it reached the default. Real use stays far below it; the production template keeps the default.
 * `OidcProvider.requireClientRegistration=true`: unregistered `client_id`s and unregistered `redirect_uri`s are rejected. The WebUI's `stalwart-webui` client is registered too.
 
 ## Proxy routing

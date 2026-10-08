@@ -182,6 +182,11 @@ export class MailEngine {
     return this.client.fetchBlob(blobId, name, type, this.accountId);
   }
 
+  /** The address of this engine's account: the user's own, or the shared mailbox's. */
+  get accountAddress(): string {
+    return this.client.session.accounts[this.accountId]?.name ?? this.client.session.username;
+  }
+
   /** Addresses that count as "me" in participant lists. */
   myAddresses(): Set<string> {
     const s = new Set(this.state.identities.map((i) => i.email.toLowerCase()));

@@ -58,7 +58,7 @@ function IdentitiesSection() {
             )}
           </For>
         </ul>
-        <p class="settings-note">New messages are sent from the first identity unless you choose another.</p>
+        <p class="settings-note">New messages are sent from this mailbox's own address unless you choose another.</p>
       </Show>
       <button type="button" class="btn" onClick={() => setDialog({ id: null })}>Add identity</button>
       <Show when={dialog()} keyed>

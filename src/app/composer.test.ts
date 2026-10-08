@@ -27,6 +27,21 @@ describe('composer signatures', () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it("writes a new message from the mailbox's own address, wherever the server lists that identity", async () => {
+    // Stalwart may list a group's address before the member's own.
+    const server2 = new FakeJmap();
+    server2.addMailbox('D', 'Drafts', 'drafts');
+    const own = server2.identities.get('id1')!;
+    server2.identities.clear();
+    server2.identities.set('id0', { id: 'id0', name: 'Support', email: 'support@example.test', replyTo: null, bcc: null, textSignature: '', htmlSignature: '', mayDelete: true });
+    server2.identities.set('id1', own);
+    const engine2 = createRoot(() => new MailEngine(server2.client(), { settleDelayMs: 0 }));
+    await engine2.start();
+    const composers2 = createRoot(() => createComposers(engine2, vi.fn(), vi.fn(async () => true), vi.fn()));
+    expect(engine2.state.identities[0]!.email).toBe('support@example.test');
+    expect(composers2.open('new').identityId()).toBe('id1');
+  });
+
   it('starts every mode with the default identity\'s signature', () => {
     expect(composers.open('new').draft().signatureHtml).toBe('<b>Alice</b>');
     // A reply defaults to the identity the message was sent to.
