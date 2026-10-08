@@ -21,7 +21,7 @@ const CALENDAR_OPTIONS = {
 };
 const eventElement = (id: string) => document.querySelector<HTMLElement>(`.calendar-host [data-event-id="${CSS.escape(id)}"]`);
 
-const TOOLBAR = { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' };
+const TOOLBAR = { left: 'prev,next today newEvent', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' };
 
 /** Route component for /calendar: read-only month/week/day views of every visible calendar. */
 export function CalendarView() {
@@ -64,6 +64,18 @@ export function CalendarView() {
   const closeDraft = () => {
     setDraft(null);
     handle()?.clearSelection();
+  };
+
+  /** A new event without dragging on the grid: the only way in for a keyboard, and the easy one on a phone. */
+  const newEvent = (anchor: HTMLElement) => {
+    if (!defaultCalendarId(calendar.state.calendars)) return toast('No calendar here accepts new events.', 'error');
+    const start = new Date();
+    start.setHours(start.getHours() + 1, 0, 0, 0);
+    setDraft({ start, end: new Date(start.getTime() + 3600_000), allDay: false, anchor });
+  };
+  const options = {
+    ...CALENDAR_OPTIONS,
+    customButtons: { newEvent: { text: 'New event', hint: 'New event', click: (_e: MouseEvent, el: HTMLElement) => newEvent(el) } },
   };
 
   /** A drop or resize: write it, asking about guests first; put the event back if it isn't written. */
@@ -141,7 +153,7 @@ export function CalendarView() {
             saveView(v);
           }}
           events={events()}
-          options={CALENDAR_OPTIONS}
+          options={options}
           ref={setHandle}
           editable
           onEventDrop={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}

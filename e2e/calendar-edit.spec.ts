@@ -59,6 +59,23 @@ test('dragging on the grid creates an event with Enter', async ({ page }) => {
   expect(stored).toMatchObject({ start: `${todayIn(TZ)}T18:00:00`, timeZone: TZ, duration: 'PT1H' });
 });
 
+test('New event opens the form without a drag, from the keyboard, for the next full hour', async ({ page }) => {
+  const title = tag();
+  await openWeek(page);
+  const button = page.getByRole('button', { name: 'New event' });
+  await button.focus();
+  await page.keyboard.press('Enter');
+  const form = page.getByRole('form', { name: 'Event' });
+  await expect(form).toBeVisible();
+  await expect(form.getByRole('textbox', { name: 'Title' })).toBeFocused();
+  await page.keyboard.type(title);
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await eventsByTitle(title)).length).toBe(1);
+  const [stored] = await eventsByTitle(title);
+  expect(stored).toMatchObject({ timeZone: TZ, duration: 'PT1H' });
+  expect(stored!.start).toMatch(/T\d\d:00:00$/);
+});
+
 test('Escape closes the create form, clears the highlight and creates nothing', async ({ page }) => {
   await openWeek(page);
   await dragSlot(page, '20:00', '20:30');

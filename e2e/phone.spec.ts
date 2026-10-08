@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { rows } from './support/app';
 import { bodyEditor, composeNew, deliveredCopy, floatingComposer, sendAndWait, toast } from './support/compose';
 import { destroyE2eLabels, createLabel } from './support/labels';
-import { BOB, deliverToAlice, destroyEmails, emailsBySubject, mailboxByRole, uniqueTag } from './support/mail';
+import { createInvitedEvent, destroyE2eEvents, eventsByTitle, futureStart } from './support/calendar';
+import { BOB, accountId, deliverToAlice, destroyEmails, emailsBySubject, jmap, mailboxByRole, uniqueTag, waitFor } from './support/mail';
 
 // Runs in the `phone` project only: WebKit as an iPhone 14, 390×844, touch.
 
@@ -158,6 +159,83 @@ test('@phone the calendar opens in day view and an event opens on tap', async ({
   expect(b.x).toBeGreaterThanOrEqual(0);
   expect(b.x + b.width).toBeLessThanOrEqual(390);
   await noSidewaysScroll(page, 'event card');
+});
+
+test('@phone a file can be attached to a new message', async ({ page }) => {
+  await openInbox(page);
+  await page.getByRole('button', { name: 'Menu' }).tap();
+  await page.getByRole('button', { name: 'Compose' }).tap();
+  const c = floatingComposer(page);
+  await c.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await expect(c.getByText('notes.txt')).toBeVisible({ timeout: 20_000 });
+  await noSidewaysScroll(page, 'composer with an attachment');
+  await c.getByRole('button', { name: 'Discard draft' }).tap();
+  await page.getByRole('dialog').getByRole('button', { name: 'Discard' }).tap();
+  await expect(c).toHaveCount(0);
+});
+
+test('@phone a signature can be edited and saved', async ({ page }) => {
+  const SUBMISSION = ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:submission'];
+  const account = await accountId();
+  const identities = async () => (await jmap([['Identity/get', { accountId: account, ids: null }, 'i']], undefined, SUBMISSION)).i.list as { id: string; htmlSignature: string; textSignature: string }[];
+  const before = (await identities())[0]!;
+  const mark = `phone-${Date.now()}`;
+  try {
+    await page.goto('/settings');
+    await page.getByRole('button', { name: /^Edit / }).first().tap();
+    const dialog = page.getByRole('dialog');
+    const editor = dialog.locator('[contenteditable="true"]');
+    await editor.tap();
+    await page.keyboard.press('End');
+    await page.keyboard.type(` ${mark}`);
+    await dialog.getByRole('button', { name: 'Save' }).tap();
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(async () => (await identities())[0]!.htmlSignature).toContain(mark);
+    await noSidewaysScroll(page, 'settings after saving');
+  } finally {
+    await jmap([['Identity/set', { accountId: account, update: { [before.id]: { htmlSignature: before.htmlSignature, textSignature: before.textSignature } } }, 's']], undefined, SUBMISSION);
+  }
+});
+
+test('@phone an invitation can be accepted from the message', async ({ page }) => {
+  const tag = `E2E phone invite ${Date.now()}`;
+  const made = await createInvitedEvent(tag, futureStart('Europe/London').start, 'Europe/London');
+  try {
+    // By id from the newest messages: the full-text index lags behind delivery.
+    const invitation = await waitFor(async () => {
+      const acct = await accountId();
+      const r = await jmap([
+        ['Email/query', { accountId: acct, sort: [{ property: 'receivedAt', isAscending: false }], limit: 30 }, 'q'],
+        ['Email/get', { accountId: acct, '#ids': { resultOf: 'q', name: 'Email/query', path: '/ids' }, properties: ['threadId', 'subject'] }, 'g'],
+      ]);
+      return (r.g.list as { id: string; threadId: string; subject: string | null }[]).find((e) => (e.subject ?? '').includes(tag));
+    }, 20_000, 'the invitation email');
+    await page.goto(`/inbox/t/${invitation.threadId}`);
+    const card = page.locator(`article.msg[data-email-id="${invitation.id}"] .invite-card`);
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await noSidewaysScroll(page, 'invite card');
+    const accept = card.getByRole('button', { name: 'Accept' });
+    await accept.tap();
+    await expect(accept).toHaveAttribute('aria-pressed', 'true');
+  } finally {
+    await made.cleanup();
+  }
+});
+
+test('@phone an event can be created through the form, without dragging', async ({ page }) => {
+  const title = `E2E phone ${Date.now()}`;
+  try {
+    await page.goto('/calendar');
+    await page.getByRole('button', { name: 'New event' }).tap();
+    const form = page.getByRole('form', { name: 'Event' });
+    await expect(form).toBeVisible();
+    await form.getByRole('textbox', { name: 'Title' }).fill(title);
+    await form.getByRole('button', { name: 'Create' }).tap();
+    await expect.poll(async () => (await eventsByTitle(title)).length).toBe(1);
+    await noSidewaysScroll(page, 'calendar after creating');
+  } finally {
+    await destroyE2eEvents();
+  }
 });
 
 for (const path of ['/inbox', '/settings', '/calendar']) {
