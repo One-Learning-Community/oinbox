@@ -8,6 +8,7 @@ import { createErrorReporter } from './app/errors';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { createLabels } from './app/labels';
 import { createRecipients } from './app/recipients';
+import { clearRescue, saveRescue, takeRescue } from './app/rescue';
 import { createSettings } from './app/settings';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
@@ -79,6 +80,8 @@ async function boot() {
   const errors = createErrorReporter(toasts.toast);
 
   const signOut = () => {
+    // A deliberate sign-out leaves no draft text behind in this browser.
+    clearRescue(localStorage);
     const user = client.hasSession ? client.session.username : null;
     auth.signOut();
     recipients.stop();
@@ -87,6 +90,8 @@ async function boot() {
   /** The server no longer accepts our tokens. Stay on the page, so nothing the user was writing is lost. */
   const sessionLost = () => {
     if (connection.state() === 'signed-out') return;
+    // What the server doesn't have yet comes back after signing in again (same account, within 7 days).
+    if (client.hasSession) saveRescue(localStorage, client.accountId, app.composers.snapshot());
     const user = client.hasSession ? client.session.username : null;
     auth.signOut();
     recipients.stop();
@@ -145,6 +150,12 @@ async function boot() {
     engine.onPersist = (snap) => void saveSnapshot(session.username, snap);
     void recipients.start(session.username);
     await engine.start();
+    const rescued = takeRescue(localStorage, client.accountId);
+    if (rescued.length) {
+      app.composers.restore(rescued);
+      // After a cold start the toast host isn't on screen until this function has returned.
+      setTimeout(() => app.toast(rescued.length === 1 ? 'Your unsent draft was restored.' : 'Your unsent drafts were restored.'), 0);
+    }
     void calendar.loadCalendars().catch((e) => onAuthError(e));
     // Suggestions are a convenience: a failed scan is dropped unless it is an auth failure.
     void recipients.scanSent().catch((e) => onAuthError(e));
