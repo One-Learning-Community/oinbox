@@ -61,8 +61,7 @@ jobs:
         working-directory: deploy
         # --build also proves the Dockerfile still builds the web image.
         run: docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d --build --wait
-      # Global setup seeds the stack. The phone project gets its tests with the phone audit.
-      - run: pnpm exec playwright test --project=${{ matrix.project }} --pass-with-no-tests
+      - run: pnpm exec playwright test --project=${{ matrix.project }} # global setup seeds the stack
       - name: Collect the stack's logs
         if: failure()
         working-directory: deploy
