@@ -84,7 +84,6 @@ jobs:
       # deploy/production/ci.override.yml: local CA, ports moved to 8443/8081/2526/4465/4993.
       ENV_FILE: ci.env
       COMPOSE_ARGS: -p oinbox-prod -f docker-compose.yml -f ci.override.yml
-      CERT_ISSUER: local
       PUBLIC_ORIGIN: https://localhost:8443
     steps:
       - uses: actions/checkout@v7

@@ -1,5 +1,5 @@
 {"@type":"upsert","object":"Domain","matchOn":["name"],"value":{"dom-mail":{"name":"__MAIL_DOMAIN__","certificateManagement":{"@type":"Manual"},"dkimManagement":{"@type":"Manual"},"dnsManagement":{"@type":"Manual"},"subAddressing":{"@type":"Enabled"}}}}
-{"@type":"update","object":"SystemSettings","id":"singleton","value":{"defaultHostname":"__OINBOX_DOMAIN__","defaultDomainId":"#dom-mail"}}
+{"@type":"update","object":"SystemSettings","id":"singleton","value":{"defaultHostname":"__MAIL_HOSTNAME__","defaultDomainId":"#dom-mail"}}
 {"@type":"update","object":"SearchStore","id":"singleton","value":{"@type":"Meilisearch","url":"http://meilisearch:7700","httpAuth":{"@type":"Bearer","bearerToken":{"@type":"EnvironmentVariable","variableName":"MEILI_MASTER_KEY"}}}}
 {"@type":"update","object":"Http","id":"singleton","value":{"usePermissiveCors":false,"useXForwarded":true}}
 {"@type":"update","object":"OidcProvider","id":"singleton","value":{"requireClientRegistration":true,"accessTokenExpiry":3600000,"refreshTokenExpiry":2592000000}}

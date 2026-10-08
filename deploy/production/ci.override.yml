@@ -24,3 +24,8 @@ services:
       - ./Caddyfile.ci:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+
+  cert-sync:
+    environment:
+      CERT_ISSUER: local
+

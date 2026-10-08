@@ -229,17 +229,25 @@ Rewritten to match the product:
 
 - `docker-compose.yml`: Stalwart, Meilisearch and the oinbox image at a pinned tag, with named volumes and no dev ports.
 - `Caddyfile`: the site address from `{$OINBOX_DOMAIN}`, automatic HTTPS, HSTS, the same routing and headers as the dev file, no `auto_https off`, logging without request bodies.
-- `plan.ndjson`: domain placeholder, the OAuth client with the HTTPS redirect only, Meilisearch, permissive CORS off, the spam filter and SMTP checks left at Stalwart's defaults. No accounts and no passwords.
-- `.env.example`: `OINBOX_DOMAIN`, the image tag, the Meilisearch key, the Stalwart recovery admin.
+- `plan.ndjson`: placeholders for the mail domain and public origin, the OAuth client with the HTTPS redirect only, Meilisearch, permissive CORS off, the spam filter and SMTP checks left at Stalwart's defaults. No accounts and no passwords. `apply.sh` fills the placeholders in from `.env` and applies it; `certificate.ndjson` points Stalwart at the certificate.
+- `.env.example`: `OINBOX_DOMAIN`, `MAIL_DOMAIN`, the ACME contact, the image tag, the Meilisearch key, the Stalwart recovery admin.
 - The dev `deploy/Caddyfile` and the production one share their routing through an imported snippet, so the two cannot drift.
 
 **Tested in CI**: a job starts the template with an override that sets the domain to `localhost` and Caddy's `tls internal`, applies the plan, creates one user, and runs `login.spec.ts` and one compose test over HTTPS with certificate errors ignored. It also asserts that a cross-origin request to `/jmap/session` gets no `Access-Control-Allow-Origin` header and that the page sends HSTS and the CSP.
 
-**To probe before writing** (results go in the spec's "Probed" section, as in earlier slices):
+**Probed before writing** (results below, under "Probed on Stalwart 0.16.23"):
 
 - How Stalwart gets certificates for SMTP and IMAP when Caddy owns ports 80 and 443. The template must not leave mail ports without TLS; the guide documents whichever arrangement the probe shows to work.
 - Whether Stalwart 0.16 can restrict CORS to one origin. Only for the "Unsupported" section.
 - Whether Stalwart sets its own security headers on the paths it serves (`/login`), and whether the proxy should add any.
+
+### Probed on Stalwart 0.16.23 (2026-10-08, local stack)
+
+- **Certificates for the mail ports.** Stalwart has its own ACME client (`AcmeProvider`; challenges TLS-ALPN-01, HTTP-01, DNS-01, DNS-PERSIST-01), which would compete with Caddy for ports 80 and 443 unless DNS is used. It also has a `Certificate` object whose `certificate` and `privateKey` can be `{"@type":"File","filePath":…}` (also `EnvironmentVariable` and `Text`), and an `Action/ReloadTlsCertificates`. Chosen: Caddy obtains the one certificate; a `cert-sync` service copies it to a volume Stalwart can read (Caddy keeps its files readable by root only, and Stalwart runs as uid 2000); Stalwart's `Certificate` points at the copy. Verified with Caddy's local CA: IMAP on 993, submission on 465 and STARTTLS on 25 all present that certificate (`e2e/production.spec.ts`). A renewed certificate needs `./apply.sh --reload-tls`.
+- **CORS.** `Http` has only `usePermissiveCors` (all origins or none). A separate-origin deployment would mean `Access-Control-Allow-Origin: *` on the mail server.
+- **Headers on Stalwart's pages.** `/login` and `/admin/` come with no security headers. The shared proxy routing now adds `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` to everything proxied to Stalwart; `Http.enableHsts` and `Http.responseHeaders` exist but the proxy already covers them.
+- **Limits that surprise.** 1,000 requests a minute per account (`Http.rateLimitAuthenticated`); 500 ids per `/get`; 1,000 uploads and 50 MB of uploads per account per hour (`Jmap.maxUploadCount`, `Jmap.uploadQuota`), which bounds attachments. `SystemSettings.defaultHostname` must be a real host name (`localhost` is refused).
+- **Sorted queries.** Any `Email/query` with a `sort` took about 1.4 s on an account with 50,000 messages, against 10 ms unsorted (`docs/beta-audit.md`, L2).
 
 ### Release packaging
 

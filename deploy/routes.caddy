@@ -14,6 +14,13 @@
 		path /.well-known/* /jmap /jmap/* /auth/* /login /login/* /device /device/* /api/* /admin /admin/* /logo /healthz/*
 	}
 	handle @stalwart {
+		# Stalwart's own pages (the sign-in form, its WebUI) send no security headers of their own.
+		# The sign-in form above all must not be framed by another site.
+		header {
+			X-Frame-Options "DENY"
+			X-Content-Type-Options "nosniff"
+			Referrer-Policy "no-referrer"
+		}
 		reverse_proxy stalwart:8080 {
 			# A 401 with "WWW-Authenticate: Basic" makes browsers hold fetch() open behind a
 			# native login prompt instead of returning the 401 to the SPA.

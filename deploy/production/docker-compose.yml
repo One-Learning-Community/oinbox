@@ -14,8 +14,8 @@ services:
     volumes:
       - ./config.json:/etc/stalwart/config.json:ro
       - stalwart-data:/var/lib/stalwart
-      # The certificate Caddy obtains, read-only: Stalwart uses it for SMTP and IMAP (plan.ndjson).
-      - caddy-data:/caddy-data:ro
+      # The certificate Caddy obtains, as cert-sync copies it: Stalwart uses it for SMTP and IMAP.
+      - mail-certs:/certs:ro
     ports:
       - "25:25"     # SMTP from other mail servers
       - "465:465"   # submission over TLS, for mail apps
@@ -62,6 +62,34 @@ services:
     depends_on:
       - stalwart
 
+  # Caddy keeps its certificates readable by root only, and Stalwart does not run as root. This copies
+  # the certificate for OINBOX_DOMAIN to a volume Stalwart can read, now and after every renewal.
+  # Stalwart picks a renewed copy up when told to: ./apply.sh --reload-tls (docs/operating.md).
+  cert-sync:
+    image: alpine:3.22
+    restart: unless-stopped
+    environment:
+      OINBOX_DOMAIN: "${OINBOX_DOMAIN}"
+      # The directory Caddy uses for its certificate authority (Let's Encrypt, as the Caddyfile pins).
+      CERT_ISSUER: "${CERT_ISSUER:-acme-v02.api.letsencrypt.org-directory}"
+    volumes:
+      - caddy-data:/data:ro
+      - mail-certs:/certs
+    command:
+      - sh
+      - -c
+      - |
+        src="/data/caddy/certificates/$$CERT_ISSUER/$$OINBOX_DOMAIN/$$OINBOX_DOMAIN"
+        while true; do
+          if [ -r "$$src.crt" ] && ! cmp -s "$$src.crt" /certs/tls.crt; then
+            install -o 2000 -g 2000 -m 0400 "$$src.key" /certs/tls.key
+            install -o 2000 -g 2000 -m 0444 "$$src.crt" /certs/tls.crt
+            echo "cert-sync: copied the certificate for $$OINBOX_DOMAIN"
+          fi
+          # Often until the first certificate exists, then twice a day.
+          if [ -r /certs/tls.crt ]; then sleep 43200; else sleep 10; fi
+        done
+
   # Stalwart's command line, for apply.sh and for one-off commands:
   #   docker compose run --rm cli query Account
   cli:
@@ -77,3 +105,4 @@ volumes:
   meili-data:
   caddy-data:
   caddy-config:
+  mail-certs:

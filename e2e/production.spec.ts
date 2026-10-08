@@ -21,6 +21,12 @@ test('@production sends HSTS and the CSP, compresses the app, and offers no CORS
   expect(home.headers()['content-security-policy']).toContain("default-src 'self'");
   expect(home.headers()['x-content-type-options']).toBe('nosniff');
 
+  // Stalwart's sign-in page sets no headers itself; the proxy adds them.
+  const login = await request.get('/login');
+  expect(login.headers()['x-frame-options']).toBe('DENY');
+  expect(login.headers()['x-content-type-options']).toBe('nosniff');
+  expect(login.headers()['strict-transport-security']).toContain('max-age=31536000');
+
   const script = /src="(\/assets\/index-[^"]+\.js)"/.exec(await home.text())![1]!;
   const asset = await request.get(script, { headers: { 'accept-encoding': 'gzip' } });
   expect(asset.headers()['content-encoding']).toBe('gzip');

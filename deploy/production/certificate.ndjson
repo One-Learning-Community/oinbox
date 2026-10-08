@@ -1,1 +1,1 @@
-{"@type":"create","object":"Certificate","value":{"cert-caddy":{"certificate":{"@type":"File","filePath":"/caddy-data/caddy/certificates/__CERT_ISSUER__/__OINBOX_DOMAIN__/__OINBOX_DOMAIN__.crt"},"privateKey":{"@type":"File","filePath":"/caddy-data/caddy/certificates/__CERT_ISSUER__/__OINBOX_DOMAIN__/__OINBOX_DOMAIN__.key"}}}}
+{"@type":"create","object":"Certificate","value":{"cert-caddy":{"certificate":{"@type":"File","filePath":"/certs/tls.crt"},"privateKey":{"@type":"File","filePath":"/certs/tls.key"}}}}
