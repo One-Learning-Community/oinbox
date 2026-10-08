@@ -470,6 +470,7 @@ a { color: var(--accent); }
 .field-static, .rozie-dialog .field-static { margin: 0; color: var(--text); font-size: 14px; }
 .field-error, .rozie-dialog .field-error { margin: 0 0 4px; min-height: 1em; color: var(--danger); font-size: 13px; }
 .signature-editor { border: 1px solid var(--border); border-radius: 8px; min-height: 120px; }
+.settings-version { margin: 32px 0 0; color: var(--text-3); font-size: 12px; }
 @media (max-width: 600px) {
   .settings { padding: 16px; }
   .identity-row { flex-direction: column; }

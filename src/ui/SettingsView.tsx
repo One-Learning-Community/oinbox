@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { identityLabel } from '../app/settings';
+import { versionLabel } from '../app/version';
 import type { Id } from '../jmap/types';
 import { signatureForCompose } from '../mail/settings';
 import { IdentityDialog } from './IdentityDialog';
@@ -12,6 +13,7 @@ export function SettingsView() {
       <h1>Settings</h1>
       <IdentitiesSection />
       <VacationForm />
+      <p class="settings-version">{versionLabel()}</p>
     </div>
   );
 }

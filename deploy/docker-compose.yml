@@ -54,6 +54,8 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        OINBOX_COMMIT: "${OINBOX_COMMIT:-unknown}"
     image: oinbox-web:dev
     restart: unless-stopped
     ports:
