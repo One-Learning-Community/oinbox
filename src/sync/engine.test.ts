@@ -44,6 +44,19 @@ describe('MailEngine', () => {
     expect(engine.state.threads.t1?.emailIds).toEqual(['e1', 'e2', 'e3']);
   });
 
+  it('reports mail that arrived since the last catch-up, once', async () => {
+    const arrived: string[][] = [];
+    engine.onArrived = (emails) => arrived.push(emails.map((e) => e.id));
+    // Changes are followed from the state the first list was read at.
+    await engine.ensureRange(engine.openQuery(inboxSpec), 0, 10);
+    server.addEmail({ id: 'e5', threadId: 't3', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { I: true } });
+    await engine.catchUp();
+    expect(arrived).toEqual([['e5']]);
+    // A change to mail already here is not an arrival.
+    await engine.catchUp();
+    expect(arrived).toEqual([['e5']]);
+  });
+
   it('applies new mail via Email/changes + Email/queryChanges when the server supports it', async () => {
     ({ server, engine } = setup({ collapsedQueryChanges: true }));
     await engine.start();

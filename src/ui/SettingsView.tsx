@@ -5,6 +5,7 @@ import { versionLabel } from '../app/version';
 import type { Id } from '../jmap/types';
 import { signatureForCompose } from '../mail/settings';
 import { IdentityDialog } from './IdentityDialog';
+import { NotificationsSection } from './NotificationsSection';
 import { VacationForm } from './VacationForm';
 
 export function SettingsView() {
@@ -13,6 +14,7 @@ export function SettingsView() {
       <h1>Settings</h1>
       <IdentitiesSection />
       <VacationForm />
+      <NotificationsSection />
       <p class="settings-version">{versionLabel()}</p>
     </div>
   );

@@ -130,6 +130,8 @@ export class MailEngine {
   /** Visible ranges per query, for refetching after cannotCalculateChanges. */
   private ranges = new Map<string, [number, number]>();
   onPersist: ((s: Snapshot) => void) | null = null;
+  /** Mail the server created since the last catch-up (new mail, but also our own drafts and sent copies). */
+  onArrived: ((emails: Email[]) => void) | null = null;
   /** Called with every batch of emails merged into the store (the recipient index listens). */
   onEmails: ((emails: Partial<Email>[]) => void) | null = null;
 
@@ -895,6 +897,7 @@ export class MailEngine {
 
     const toResetQueries: string[] = [];
     let more = false;
+    let arrived: Email[] = [];
     solidBatch(() => {
       if (mb) {
         const ch = res.get(mb.changes);
@@ -905,7 +908,9 @@ export class MailEngine {
       }
       if (em) {
         const ch = res.get(em.changes);
-        this.mergeEmails(res.get(em.created).list);
+        const created = res.get(em.created).list;
+        arrived = created.filter((e) => !this.state.emails[e.id]);
+        this.mergeEmails(created);
         // Updates only matter for emails we hold; others were fetched as partial records.
         this.mergeEmails(res.get(em.updated).list.filter((e) => this.state.emails[e.id]));
         this.set('emails', produce((m) => ch.destroyed.forEach((id) => delete m[id])));
@@ -934,6 +939,7 @@ export class MailEngine {
         }));
       }
     });
+    if (arrived.length) this.onArrived?.(arrived);
 
     for (const key of toResetQueries) await this.resetQuery(key);
     if (em || th) {

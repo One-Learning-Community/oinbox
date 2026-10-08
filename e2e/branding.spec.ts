@@ -17,14 +17,14 @@ test('the stack serves the default branding as JSON, never cached', async ({ req
 test('unbranded, the top bar and the tab say oinbox', async ({ page }) => {
   await page.goto('/inbox');
   await expect(page.locator('.topbar .brand')).toHaveText('oinbox');
-  await expect(page).toHaveTitle('oinbox');
+  await expect(page).toHaveTitle(/ – oinbox$/);
 });
 
 test('a name alone renames the top bar and the tab', async ({ page }) => {
   await brandAs(page, { name: 'Acme Mail' });
   await page.goto('/inbox');
   await expect(page.locator('.topbar .brand')).toHaveText('Acme Mail');
-  await expect(page).toHaveTitle('Acme Mail');
+  await expect(page).toHaveTitle(/ – Acme Mail$/);
 });
 
 test('a logo replaces the text in the top bar and becomes the tab icon', async ({ page }) => {
@@ -41,7 +41,7 @@ test('a logo replaces the text in the top bar and becomes the tab icon', async (
 test('the branding is remembered, so it is there at once on the next visit', async ({ page }) => {
   await brandAs(page, { name: 'Acme Mail' });
   await page.goto('/inbox');
-  await expect(page).toHaveTitle('Acme Mail');
+  await expect(page).toHaveTitle(/ – Acme Mail$/);
   // Next visit: the file is slow to arrive.
   await page.unroute('**/branding.json');
   await page.route('**/branding.json', () => new Promise(() => {}));

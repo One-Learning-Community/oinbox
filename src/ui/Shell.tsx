@@ -1,6 +1,8 @@
 import { A, useLocation, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, Show, type JSX } from 'solid-js';
+import { branding } from '../app/branding';
 import { useApp } from '../app/context';
+import { createNotifier, notifications, tabTitle } from '../app/notify';
 import type { Mailbox } from '../jmap/types';
 import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
 import { bannerText, vacationStatus } from '../mail/settings';
@@ -31,6 +33,19 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
   const [navOpen, setNavOpen] = createSignal(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const inbox = createMemo(() => Object.values(app.engine.state.mailboxes).find((mb) => mb.role === 'inbox'));
+  createEffect(() => (document.title = tabTitle(inbox()?.unreadThreads ?? 0, branding().name)));
+  app.engine.onArrived = createNotifier({
+    api: notifications.api,
+    enabled: notifications.prefs.enabled,
+    away: () => document.visibilityState === 'hidden' || !document.hasFocus(),
+    inboxId: () => inbox()?.id,
+    open: (path) => {
+      window.focus();
+      navigate(path);
+    },
+  });
+  onCleanup(() => (app.engine.onArrived = null));
   const dispose = installShortcuts(app, app.nav, navigate, {
     compose: () => app.composers.open('new'),
     reply: (mode) => {

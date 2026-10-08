@@ -27,6 +27,7 @@ The first public release. Tested against Stalwart 0.16.23 with Meilisearch 1.54.
 - The app's files are compressed (the main script is 265 kB on the wire, down from 870 kB), and "Loading…" shows while they download.
 - A production template (`deploy/production/`) with automatic HTTPS, TLS on the mail ports and CORS off, and an operator guide (`docs/operating.md`).
 - The version is shown at the bottom of Settings.
+- The tab title shows the Inbox's unread count, and desktop notifications for new mail can be switched on in Settings. They need an open tab: there is no notification with the browser closed.
 - Your own name and logo (`OINBOX_BRAND_NAME`, `OINBOX_BRAND_LOGO`) in the top bar, the sign-in card and the browser tab.
 - The release image runs behind a load balancer as it is: plain HTTP, with the listen address (`OINBOX_LISTEN`) and Stalwart's address (`OINBOX_UPSTREAM`) set from the environment.
 
