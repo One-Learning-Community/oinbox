@@ -116,8 +116,9 @@ export function splitParts(html: string, parts: EmailBodyPart[]): { inline: Inli
     if (!p.blobId || seen.has(p.blobId)) continue;
     seen.add(p.blobId);
     const cid = bareCid(p.cid);
-    if (cid && p.type.startsWith('image/') && used.has(cid)) {
-      if (!inline.some((i) => i.cid === cid)) inline.push({ cid, blobId: p.blobId, type: p.type, name: p.name ?? 'image', size: p.size });
+    // A second image under the same content id has no place in the text: it stays an attachment.
+    if (cid && p.type.startsWith('image/') && used.has(cid) && !inline.some((i) => i.cid === cid)) {
+      inline.push({ cid, blobId: p.blobId, type: p.type, name: p.name ?? 'image', size: p.size });
     } else attachments.push({ blobId: p.blobId, name: p.name ?? 'attachment', type: p.type, size: p.size });
   }
   return { inline, attachments };

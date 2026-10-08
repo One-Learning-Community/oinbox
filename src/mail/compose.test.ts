@@ -233,6 +233,13 @@ describe('splitParts', () => {
     expect(splitParts('<img src="cid:c1@x">', [ics])).toMatchObject({ inline: [], attachments: [{ name: 'i.ics' }] });
   });
 
+  it('keeps a second image part with the same content id as an attachment, so nothing is lost', () => {
+    const second = { ...png, blobId: 'P9', name: 'other.png' };
+    const r = splitParts('<img src="cid:c1@x">', [png, second]);
+    expect(r.inline.map((i) => i.blobId)).toEqual(['P1']);
+    expect(r.attachments.map((x) => x.blobId)).toEqual(['P9']);
+  });
+
   it('reads a part once when the server lists it twice, and skips parts without a blob', () => {
     // Another client's draft: the image sits in multipart/mixed, and Stalwart lists it in htmlBody as well.
     const r = splitParts('<img src="cid:c1@x">', [png, { ...png }, bodyPart({ type: 'text/html', partId: '1' })]);
@@ -293,6 +300,30 @@ describe('the original\'s parts in a reply and a forward', () => {
     const d = initialDraft('reply', withParts, me);
     expect(d.quoteHtml).not.toContain('cid:missing@x');
     expect(d.quoteHtml).not.toMatch(/\ssrc="https:\/\/r\.test/);
+  });
+
+  it('keeps an image listed only under htmlBody, as Stalwart does for one sent beside the body', () => {
+    const d = initialDraft('reply', {
+      ...original,
+      htmlBody: [{ partId: 'h', type: 'text/html' } as never, bodyPart({ blobId: 'O1', type: 'image/png', name: 'chart.png', cid: '<c1@x>', disposition: 'inline', size: 9 })],
+      bodyValues: { h: { value: '<p>Look</p><img src="cid:c1@x">', isEncodingProblem: false, isTruncated: false } },
+      attachments: [],
+    }, me);
+    expect(d.quoteHtml).toContain('<img src="cid:c1@x">');
+    expect(d.inline).toEqual([{ cid: 'c1@x', blobId: 'O1', type: 'image/png', name: 'chart.png', size: 9 }]);
+  });
+
+  it('keeps an image whose content id has an ampersand, in the quote and in the message built from it', () => {
+    const d = initialDraft('reply', {
+      ...original,
+      htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+      bodyValues: { h: { value: '<img src="cid:a&amp;b@x">', isEncodingProblem: false, isTruncated: false } },
+      attachments: [bodyPart({ blobId: 'O1', type: 'image/png', name: 'amp.png', cid: 'a&b@x', disposition: 'inline', size: 9 })],
+    }, me);
+    expect(referencedCids(d.quoteHtml)).toEqual(new Set(['a&b@x']));
+    expect(d.inline.map((i) => i.cid)).toEqual(['a&b@x']);
+    const built = buildEmailCreate(d, { name: null, email: 'alice@example.test' }, 'D').bodyStructure as EmailBodyStructure;
+    expect(JSON.stringify(built)).toContain('"cid":"a&b@x"');
   });
 
   it('copes with a plain-text original that has an attachment', () => {
