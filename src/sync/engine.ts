@@ -7,6 +7,7 @@ import type { IdentityValue, VacationPatch } from '../mail/settings';
 import type { LabelPlan } from '../mail/labels';
 import { applyEmailPatch, onlyIn, unlabelPatch, type EmailPatch, type MutableEmail } from './patch';
 import { applyQueryChanges, missingPages, type Slots } from './window';
+import { logUnexpected } from './connection';
 
 export const PAGE_SIZE = 50;
 /** Emails per request while emptying a label (Stalwart's maxObjectsInSet). */
@@ -201,7 +202,7 @@ export class MailEngine {
       await this.catchUp();
       this.set('synced', true);
       // A snapshot can be older than an identity change made elsewhere.
-      void this.refreshSettings().catch(() => undefined);
+      void this.refreshSettings().catch(logUnexpected);
       return;
     }
     const b = this.client.batch();
@@ -213,7 +214,7 @@ export class MailEngine {
     const identities = res.error(id) ? [] : res.get(id).list;
     if (!res.error(id)) this.identityState = res.get(id).state;
     this.set({ mailboxes: byId(mailboxes.list), identities, ready: true, synced: true });
-    void this.loadVacation().catch(() => undefined);
+    void this.loadVacation().catch(logUnexpected);
   }
 
   setOnline(online: boolean): void {
@@ -265,7 +266,7 @@ export class MailEngine {
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => {
       this.settleTimer = null;
-      for (const k of keys) if (this.state.queries[k]) void this.refreshWindow(k).catch(() => undefined);
+      for (const k of keys) if (this.state.queries[k]) void this.refreshWindow(k).catch(logUnexpected);
     }, this.settleDelayMs);
   }
 
@@ -577,7 +578,7 @@ export class MailEngine {
     const self = onServer.find((m) => m.id === id);
     if (self?.role) throw new Error(`'${self.name}' is a system mailbox.`);
     if (onServer.some((m) => m.parentId === id)) {
-      void this.catchUp().catch(() => undefined);
+      void this.catchUp().catch(logUnexpected);
       throw new LabelHasSubLabelsError();
     }
     try {
@@ -589,13 +590,13 @@ export class MailEngine {
       }
     } catch (e) {
       // What was swept before the failure is changed on the server: don't leave the store waiting for a push.
-      await this.catchUp().catch(() => undefined);
+      await this.catchUp().catch(logUnexpected);
       throw e;
     } finally {
       this.persistSoon();
     }
     this.forgetMailboxes([id]);
-    await this.catchUp().catch(() => undefined);
+    await this.catchUp().catch(logUnexpected);
   }
 
   /** Resolves true if the server refused because the mailbox still holds mail. */
@@ -823,9 +824,9 @@ export class MailEngine {
     const types = change.changed[this.accountId];
     if (!types) return;
     const stale = (['Mailbox', 'Email', 'Thread'] as const).some((t) => types[t] && types[t] !== this.states[t]);
-    if (stale) void this.catchUp();
-    if (types.Identity && types.Identity !== this.identityState) void this.refreshIdentities().catch(() => undefined);
-    if (types.SieveScript && types.SieveScript !== this.vacationState && this.hasVacation()) void this.loadVacation().catch(() => undefined);
+    if (stale) void this.catchUp().catch(logUnexpected);
+    if (types.Identity && types.Identity !== this.identityState) void this.refreshIdentities().catch(logUnexpected);
+    if (types.SieveScript && types.SieveScript !== this.vacationState && this.hasVacation()) void this.loadVacation().catch(logUnexpected);
   }
 
   /** Bring everything up to date with /changes and /queryChanges. Coalesces concurrent calls. */

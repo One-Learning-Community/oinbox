@@ -6,6 +6,7 @@ import { useApp } from '../app/context';
 import { FieldError, type Field } from '../app/settings';
 import { browserTimeZone, describeVacation, LIMITS, localDay, utf8Length, vacationInput, vacationStatus, type VacationInput } from '../mail/settings';
 import { now } from './clock';
+import { logUnexpected } from '../sync/connection';
 
 const sameInput = (a: VacationInput, b: VacationInput) => JSON.stringify(a) === JSON.stringify(b);
 const dayLabel = (day: string) =>
@@ -115,7 +116,7 @@ function VacationUnavailable() {
     <Show when={engine.state.vacationLoad !== 'idle' && engine.state.vacationLoad !== 'loading'} fallback={<p class="settings-note">Loading…</p>}>
       <Show when={engine.state.vacationLoad === 'failed'} fallback={<p class="settings-note">This server doesn't offer a vacation responder.</p>}>
         <p class="settings-note">The vacation responder couldn't be loaded.</p>
-        <button type="button" class="btn tonal" onClick={() => void engine.loadVacation().catch(() => undefined)}>Retry</button>
+        <button type="button" class="btn tonal" onClick={() => void engine.loadVacation().catch(logUnexpected)}>Retry</button>
       </Show>
     </Show>
   );

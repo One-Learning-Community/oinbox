@@ -55,28 +55,50 @@ export class SseParser {
   }
 }
 
+export interface PushStream {
+  close(): void;
+  wake(): void;
+  restart(): void;
+}
+
 export interface PushOptions {
   onStateChange: (change: StateChange) => void;
   /** Called after every (re)connect so the caller can catch up with /changes. */
   onConnected?: () => void;
   onUnauthorized?: () => void;
+  /** The stream ended or could not be opened; a reconnect follows. */
+  onDisconnected?: (error: unknown) => void;
 }
+
+/**
+ * The server pings every 30 s (eventSourceUrl). A stream that has been silent for longer than two
+ * pings is dead: a network that drops without closing the connection leaves it open for ever.
+ */
+const STALE_MS = 75_000;
 
 /** Data types oinbox wants StateChange pushes for. */
 export const PUSH_TYPES = 'Email,Mailbox,Thread,EmailDelivery,Calendar,CalendarEvent';
 
 /**
  * Keep a JMAP push connection open, reconnecting with capped exponential backoff.
- * Returns a function that closes it.
+ * `wake` skips the rest of a backoff wait: the user pressed Retry, or the browser came back online.
+ * `restart` drops the current stream and opens a new one: the browser says the network went away.
  */
-export function openPushStream(client: JmapClient, opts: PushOptions): () => void {
+export function openPushStream(client: JmapClient, opts: PushOptions): PushStream {
   let closed = false;
   let controller: AbortController | null = null;
   let attempt = 0;
+  let wakeUp: (() => void) | null = null;
 
   const run = async () => {
     while (!closed) {
       controller = new AbortController();
+      const stream = controller;
+      let stale: ReturnType<typeof setTimeout> | undefined;
+      const heard = () => {
+        clearTimeout(stale);
+        stale = setTimeout(() => stream.abort(), STALE_MS);
+      };
       try {
         const res = await client.authFetch(client.eventSourceUrl(PUSH_TYPES), {
           headers: { accept: 'text/event-stream' },
@@ -84,6 +106,7 @@ export function openPushStream(client: JmapClient, opts: PushOptions): () => voi
         });
         if (!res.ok || !res.body) throw new Error(`push stream failed: ${res.status}`);
         attempt = 0;
+        heard();
         opts.onConnected?.();
         const parser = new SseParser((e) => {
           if (e.event !== 'state') return;
@@ -97,24 +120,43 @@ export function openPushStream(client: JmapClient, opts: PushOptions): () => voi
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
+          heard();
           parser.push(value);
         }
+        throw new Error('push stream closed');
       } catch (e) {
+        clearTimeout(stale);
         if (closed) return;
         if (e instanceof UnauthorizedError) {
           opts.onUnauthorized?.();
           return;
         }
+        opts.onDisconnected?.(e);
       }
       if (closed) return;
       const delay = Math.min(30_000, 1000 * 2 ** attempt++) * (0.5 + Math.random() / 2);
-      await new Promise((r) => setTimeout(r, delay));
+      await new Promise<void>((r) => {
+        const t = setTimeout(r, delay);
+        wakeUp = () => {
+          clearTimeout(t);
+          r();
+        };
+      });
+      wakeUp = null;
     }
   };
   void run();
 
-  return () => {
-    closed = true;
-    controller?.abort();
+  return {
+    close: () => {
+      closed = true;
+      controller?.abort();
+      wakeUp?.();
+    },
+    wake: () => {
+      attempt = 0;
+      wakeUp?.();
+    },
+    restart: () => controller?.abort(),
   };
 }

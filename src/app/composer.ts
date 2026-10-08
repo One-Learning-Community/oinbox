@@ -3,6 +3,7 @@ import type { JmapClient } from '../jmap/client';
 import type { EmailAddress, Id, Identity } from '../jmap/types';
 import { buildEmailCreate, initialDraft, splitDraftHtml, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
 import { signatureForCompose } from '../mail/settings';
+import { logUnexpected } from '../sync/connection';
 import type { EmailRec, MailEngine } from '../sync/engine';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
@@ -205,7 +206,7 @@ export function createComposers(
     if (!ok) return;
     remove(c);
     const id = c.draftId();
-    if (id) await engine.destroyEmails([id]).catch(() => undefined);
+    if (id) await engine.destroyEmails([id]).catch(logUnexpected);
     toast('Draft discarded.');
   };
 

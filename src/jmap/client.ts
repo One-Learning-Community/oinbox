@@ -63,6 +63,8 @@ export interface JmapClientOptions {
   fetch?: typeof fetch;
   /** Abort non-streaming requests after this long (default 30 s). */
   timeoutMs?: number;
+  /** Once per attempt: null when Stalwart answered, else the transport failure (network, timeout, 502-504). */
+  onOutcome?: (error: unknown | null) => void;
   /** Called on 401; resolve true if credentials were renewed and the request should be retried once. */
   onUnauthorized?: () => Promise<boolean>;
 }
@@ -93,21 +95,29 @@ export class JmapClient {
     return id;
   }
 
-  /** Authenticated fetch. Requests without their own signal time out; streams pass a signal. */
-  async authFetch(url: string, init: RequestInit = {}, retried = false): Promise<Response> {
+  /**
+   * Authenticated fetch. Requests without their own signal time out, unless `noTimeout`
+   * (uploads and downloads take as long as they take); streams pass a signal.
+   */
+  async authFetch(url: string, init: RequestInit = {}, retried = false, noTimeout = false): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${await this.opts.getToken()}`);
-    const signal = init.signal ?? AbortSignal.timeout(this.opts.timeoutMs ?? 30_000);
+    const own = !init.signal && !noTimeout;
+    const signal = init.signal ?? (noTimeout ? undefined : AbortSignal.timeout(this.opts.timeoutMs ?? 30_000));
     let res: Response;
     try {
-      res = await this.fetchImpl(url, { ...init, headers, signal });
+      res = await this.fetchImpl(url, { ...init, headers, ...(signal ? { signal } : {}) });
     } catch (e) {
-      if ((e as Error).name === 'TimeoutError') throw new RequestError(0, 'the mail server did not respond in time');
-      throw e;
+      const timedOut = own && (e as Error).name === 'TimeoutError';
+      const err = timedOut ? new RequestError(0, 'the mail server did not respond in time') : e;
+      // An abort is the caller closing its own request, not a connection problem.
+      if ((e as Error).name !== 'AbortError') this.opts.onOutcome?.(err);
+      throw err;
     }
+    if (res.status === 502 || res.status === 503 || res.status === 504) this.opts.onOutcome?.(new RequestError(res.status, 'the mail server is unavailable'));
+    else this.opts.onOutcome?.(null);
     if (res.status === 401) {
-      // Blob bodies (uploads) can be re-sent; streams can't, but we never upload streams.
-      if (!retried && (await this.opts.onUnauthorized?.())) return this.authFetch(url, init, true);
+      if (!retried && (await this.opts.onUnauthorized?.())) return this.authFetch(url, init, true, noTimeout);
       throw new UnauthorizedError();
     }
     return res;
@@ -153,7 +163,7 @@ export class JmapClient {
       method: 'POST',
       headers: { 'content-type': blob.type || 'application/octet-stream' },
       body: blob,
-    });
+    }, false, true);
     if (!res.ok) throw new RequestError(res.status, await res.text());
     return (await res.json()) as UploadResult;
   }
@@ -168,7 +178,7 @@ export class JmapClient {
 
   /** Fetch a blob with auth (downloads can't carry a bearer token via a plain <img src>). */
   async fetchBlob(blobId: string, name: string, type: string): Promise<Blob> {
-    const res = await this.authFetch(this.downloadUrl(blobId, name, type));
+    const res = await this.authFetch(this.downloadUrl(blobId, name, type), {}, false, true);
     if (!res.ok) throw new RequestError(res.status, await res.text());
     return res.blob();
   }

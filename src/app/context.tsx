@@ -9,6 +9,7 @@ import type { OAuth } from '../auth/oauth';
 import type { CalendarStore } from '../calendar/store';
 import { loadImageAllowList, saveImageAllowList } from '../cache/persist';
 import type { JmapClient } from '../jmap/client';
+import type { Connection } from '../sync/connection';
 import type { MailEngine } from '../sync/engine';
 import type { Nav } from '../ui/nav';
 
@@ -24,6 +25,9 @@ export interface App {
   toast: ToastFn;
   /** Where a caught error goes: the console and one toast. */
   errors: ErrorReporter;
+  connection: Connection;
+  /** Start the OAuth flow again, coming back to the current page. */
+  signIn: () => void;
   actions: Actions;
   labels: Labels;
   settings: Settings;

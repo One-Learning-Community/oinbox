@@ -6,6 +6,7 @@ import { CALENDARS, CALENDARS_PARSE, CORE, type Calendar, type CalendarEvent, ty
 import { rsvpPatch } from './invite';
 import { addRangeCalls, rangeKey, toDisplayEvents, toUtcDate, type DisplayEvent, type Range } from './instances';
 import { loadHidden, saveHidden } from './prefs';
+import { logUnexpected } from '../sync/connection';
 
 export interface CalendarState {
   calendars: Record<Id, Calendar>;
@@ -112,14 +113,14 @@ export class CalendarStore {
     if (!accountId) return;
     const types = change.changed[accountId];
     if (!types) return;
-    if (types.Calendar && types.Calendar !== this.calendarState) void this.loadCalendars().catch(() => undefined);
+    if (types.Calendar && types.Calendar !== this.calendarState) void this.loadCalendars().catch(logUnexpected);
     if (types.CalendarEvent && types.CalendarEvent !== this.eventState) void this.refresh();
   }
 
   /** After a push (re)connect, changes may have been missed. */
   onConnected(): void {
     if (!this.accountId) return;
-    void this.loadCalendars().catch(() => undefined);
+    void this.loadCalendars().catch(logUnexpected);
     void this.refresh();
   }
 

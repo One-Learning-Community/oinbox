@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JmapClient, MethodError, UnauthorizedError } from './client';
+import { JmapClient, MethodError, RequestError, UnauthorizedError } from './client';
 import { RequestBuilder } from './request';
 import type { Session } from './types';
 
@@ -189,5 +189,55 @@ describe('JmapClient', () => {
     const r = await c.upload(new Blob(['abc'], { type: 'text/plain' }));
     expect(r.blobId).toBe('B1');
     expect((f.mock.calls[1] as unknown as [string])[0]).toBe('http://localhost:8080/jmap/upload/a1/');
+  });
+});
+
+const make = (fetchImpl: typeof fetch, onOutcome = vi.fn(), timeoutMs = 30_000) =>
+  ({ client: new JmapClient({ sessionUrl: 'http://x/session', getToken: async () => 't', fetch: fetchImpl, onOutcome, timeoutMs }), onOutcome });
+
+describe('JmapClient outcomes', () => {
+  it('reports an answer as success, even a 4xx', async () => {
+    const { client, onOutcome } = make(async () => new Response('no', { status: 400 }));
+    await client.authFetch('http://x/a');
+    expect(onOutcome).toHaveBeenCalledWith(null);
+  });
+  it('reports a network failure and rethrows it', async () => {
+    const err = new TypeError('Failed to fetch');
+    const { client, onOutcome } = make(async () => { throw err; });
+    await expect(client.authFetch('http://x/a')).rejects.toBe(err);
+    expect(onOutcome).toHaveBeenCalledWith(err);
+  });
+  it('reports 502, 503 and 504 as failures', async () => {
+    for (const status of [502, 503, 504]) {
+      const { client, onOutcome } = make(async () => new Response('', { status }));
+      await client.authFetch('http://x/a');
+      expect(onOutcome.mock.calls[0]![0]).toBeInstanceOf(RequestError);
+    }
+  });
+  it('reports a timeout as a RequestError with status 0', async () => {
+    const hang: typeof fetch = (_u, init) => new Promise((_r, reject) => init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason)));
+    const { client, onOutcome } = make(hang, vi.fn(), 20);
+    await expect(client.authFetch('http://x/a')).rejects.toMatchObject({ status: 0 });
+    expect(onOutcome.mock.calls[0]![0]).toMatchObject({ status: 0 });
+  });
+  it('does not report a caller abort', async () => {
+    const ac = new AbortController();
+    const hang: typeof fetch = (_u, init) => new Promise((_r, reject) => init!.signal!.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+    const { client, onOutcome } = make(hang);
+    const p = client.authFetch('http://x/a', { signal: ac.signal });
+    // After the token lookup, so the request is in flight when it is aborted.
+    await Promise.resolve();
+    await Promise.resolve();
+    ac.abort();
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+    expect(onOutcome).not.toHaveBeenCalled();
+  });
+  it('gives uploads no timeout', async () => {
+    let signal: AbortSignal | undefined;
+    const { client } = make(async (_u, init) => { signal = init!.signal!; return Response.json({ accountId: 'a', blobId: 'b', type: 't', size: 1 }); }, vi.fn(), 5);
+    client.useSession({ uploadUrl: 'http://x/up/{accountId}', primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a' } } as never);
+    await client.upload(new Blob(['x']));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(signal?.aborted ?? false).toBe(false);
   });
 });

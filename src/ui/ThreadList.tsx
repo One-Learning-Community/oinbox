@@ -7,6 +7,7 @@ import { queryKey } from '../sync/engine';
 import { resolveView, threadRow, type View } from '../sync/selectors';
 import { Icon } from './icons';
 import { createMediaQuery, createVirtualList } from './virtual';
+import { logUnexpected } from '../sync/connection';
 
 export function ThreadList(props: { view: View; hidden: boolean }) {
   const { engine, toast, actions, nav, composers } = useApp();
@@ -75,7 +76,7 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
   let hoverTimer: ReturnType<typeof setTimeout> | undefined;
   const prefetch = (threadId: string) => {
     clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => void engine.loadThread(threadId).catch(() => undefined), 80);
+    hoverTimer = setTimeout(() => void engine.loadThread(threadId).catch(logUnexpected), 80);
   };
   onCleanup(() => clearTimeout(hoverTimer));
   // Prefetch the cursor row so "o" opens instantly.
@@ -87,7 +88,7 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
   /** Drafts-only threads open in the composer (Gmail); everything else opens the conversation. */
   const openRow = async (threadId: string) => {
     if (props.view.role === 'drafts') {
-      await engine.loadThread(threadId).catch(() => undefined);
+      await engine.loadThread(threadId).catch(logUnexpected);
       const emails = engine.threadEmails([threadId]);
       if (emails.length && emails.every((e) => e.keywords?.$draft)) {
         const latest = emails.sort((a, b) => (b.receivedAt ?? '').localeCompare(a.receivedAt ?? ''))[0]!;

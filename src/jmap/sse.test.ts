@@ -67,7 +67,7 @@ describe('openPushStream', () => {
       client.useSession(fakeSession());
 
       let connected = 0;
-      const close = openPushStream(client, { onStateChange: () => {}, onConnected: () => connected++ });
+      const { close } = openPushStream(client, { onStateChange: () => {}, onConnected: () => connected++ });
       try {
         // First connection succeeds, onConnected fires once, then the empty stream ends
         // immediately and the client schedules a reconnect.
@@ -97,7 +97,7 @@ describe('openPushStream', () => {
     };
     const client = new JmapClient({ sessionUrl: 'http://fake/session', getToken: async () => 't', fetch: fetchImpl as unknown as typeof fetch });
     client.useSession({ ...fakeSession(), eventSourceUrl: 'http://fake/events?types={types}&closeafter={closeafter}&ping={ping}' });
-    const close = openPushStream(client, { onStateChange: () => {} });
+    const { close } = openPushStream(client, { onStateChange: () => {} });
     try {
       await vi.waitFor(() => expect(urls.length).toBeGreaterThan(0));
       const types = new URL(urls[0]!).searchParams.get('types')!.split(',');
@@ -105,5 +105,64 @@ describe('openPushStream', () => {
     } finally {
       close();
     }
+  });
+
+  it('reports a dropped stream and reconnects at once when woken', async () => {
+    let calls = 0;
+    const client = {
+      eventSourceUrl: () => 'http://x/es',
+      authFetch: async () => {
+        calls++;
+        return new Response(new ReadableStream({ start: (c) => c.close() }), { status: 200 });
+      },
+    } as unknown as JmapClient;
+    const dropped = vi.fn();
+    const push = openPushStream(client, { onStateChange: () => {}, onDisconnected: dropped });
+    await vi.waitFor(() => expect(dropped).toHaveBeenCalledTimes(1));
+    push.wake();
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(2));
+    push.close();
+  });
+  /** A stream that opens and then says nothing, like a connection the network silently dropped. */
+  const silentClient = (onFetch: () => void) =>
+    ({
+      eventSourceUrl: () => 'http://x/es',
+      authFetch: async (_url: string, init: RequestInit) => {
+        onFetch();
+        const body = new ReadableStream({
+          start: (c) => init.signal!.addEventListener('abort', () => c.error(Object.assign(new Error('aborted'), { name: 'AbortError' }))),
+        });
+        return new Response(body, { status: 200 });
+      },
+    }) as unknown as JmapClient;
+
+  it('treats a stream with no data for longer than two pings as dropped', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const dropped = vi.fn();
+      const push = openPushStream(silentClient(() => calls++), { onStateChange: () => {}, onDisconnected: dropped });
+      await vi.advanceTimersByTimeAsync(74_000);
+      expect(dropped).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(dropped).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(calls).toBe(2);
+      push.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops and reopens the stream on restart', async () => {
+    let calls = 0;
+    const dropped = vi.fn();
+    const push = openPushStream(silentClient(() => calls++), { onStateChange: () => {}, onDisconnected: dropped });
+    await vi.waitFor(() => expect(calls).toBe(1));
+    push.restart();
+    await vi.waitFor(() => expect(dropped).toHaveBeenCalledTimes(1));
+    push.wake();
+    await vi.waitFor(() => expect(calls).toBe(2));
+    push.close();
   });
 });

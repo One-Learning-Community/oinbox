@@ -13,9 +13,10 @@ import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
 import { JmapClient, UnauthorizedError } from './jmap/client';
-import { openPushStream } from './jmap/sse';
+import { openPushStream, type PushStream } from './jmap/sse';
 import { CALENDARS } from './jmap/types';
 import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
+import { createConnection, isTransportFailure, logUnexpected } from './sync/connection';
 import { MailEngine } from './sync/engine';
 import { createConfirmDialog } from './ui/ConfirmDialog';
 import { SettingsView } from './ui/SettingsView';
@@ -56,11 +57,19 @@ async function boot() {
     return;
   }
 
+  const connection = createConnection();
   const client = new JmapClient({
     sessionUrl: `${origin}/.well-known/jmap`,
-    getToken: () => auth.getToken(),
+    // A token refresh can fail on the network too, before any request is made.
+    getToken: () =>
+      auth.getToken().catch((e) => {
+        connection.reportFailure('request', e);
+        throw e;
+      }),
     onUnauthorized: () => auth.renew(),
+    onOutcome: (e) => (e === null ? connection.reportSuccess('request') : connection.reportFailure('request', e)),
   });
+  let push: PushStream | undefined;
   const engine = new MailEngine(client);
   // Before the warm-start snapshot is applied, so it sees every email.
   const recipients = createRecipients(engine);
@@ -75,9 +84,24 @@ async function boot() {
     recipients.stop();
     void (user ? clearCache(user) : Promise.resolve()).finally(() => location.assign('/'));
   };
+  /** The server no longer accepts our tokens. Stay on the page, so nothing the user was writing is lost. */
+  const sessionLost = () => {
+    if (connection.state() === 'signed-out') return;
+    const user = client.hasSession ? client.session.username : null;
+    auth.signOut();
+    recipients.stop();
+    push?.close();
+    engine.setOnline(false);
+    if (user) void clearCache(user);
+    connection.signedOut();
+  };
+  const signIn = () => void auth.authorizationUrl(location.pathname + location.search).then((url) => location.assign(url));
+  let rendered = false;
   const onAuthError = (e: unknown) => {
     if (e instanceof UnauthorizedError || e instanceof NotSignedInError) {
-      signOut();
+      // Before the app is on screen there is nothing to keep: go to the sign-in card.
+      if (rendered) sessionLost();
+      else signOut();
       return true;
     }
     return false;
@@ -101,6 +125,8 @@ async function boot() {
     auth,
     toast: toasts.toast,
     errors,
+    connection,
+    signIn,
     actions: createActions(engine, toasts.toast, confirmDialog.confirm),
     labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session) : DEFAULT_LIMITS)),
     settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
@@ -122,34 +148,69 @@ async function boot() {
     void calendar.loadCalendars().catch((e) => onAuthError(e));
     // Suggestions are a convenience: a failed scan is dropped unless it is an auth failure.
     void recipients.scanSent().catch((e) => onAuthError(e));
-    openPushStream(client, {
+    push?.close();
+    push = openPushStream(client, {
       onStateChange: (c) => {
         engine.onStateChange(c);
         calendar.onStateChange(c);
       },
       onConnected: () => {
+        connection.reportSuccess('push');
         engine.setOnline(true);
-        void engine.catchUp().catch(() => undefined);
-        void engine.refreshSettings().catch(() => undefined);
+        void engine.catchUp().catch(logUnexpected);
+        void engine.refreshSettings().catch(logUnexpected);
         calendar.onConnected();
       },
-      onUnauthorized: () => signOut(),
+      onDisconnected: (e) => {
+        engine.setOnline(false);
+        connection.reportFailure('push', e);
+      },
+      onUnauthorized: () => sessionLost(),
     });
   };
+  let started = false;
+  connection.onRetry(() => {
+    push?.wake();
+    if (started) void engine.catchUp().catch(logUnexpected);
+  });
+  // The browser's word that the network is back is a hint to try, never proof of a connection.
+  window.addEventListener('online', () => connection.retryNow());
+  // An idle tab makes no requests, and a dropped network leaves the push stream open: find out now.
+  window.addEventListener('offline', () => {
+    push?.restart();
+    if (started) void engine.catchUp().catch(logUnexpected);
+  });
 
   if (!cachedSession) {
     try {
       await start();
+      started = true;
     } catch (e) {
       if (!onAuthError(e)) render(() => <SignIn auth={auth} error={`Couldn't reach the mail server: ${String(e)}`} />, root);
       return;
     }
   } else {
-    start().catch((e) => {
-      if (!onAuthError(e)) app.toast(`Couldn't reach the mail server: ${String(e)}`, 'error');
-    });
+    // Warm start: the snapshot is on screen. If the server can't be reached, the banner says so
+    // and the session, the catch-up and the push stream come up when it can.
+    const tryStart = (): Promise<void> =>
+      start().then(
+        () => void (started = true),
+        (e) => {
+          if (onAuthError(e)) return;
+          if (!isTransportFailure(e)) {
+            app.toast(`Couldn't reach the mail server: ${String(e)}`, 'error');
+            return;
+          }
+          const off = connection.onRetry(() => {
+            off();
+            void tryStart();
+          });
+        },
+      );
+    void tryStart();
   }
 
+  rendered = true;
   render(
     () => (
       <ErrorBoundary

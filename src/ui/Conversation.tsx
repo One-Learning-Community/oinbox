@@ -10,6 +10,7 @@ import { Icon } from './icons';
 import { InviteCard } from './InviteCard';
 import { MessageBody } from './MessageBody';
 import { PaneBoundary } from './PaneBoundary';
+import { logUnexpected } from '../sync/connection';
 
 const ComposerView = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposerView })));
 
@@ -35,7 +36,7 @@ export function Conversation(props: { view: View; threadId: Id }) {
   // bodies: fetch them, or they'd stay invisible until the conversation is reopened.
   createEffect(() => {
     const t = engine.state.threads[props.threadId];
-    if (loaded() && t?.emailIds.some((id) => !engine.state.bodies[id])) void engine.loadThread(props.threadId).catch(() => undefined);
+    if (loaded() && t?.emailIds.some((id) => !engine.state.bodies[id])) void engine.loadThread(props.threadId).catch(logUnexpected);
   });
 
   const [showDeleted, setShowDeleted] = createSignal(false);

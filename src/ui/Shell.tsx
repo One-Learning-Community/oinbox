@@ -5,6 +5,7 @@ import type { Mailbox } from '../jmap/types';
 import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
 import { bannerText, vacationStatus } from '../mail/settings';
 import { now } from './clock';
+import { ConnectionBanner } from './ConnectionBanner';
 import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
@@ -79,6 +80,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         </PaneBoundary>
       </nav>
       <main class="main">
+        <ConnectionBanner connection={app.connection} onSignIn={app.signIn} />
         <Show when={vacationBanner()}>
           {(text) => <p class="vacation-banner">{text()} <A href="/settings">Settings</A></p>}
         </Show>
