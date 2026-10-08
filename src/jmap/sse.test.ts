@@ -165,4 +165,32 @@ describe('openPushStream', () => {
     await vi.waitFor(() => expect(calls).toBe(2));
     push.close();
   });
+  it('counts a request still waiting for its first bytes as connected, unconfirmed, after 2 seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      // Some engines hold fetch() back until the first body chunk, which is the server's first ping.
+      const client = {
+        eventSourceUrl: () => 'http://x/es',
+        authFetch: (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))),
+      } as unknown as JmapClient;
+      const connected = vi.fn();
+      const push = openPushStream(client, { onStateChange: () => {}, onConnected: connected });
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(connected).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(connected).toHaveBeenCalledTimes(1);
+      expect(connected).toHaveBeenCalledWith(false);
+      push.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('confirms the connection when the response arrives', async () => {
+    const connected = vi.fn();
+    const push = openPushStream(silentClient(() => {}), { onStateChange: () => {}, onConnected: connected });
+    await vi.waitFor(() => expect(connected).toHaveBeenCalledWith(true));
+    push.close();
+  });
 });

@@ -63,8 +63,12 @@ export interface PushStream {
 
 export interface PushOptions {
   onStateChange: (change: StateChange) => void;
-  /** Called after every (re)connect so the caller can catch up with /changes. */
-  onConnected?: () => void;
+  /**
+   * Called after every (re)connect so the caller can catch up with /changes. `confirmed` is false when
+   * the request is merely still open after 2 s: some engines hold fetch() back until the first body
+   * chunk, which is the server's first ping, 30 s in. It is called again, confirmed, when that arrives.
+   */
+  onConnected?: (confirmed: boolean) => void;
   onUnauthorized?: () => void;
   /** The stream ended or could not be opened; a reconnect follows. */
   onDisconnected?: (error: unknown) => void;
@@ -75,6 +79,7 @@ export interface PushOptions {
  * pings is dead: a network that drops without closing the connection leaves it open for ever.
  */
 const STALE_MS = 75_000;
+const ASSUME_OPEN_MS = 2000;
 
 /** Data types oinbox wants StateChange pushes for. */
 export const PUSH_TYPES = 'Email,Mailbox,Thread,EmailDelivery,Calendar,CalendarEvent';
@@ -99,15 +104,17 @@ export function openPushStream(client: JmapClient, opts: PushOptions): PushStrea
         clearTimeout(stale);
         stale = setTimeout(() => stream.abort(), STALE_MS);
       };
+      const assume = setTimeout(() => opts.onConnected?.(false), ASSUME_OPEN_MS);
       try {
         const res = await client.authFetch(client.eventSourceUrl(PUSH_TYPES), {
           headers: { accept: 'text/event-stream' },
           signal: controller.signal,
         });
+        clearTimeout(assume);
         if (!res.ok || !res.body) throw new Error(`push stream failed: ${res.status}`);
         attempt = 0;
         heard();
-        opts.onConnected?.();
+        opts.onConnected?.(true);
         const parser = new SseParser((e) => {
           if (e.event !== 'state') return;
           try {
@@ -125,6 +132,7 @@ export function openPushStream(client: JmapClient, opts: PushOptions): PushStrea
         }
         throw new Error('push stream closed');
       } catch (e) {
+        clearTimeout(assume);
         clearTimeout(stale);
         if (closed) return;
         if (e instanceof UnauthorizedError) {

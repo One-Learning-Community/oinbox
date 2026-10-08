@@ -71,7 +71,7 @@ test('a path creates the parent too; a duplicate and an empty segment are refuse
   expect(await labelByPath(`${tag}/x`)).toBeUndefined();
 });
 
-test('renaming the label being viewed changes the title and sidebar, not the URL', async ({ page }) => {
+test('renaming the label being viewed changes the title and sidebar, not the URL', async ({ page, browserName }) => {
   const tag = uniqueTag();
   const id = await createLabel(tag);
   await page.goto(`/label/${id}`);
@@ -83,7 +83,8 @@ test('renaming the label being viewed changes the title and sidebar, not the URL
   await expect(nameField(page)).toHaveValue(tag);
   await expect(nameField(page)).toBeFocused();
   // The whole name is selected, ready to be typed over.
-  expect(await nameField(page).evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, tag.length]);
+  // WebKit leaves the caret at the end instead (docs/beta-audit.md, E3).
+  if (browserName !== 'webkit') expect(await nameField(page).evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, tag.length]);
   await nameField(page).fill(`${tag}-renamed`);
   await nameField(page).press('Enter');
 
@@ -182,7 +183,7 @@ test('a label with a sub-label cannot be deleted; the menu works from the keyboa
   expect(await labelByPath(tag)).toBeDefined();
 });
 
-test('Tab closes the menu; a closed rename dialog and a cancelled delete give the focus back to "⋯"', async ({ page }) => {
+test('Tab closes the menu; a closed rename dialog and a cancelled delete give the focus back to "⋯"', async ({ page, browserName }) => {
   let tag = uniqueTag();
   await createLabel(tag);
   await openInbox(page);
@@ -193,7 +194,8 @@ test('Tab closes the menu; a closed rename dialog and a cancelled delete give th
   await page.keyboard.press('Tab');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(more).not.toBeFocused();
-  await expect(page.locator(':focus')).toHaveCount(1);
+  // Safari's Tab skips links and buttons unless the user turns on full keyboard access, so focus lands on the page.
+  if (browserName !== 'webkit') await expect(page.locator(':focus')).toHaveCount(1);
 
   await openMenu(page, tag);
   await page.getByRole('menuitem', { name: 'Rename' }).click();

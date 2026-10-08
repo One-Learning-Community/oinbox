@@ -165,8 +165,9 @@ async function boot() {
         engine.onStateChange(c);
         calendar.onStateChange(c);
       },
-      onConnected: () => {
-        connection.reportSuccess('push');
+      onConnected: (confirmed) => {
+        // Only an answer from the server is evidence for the banner; an open request is not.
+        if (confirmed) connection.reportSuccess('push');
         engine.setOnline(true);
         void engine.catchUp().catch(logUnexpected);
         void engine.refreshSettings().catch(logUnexpected);

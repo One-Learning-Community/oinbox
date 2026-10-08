@@ -279,7 +279,8 @@ test('someone alice just wrote to is suggested straight away', async ({ page }) 
   await expect(suggestions(again)).toContainText(address);
 });
 
-test('free text still works: a comma commits, a pasted list adds everyone, Backspace removes the last, leaving the field commits', async ({ page }) => {
+test('free text still works: a comma commits, a pasted list adds everyone, Backspace removes the last, leaving the field commits', async ({ page, browserName }) => {
+  test.skip(browserName === 'firefox', 'Firefox drops clipboardData from a script-made ClipboardEvent, so the paste step cannot be simulated there');
   const c = await openComposer(page, newSubject());
   const to = recipientInput(c);
   await to.pressSequentially('zed@nowhere.test,');

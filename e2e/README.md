@@ -1,6 +1,6 @@
 # oinbox end-to-end tests
 
-Playwright (Chromium) against the real dev stack in `deploy/` (Stalwart + Meilisearch + Caddy on http://localhost:8080).
+Playwright (Chromium, Firefox, WebKit, and WebKit at phone size) against the real dev stack in `deploy/` (Stalwart + Meilisearch + Caddy on http://localhost:8080).
 
 ## Run
 
@@ -8,8 +8,21 @@ Playwright (Chromium) against the real dev stack in `deploy/` (Stalwart + Meilis
 # once: stack with Caddy serving this checkout's dist/ (not the dist baked into the image)
 (cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d)
 pnpm build    # the tests run against ./dist
-pnpm e2e      # = playwright test
+pnpm e2e      # Chromium only: the quick run
+pnpm e2e:all  # Chromium, Firefox, WebKit and the phone project, as CI runs them
+pnpm e2e:perf # hand-run measurements against the 50k mailbox (see deploy/README.md); never in CI
 ```
+
+## Projects and tags
+
+| Project | Engine | Runs |
+|---|---|---|
+| `chromium`, `firefox`, `webkit` | desktop, 1280×900 | every spec, except tests tagged `@perf` or `@production` |
+| `phone` | WebKit as an iPhone 14 (390×844, touch) | only tests tagged `@phone` |
+| `perf` | Chromium | only tests tagged `@perf` |
+
+Put the tag in the test title (`test('@phone the inbox fits the screen', …)`). A test that cannot pass on one engine is skipped for that engine with the reason in the `test.skip` call, and listed in `docs/beta-audit.md`.
+`pnpm exec playwright install firefox webkit` fetches the other engines once.
 
 `e2e/global-setup.ts` does four things:
 

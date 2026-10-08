@@ -28,11 +28,24 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm build # tsc -b, then vite build
+        env:
+          OINBOX_COMMIT: ${{ github.sha }}
 
   e2e:
-    name: End-to-end
+    name: End-to-end (${{ matrix.project }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each job has its own stack, so the engines run side by side on one mailbox each.
+        include:
+          - { project: chromium, browser: chromium }
+          - { project: firefox, browser: firefox }
+          - { project: webkit, browser: webkit }
+          - { project: phone, browser: webkit }
+    env:
+      OINBOX_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -42,12 +55,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build # the stack serves ./dist
-      - run: pnpm exec playwright install --with-deps chromium
+      # Chromium always: the sign-in setup project runs on it.
+      - run: pnpm exec playwright install --with-deps chromium ${{ matrix.browser }}
       - name: Start Stalwart, Meilisearch and Caddy
         working-directory: deploy
         # --build also proves the Dockerfile still builds the web image.
         run: docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d --build --wait
-      - run: pnpm e2e # global setup seeds the stack
+      # Global setup seeds the stack. The phone project gets its tests with the phone audit.
+      - run: pnpm exec playwright test --project=${{ matrix.project }} --pass-with-no-tests
       - name: Collect the stack's logs
         if: failure()
         working-directory: deploy
@@ -55,7 +70,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: e2e-failure
+          name: e2e-failure-${{ matrix.project }}
           path: |
             playwright-report/
             test-results/

@@ -4,6 +4,11 @@ import { defineConfig, devices } from '@playwright/test';
 // and proxies Stalwart. Run `pnpm build` first; see e2e/README.md.
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:8080';
 
+const auth = { storageState: 'e2e/.auth/alice.json' };
+const desktop = { viewport: { width: 1280, height: 900 }, ...auth };
+// The desktop engines run everything except the tests kept for other projects.
+const suite = { dependencies: ['setup'], testIgnore: /auth\.setup\.ts/, grepInvert: /@perf|@production/ };
+
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/global-setup.ts',
@@ -23,11 +28,12 @@ export default defineConfig({
   },
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 }, storageState: 'e2e/.auth/alice.json' },
-      dependencies: ['setup'],
-      testIgnore: /auth\.setup\.ts/,
-    },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], ...desktop }, ...suite },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'], ...desktop }, ...suite },
+    { name: 'webkit', use: { ...devices['Desktop Safari'], ...desktop }, ...suite },
+    // iPhone-sized WebKit with touch (390×844). Runs only the tests tagged @phone.
+    { name: 'phone', use: { ...devices['iPhone 14'], ...auth }, dependencies: ['setup'], testIgnore: /auth\.setup\.ts/, grep: /@phone/ },
+    // Hand-run measurements against the 50k mailbox (deploy/seed/seed_bulk.py). Never in CI.
+    { name: 'perf', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } }, grep: /@perf/, timeout: 20 * 60_000 },
   ],
 });
