@@ -237,8 +237,8 @@ test('on a touch screen the label buttons are at least 44px', async ({ browser }
     await page.getByRole('button', { name: 'Menu' }).click();
     for (const name of ['New label', `Options for ${tag}`]) {
       const box = await page.getByRole('button', { name, exact: true }).boundingBox();
-      expect(box!.width, name).toBeGreaterThanOrEqual(44);
-      expect(box!.height, name).toBeGreaterThanOrEqual(44);
+      expect(box!.width, name).toBeGreaterThanOrEqual(43.5); // WebKit lays 44px out as 43.99999
+      expect(box!.height, name).toBeGreaterThanOrEqual(43.5); // WebKit lays 44px out as 43.99999
     }
   } finally {
     await context.close();
