@@ -14,7 +14,7 @@ Test state at the checkpoint: 496 unit tests pass. End-to-end on all four projec
 | Browser engines | Suite passes on Firefox and WebKit, bar E1 | 0 | 1 (E1) | 2 |
 | Accessibility | Not met: axe (A1–A4), keyboard (A5). VoiceOver pass not done | 0 | 4 (A3, A5, and A6, A8 to confirm) | 5 |
 | Phone width | Mail and settings usable; calendar card (P2) and target sizes (P3) not met | 0 | 3 (P2, P3, P4) | 3 |
-| Large mailbox | Not checked: needs the corpus (L1) | – | – | – |
+| Large mailbox | Met except list paging and search speed (L2, cause in Stalwart) | 0 | 1 (L2, not fixable in oinbox) | 0 |
 | Network | Met | 0 | 2, both fixed (N1, N2) | 2 |
 
 ### Proposed fix list
@@ -110,26 +110,28 @@ What passed: no screen scrolls sideways; the drawer opens, switches mailbox and 
 
 ## Large mailbox
 
-**Checked:** the tooling only, on a 375-message mailbox with one 55-message thread, 2026-10-07. **The 50,000-message run has not been done**: it needs the Enron corpus (about 1.7 GB), which is not on this machine and was not downloaded without asking.
-**How:** `deploy/seed/seed_bulk.py` imports a corpus `maildir/` into `carol@example.test` with `Email/import` (50 per request, skipping Message-IDs already present; a re-run over 375 messages takes half a second). `e2e/perf.spec.ts` (`pnpm e2e:perf`, tagged `@perf`, never in CI) signs in as carol and measures the table below.
-**Exit criteria:** thresholds at 50,000 messages — **not checked**.
+**Checked:** `carol@example.test` with 50,000 messages (the CMU Enron corpus plus 375 hand-made ones, one of them a 55-message thread) in an Inbox of 13,182 threads, Sent Items and 22 labels; 2026-10-08, Chromium, on the development Mac against the Compose stack (Stalwart 0.16.23 on RocksDB, Meilisearch 1.54).
+**How:** `deploy/seed/seed_bulk.py` (`Email/import`, 50 per request), then `pnpm e2e:perf` four times over about an hour. The corpus has almost no threading headers, so nearly every message is its own thread.
+**Exit criteria:** thresholds at 50,000 messages — **met for start-up, rendering, a long thread and memory; not met for moving through the list and for search, because of L2.**
 
-| Measure | Threshold | At 375 messages (not the test) | At 50,000 |
+| Measure | Threshold | Measured (range over the runs) | Verdict |
 |---|---|---|---|
-| Cold start to first rows | 3 s | under 0.5 s | not run |
-| Warm start to first rows | 1 s | under 0.5 s | not run |
-| Scroll: longest time with no rows | 500 ms | 0 ms (62 rows) | not run |
-| Scroll: 95th percentile frame | 32 ms | 16.7 ms | not run |
-| Search to first results | 2 s | 0.2 s | not run |
-| Open a 55-message thread | 1.5 s | 0.1 s | not run |
-| Heap growth while a push arrives every 10 s | +20% over 9 min | +8% over 1 min | not run |
-| Browser storage used | 20 MB | 0.1 MB | not run |
+| Cold start to first rows | 3 s | 0.9 – 3.4 s | borderline: see L2 |
+| Warm start to first rows | 1 s | 0.06 s | pass |
+| Scroll at 1,800 rows a second through 5,000 rows: longest time with no rows | 500 ms | 4.2 s (2.8 s of scrolling, then 1.4 s) | fail: see L2 |
+| Scroll: 95th percentile frame | 32 ms | 16.7 ms | pass |
+| Jump to row 20,000: time to rows | 1 s | 0.9 – 2.9 s | fail: see L2 |
+| Search ("meeting") to first results | 2 s | 1.3 – 2.8 s | borderline: see L2 |
+| Open a 55-message thread | 1.5 s | 0.8 s | pass |
+| Heap growth over 9 minutes with a new message every 10 s | +20% | +15% | pass |
+| Browser storage used | 20 MB | 0.1 MB | pass |
 
-Seen on the small run: Stalwart threaded the 55 replies into one thread from their `References` headers; folders mapped to the Inbox, Sent Items and two labels; no import failures.
+Seen on the way: no import failures in 50,000 messages; no sanitizer errors or blank messages in the ones opened (a few dozen, by hand and by the tests; this was not a systematic read of the corpus); the warm-start snapshot stays small because it holds one page of the list, not the mailbox.
 
 | # | Severity | Finding | Steps | Fix or reason deferred |
 |---|---|---|---|---|
-| L1 | open | Nothing has been measured at the size this audit is about. | | Needs the corpus: either point me at a copy, say I may download it, or run the three commands in `deploy/README.md` ("Large mailbox"). |
+| L2 | major by the thresholds; the cause is in Stalwart | **Every sorted list query takes Stalwart about 1.4 s on this account**, whatever the mailbox, the position or the filter, and it is not cached. The same query unsorted takes 10 ms, and the 60-message account answers in 10 ms either way. oinbox always sorts by date, so each page of the list costs at least that: start-up, each page reached while scrolling, a jump, and a search are all one or two such queries. Just after the import the same queries were faster (0.9 s cold start); after Stalwart's settings were reloaded they settled at 1.4 s. | `time curl -u carol@example.test:… /jmap/ -d '…["Email/query",{"accountId":"e","sort":[{"property":"receivedAt","isAscending":false}],"limit":50},"q"]…'` with and without the `sort`. | **Not fixed.** oinbox cannot drop the sort (unsorted order is storage order, not date order). What it could do: show the cached first page while the query runs (it already does on a warm start), and fetch pages only when scrolling rests (tried: no gain, since the wait is one query, not a queue). Worth raising with Stalwart with the reproduction above; it may also be specific to RocksDB in Docker on a Mac. For the beta: a known limitation for mailboxes of this size. |
+| L3 | note | Three Stalwart defaults got in the way of the import and matter to operators: 1,000 requests a minute per account (`Http.rateLimitAuthenticated`), 500 ids per `Email/get`, and **1,000 uploads or 50 MB of uploads per account per hour** (`Jmap.maxUploadCount`, `Jmap.uploadQuota`). The last one bounds attachments: a user cannot attach more than 50 MB in an hour. | | For the operator guide. The import raised the first and third on the dev stack for its run and put them back. |
 
 ## Network
 

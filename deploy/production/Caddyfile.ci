@@ -1,0 +1,17 @@
+# The production Caddyfile with one difference: certificates come from Caddy's own local CA, so the
+# template can be started and tested on a machine with no public name (CI, a laptop).
+{
+	admin off
+	local_certs
+}
+
+import routes.caddy
+
+{$OINBOX_DOMAIN} {
+	log {
+		output stdout
+		format json
+	}
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import oinbox_routes
+}

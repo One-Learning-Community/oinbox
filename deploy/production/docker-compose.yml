@@ -1,0 +1,79 @@
+# oinbox in production: Stalwart (mail, JMAP), Meilisearch (search) and oinbox (the app behind Caddy).
+# Copy .env.example to .env, fill it in, then follow docs/operating.md.
+name: oinbox
+
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:v0.16.23
+    restart: unless-stopped
+    environment:
+      # Base of every URL Stalwart hands out (JMAP session, OAuth discovery). Must be the public origin.
+      STALWART_PUBLIC_URL: "https://${OINBOX_DOMAIN:?set OINBOX_DOMAIN}"
+      STALWART_RECOVERY_ADMIN: "${STALWART_RECOVERY_ADMIN:?set STALWART_RECOVERY_ADMIN}"
+      MEILI_MASTER_KEY: "${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY}"
+    volumes:
+      - ./config.json:/etc/stalwart/config.json:ro
+      - stalwart-data:/var/lib/stalwart
+      # The certificate Caddy obtains, read-only: Stalwart uses it for SMTP and IMAP (plan.ndjson).
+      - caddy-data:/caddy-data:ro
+    ports:
+      - "25:25"     # SMTP from other mail servers
+      - "465:465"   # submission over TLS, for mail apps
+      - "993:993"   # IMAP over TLS, for mail apps
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.0
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: "${MEILI_MASTER_KEY}"
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili-data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7700/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  oinbox:
+    image: ghcr.io/one-learning-community/oinbox:${OINBOX_VERSION:?set OINBOX_VERSION}
+    restart: unless-stopped
+    environment:
+      OINBOX_DOMAIN: "${OINBOX_DOMAIN}"
+      ACME_EMAIL: "${ACME_EMAIL:?set ACME_EMAIL}"
+    ports:
+      - "80:80"     # redirects to HTTPS; also answers the certificate authority's challenge
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - stalwart
+
+  # Stalwart's command line, for apply.sh and for one-off commands:
+  #   docker compose run --rm cli query Account
+  cli:
+    image: stalwartlabs/cli:1.0.12
+    profiles: ["tools"]
+    environment:
+      STALWART_URL: "http://stalwart:8080"
+      STALWART_USER: "${STALWART_ADMIN_USER:-admin}"
+      STALWART_PASSWORD: "${STALWART_ADMIN_PASSWORD:-}"
+
+volumes:
+  stalwart-data:
+  meili-data:
+  caddy-data:
+  caddy-config:

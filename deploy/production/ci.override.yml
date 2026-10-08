@@ -1,0 +1,26 @@
+# Test override for the production template: builds the app from this checkout, uses Caddy's local
+# CA, and moves every published port out of the way of a dev stack on the same machine.
+#   ENV_FILE=ci.env COMPOSE_ARGS="-p oinbox-prod -f docker-compose.yml -f ci.override.yml" ./apply.sh
+name: oinbox-prod
+
+services:
+  stalwart:
+    environment:
+      STALWART_PUBLIC_URL: "https://localhost:8443"
+    ports: !override
+      - "2526:25"
+      - "4465:465"
+      - "4993:993"
+
+  oinbox:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: oinbox-web:production-test
+    ports: !override
+      - "8081:80"
+      - "8443:443"
+    volumes: !override
+      - ./Caddyfile.ci:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config

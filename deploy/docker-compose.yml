@@ -63,6 +63,7 @@ services:
     volumes:
       # Live Caddyfile (the image has a copy baked in); `docker compose restart caddy` after edits.
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./routes.caddy:/etc/caddy/routes.caddy:ro
     depends_on:
       - stalwart
 

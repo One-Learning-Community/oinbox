@@ -8,10 +8,13 @@ import { BASE } from './support/mail';
 /**
  * Make sure the dev stack is up and seeded.
  *  - E2E_RESET=1: wipe and recreate the stack first (docker compose down -v / up -d), ~2 min.
+ *  - E2E_NO_STACK=1: do nothing (the `production` project tests another stack).
  *  - Always runs deploy/seed.sh, which is idempotent (only fills in what is missing),
  *    then deletes any messages left over from earlier e2e runs.
  */
 export default async function globalSetup() {
+  // The production-template project brings its own stack (deploy/production); nothing to prepare here.
+  if (process.env.E2E_NO_STACK === '1') return;
   const root = path.resolve(import.meta.dirname, '..');
   const deploy = path.join(root, 'deploy');
   if (!existsSync(path.join(root, 'dist', 'index.html'))) {

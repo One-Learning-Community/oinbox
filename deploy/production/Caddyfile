@@ -1,0 +1,21 @@
+# oinbox in production: Caddy terminates TLS, serves the app, and proxies Stalwart on the same origin.
+# Values come from the environment file (see .env.example). The operator guide is docs/operating.md.
+{
+	admin off
+	email {$ACME_EMAIL}
+	# One CA, named: Stalwart reads the certificate Caddy obtains from a path that includes the CA
+	# (see plan.ndjson, "Certificate"), so that path must not change with a fallback CA.
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+import routes.caddy
+
+{$OINBOX_DOMAIN} {
+	log {
+		output stdout
+		format json
+	}
+	# Browsers that have seen this once will not try plain HTTP again for a year.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	import oinbox_routes
+}

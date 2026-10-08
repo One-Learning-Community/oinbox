@@ -24,30 +24,27 @@ const firstRows = async (page: Page) => {
   return Date.now() - t;
 };
 
-/** The thread with the most messages among carol's newest 2000 inbox emails. */
+/**
+ * A long thread in carol's mailbox. The Enron corpus has almost no threading headers, so this is the
+ * 55-message thread the audit added by hand ("The long gas thread"); any thread of the largest size
+ * found among the matches will do.
+ */
 async function longestThread(): Promise<{ threadId: string; size: number }> {
   const account = await accountId(CAROL);
   const r = await jmap(
     [
-      ['Mailbox/get', { accountId: account, ids: null, properties: ['role'] }, 'm'],
-    ],
-    CAROL,
-  );
-  const inbox = (r.m.list as { id: string; role: string | null }[]).find((m) => m.role === 'inbox')!.id;
-  const q = await jmap(
-    [
-      ['Email/query', { accountId: account, filter: { inMailbox: inbox }, sort: [{ property: 'receivedAt', isAscending: false }], limit: 2000 }, 'q'],
+      ['Email/query', { accountId: account, filter: { subject: 'long gas thread' }, limit: 100 }, 'q'],
       ['Email/get', { accountId: account, '#ids': { resultOf: 'q', name: 'Email/query', path: '/ids' }, properties: ['threadId'] }, 'g'],
     ],
     CAROL,
   );
   const counts = new Map<string, number>();
-  for (const e of q.g.list as { threadId: string }[]) counts.set(e.threadId, (counts.get(e.threadId) ?? 0) + 1);
-  const [threadId, size] = [...counts].sort((a, b) => b[1] - a[1])[0]!;
-  return { threadId, size };
+  for (const e of r.g.list as { threadId: string }[]) counts.set(e.threadId, (counts.get(e.threadId) ?? 0) + 1);
+  const best = [...counts].sort((a, b) => b[1] - a[1])[0];
+  if (!best) throw new Error('No long thread in carol\'s mailbox: deliver one, or import a corpus that has threads');
+  return { threadId: best[0], size: best[1] };
 }
 
-test.describe.configure({ mode: 'serial' });
 test.afterAll(() => {
   mkdirSync('test-results', { recursive: true });
   writeFileSync('test-results/perf.json', JSON.stringify(results, null, 2));
@@ -109,6 +106,22 @@ test('@perf start, scroll and search in a large mailbox', async ({ page }) => {
   console.log(`scrolled ${scroll.rowsScrolled} rows`);
   record('scroll: longest time with no rows', scroll.longestBlank, 500);
   record('scroll: 95th percentile frame', scroll.p95, 32);
+
+  // A jump, as when the scrollbar is dragged: straight to row 20000, then how long until rows show.
+  const jump = await page.evaluate(async () => {
+    const scroller = document.querySelector<HTMLElement>('.list-scroll')!;
+    const rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--row-h')) || 40;
+    scroller.scrollTop = Math.min(rowH * 20000, scroller.scrollHeight - scroller.clientHeight);
+    const t0 = performance.now();
+    while (performance.now() - t0 < 30_000) {
+      await new Promise((r) => requestAnimationFrame(r));
+      const top = scroller.getBoundingClientRect().top;
+      const shown = [...scroller.querySelectorAll<HTMLElement>('a.row[data-thread-id]')].some((el) => el.getBoundingClientRect().top >= top);
+      if (shown) break;
+    }
+    return performance.now() - t0;
+  });
+  record('jump to a far row: time to rows', jump, 1000);
 
   // Search.
   await page.goto('/inbox');

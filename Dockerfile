@@ -14,6 +14,6 @@ ENV OINBOX_COMMIT=$OINBOX_COMMIT
 RUN pnpm build
 
 FROM caddy:2.11.4-alpine
-COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/Caddyfile deploy/routes.caddy /etc/caddy/
 COPY --from=build /app/dist /srv/oinbox/dist
 EXPOSE 8080

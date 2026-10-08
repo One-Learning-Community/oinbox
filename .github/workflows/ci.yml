@@ -74,3 +74,52 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  production-template:
+    name: Production template
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OINBOX_COMMIT: ${{ github.sha }}
+      # deploy/production/ci.override.yml: local CA, ports moved to 8443/8081/2526/4465/4993.
+      ENV_FILE: ci.env
+      COMPOSE_ARGS: -p oinbox-prod -f docker-compose.yml -f ci.override.yml
+      CERT_ISSUER: local
+      PUBLIC_ORIGIN: https://localhost:8443
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Check that the real production Caddyfile parses
+        working-directory: deploy
+        run: >
+          docker run --rm -e OINBOX_DOMAIN=mail.example.com -e ACME_EMAIL=postmaster@example.com
+          -v "$PWD/production/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$PWD/routes.caddy:/etc/caddy/routes.caddy:ro"
+          caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Start the template (builds the app image)
+        working-directory: deploy/production
+        run: docker compose --env-file "$ENV_FILE" $COMPOSE_ARGS up -d --build --wait
+      - name: Apply the settings and create a user
+        working-directory: deploy/production
+        run: |
+          ./apply.sh
+          ./create-test-user.sh
+      - run: pnpm e2e:production
+      - name: Collect the stack's logs
+        if: failure()
+        working-directory: deploy/production
+        run: docker compose --env-file "$ENV_FILE" $COMPOSE_ARGS logs --no-color > ../../test-results/production-stack.log 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: production-template-failure
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+

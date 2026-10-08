@@ -33,6 +33,9 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['Desktop Safari'], ...desktop }, ...suite },
     // iPhone-sized WebKit with touch (390×844). Runs only the tests tagged @phone.
     { name: 'phone', use: { ...devices['iPhone 14'], ...auth }, dependencies: ['setup'], testIgnore: /auth\.setup\.ts/, grep: /@phone/ },
+    // The production template on https://localhost:8443 (deploy/production with ci.override.yml). Its own stack,
+    // its own user: no sign-in setup, and never part of `pnpm e2e:all`.
+    { name: 'production', use: { ...devices['Desktop Chrome'], baseURL: 'https://localhost:8443', ignoreHTTPSErrors: true }, grep: /@production/ },
     // Hand-run measurements against the 50k mailbox (deploy/seed/seed_bulk.py). Never in CI.
     { name: 'perf', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 900 } }, grep: /@perf/, timeout: 20 * 60_000 },
   ],
