@@ -1,4 +1,5 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
+import type { Spaces } from './accounts';
 import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
 import type { ErrorReporter } from './errors';
@@ -17,6 +18,8 @@ export type Theme = 'system' | 'light' | 'dark';
 
 export interface App {
   client: JmapClient;
+  /** Every mail account the user may open. The mail fields below are those of the one on screen. */
+  spaces: Spaces;
   engine: MailEngine;
   calendar: CalendarStore;
   /** Whether the server offers JMAP Calendars (false until the session is known). */

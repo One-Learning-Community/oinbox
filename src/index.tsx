@@ -1,7 +1,8 @@
 /* @refresh reload */
 import { Navigate, Route, Router } from '@solidjs/router';
-import { ErrorBoundary, lazy, Suspense, type JSX } from 'solid-js';
+import { ErrorBoundary, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
+import { accountForPath, createSpaces, mailAccounts, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createErrorReporter } from './app/errors';
@@ -16,7 +17,7 @@ import { CalendarStore } from './calendar/store';
 import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream, type PushStream } from './jmap/sse';
-import { CALENDARS } from './jmap/types';
+import { CALENDARS, type Session } from './jmap/types';
 import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
 import { createConnection, isTransportFailure, logUnexpected } from './sync/connection';
 import { MailEngine } from './sync/engine';
@@ -92,9 +93,14 @@ async function boot() {
   });
   let push: PushStream | undefined;
   let assumedOpen = false;
-  const engine = new MailEngine(client);
-  // Before the warm-start snapshot is applied, so it sees every email.
-  const recipients = createRecipients(engine);
+  /** One per mail account in the session; null until the session is known. */
+  let spaces: Spaces | null = null;
+  const each = (fn: (s: AccountSpace) => void) => spaces?.list().forEach(fn);
+  /** What an account's snapshot and recipient cache are stored under. */
+  const key = (info: AccountInfo) => storageKey(client.session.username, info);
+  /** Every key this user's caches may be under, the one from before shared mailboxes included. */
+  const cacheKeys = () => (client.hasSession ? [client.session.username, ...(spaces?.list().map((s) => key(s.info)) ?? [])] : []);
+  const clearCaches = () => Promise.all(cacheKeys().map((k) => clearCache(k)));
   const calendar = new CalendarStore(client, (m, t, a) => toasts.toast(m, t, a));
   const toasts = createToasts();
   const confirmDialog = createConfirmDialog();
@@ -102,10 +108,9 @@ async function boot() {
 
   /** Drop the session and go to the sign-in card. */
   const leave = () => {
-    const user = client.hasSession ? client.session.username : null;
     auth.signOut();
-    recipients.stop();
-    void (user ? clearCache(user) : Promise.resolve()).finally(() => location.assign('/'));
+    each((s) => s.recipients.stop());
+    void clearCaches().finally(() => location.assign('/'));
   };
   const signOut = () => {
     // A deliberate sign-out leaves no draft text behind in this browser. (An involuntary one must
@@ -114,19 +119,18 @@ async function boot() {
     leave();
   };
   const rescueDrafts = () => {
-    if (client.hasSession) saveRescue(localStorage, client.accountId, app.composers.snapshot());
+    each((s) => saveRescue(localStorage, s.info.id, s.composers.snapshot()));
   };
   /** The server no longer accepts our tokens. Stay on the page, so nothing the user was writing is lost. */
   const sessionLost = () => {
     if (connection.state() === 'signed-out') return;
     // What the server doesn't have yet comes back after signing in again (same account, within 7 days).
     rescueDrafts();
-    const user = client.hasSession ? client.session.username : null;
     auth.signOut();
-    recipients.stop();
+    each((s) => s.recipients.stop());
     push?.close();
-    engine.setOnline(false);
-    if (user) void clearCache(user);
+    each((s) => s.engine.setOnline(false));
+    void clearCaches();
     connection.signedOut();
   };
   const signIn = () => {
@@ -152,55 +156,119 @@ async function boot() {
   // Event handlers and rejected promises are out of reach of the error boundaries below.
   errors.install(window, onAuthError);
 
-  // Warm start: render from the cached session + snapshot, then reconcile.
+  // Warm start: render from the cached session + snapshot, then reconcile. A cold start has to ask
+  // for the session first: which accounts there are decides what is built.
   const cachedSession = loadCachedSession();
-  if (cachedSession) {
-    client.useSession(cachedSession);
-    const snap = await loadSnapshot(cachedSession.username);
-    if (snap) engine.hydrate(snap);
+  let freshSession: Session | null = null;
+  if (cachedSession) client.useSession(cachedSession);
+  else {
+    try {
+      freshSession = await client.loadSession();
+    } catch (e) {
+      if (!onAuthError(e)) mount(() => <SignIn auth={auth} error={`Couldn't reach the mail server: ${String(e)}`} />);
+      return;
+    }
   }
 
+  const accounts = mailAccounts(client.session);
+  const all = createSpaces(
+    accounts,
+    (info) => {
+      const engine = new MailEngine(client, { accountId: info.id });
+      // Before the warm-start snapshot is applied, so it sees every email.
+      const recipients = createRecipients(engine);
+      return {
+        engine,
+        recipients,
+        actions: createActions(engine, toasts.toast, confirmDialog.confirm),
+        labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session, info.id) : DEFAULT_LIMITS)),
+        settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
+        composers: createComposers(engine, toasts.toast, confirmDialog.confirm, recipients.recordSent, (fn) => connection.onRecovered(fn)),
+        nav: createNav(),
+      };
+    },
+    accountForPath(location.pathname, accounts).id,
+  );
+  spaces = all;
+  if (cachedSession) {
+    for (const s of all.list()) {
+      const snap = await loadSnapshot(key(s.info));
+      if (snap) s.engine.hydrate(snap);
+    }
+    // The snapshot from before shared mailboxes, under the user's name alone.
+    void clearCache(cachedSession.username);
+  }
+
+  const cur = all.current;
+  // The mail fields are those of the account on screen. Components read them once, when they
+  // mount, and the shell is re-mounted on a switch (below). Never spread this object.
   const app: App = {
     client,
-    engine,
+    spaces: all,
+    get engine() {
+      return cur().engine;
+    },
+    get actions() {
+      return cur().actions;
+    },
+    get labels() {
+      return cur().labels;
+    },
+    get settings() {
+      return cur().settings;
+    },
+    get nav() {
+      return cur().nav;
+    },
+    get composers() {
+      return cur().composers;
+    },
+    get recipients() {
+      return cur().recipients;
+    },
     calendar,
-    hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS],
+    // Calendars are the user's own: a shared mailbox has no Calendar link.
+    hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS] && cur().info.personal,
     auth,
     toast: toasts.toast,
     errors,
     connection,
     signIn,
-    actions: createActions(engine, toasts.toast, confirmDialog.confirm),
-    labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session) : DEFAULT_LIMITS)),
-    settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
-    nav: createNav(),
-    composers: createComposers(engine, toasts.toast, confirmDialog.confirm, recipients.recordSent, (fn) => connection.onRecovered(fn)),
-    recipients,
     images: await createImagePrefs(),
     ...theme,
     signOut,
   };
 
   const start = async () => {
-    const session = await client.loadSession();
+    const session = freshSession ?? (await client.loadSession());
+    freshSession = null;
     saveCachedSession(session);
-    if (cachedSession && cachedSession.username !== session.username) location.reload();
-    engine.onPersist = (snap) => void saveSnapshot(session.username, snap);
-    void recipients.start(session.username);
-    await engine.start();
-    const rescued = takeRescue(localStorage, client.accountId);
-    if (rescued.length) {
-      app.composers.restore(rescued);
-      // After a cold start the toast host isn't on screen until this function has returned.
-      setTimeout(() => app.toast(rescued.length === 1 ? 'Your unsent draft was restored.' : 'Your unsent drafts were restored.'), 0);
+    // Another user, or other mailboxes (a shared one joined or left): what was built no longer fits.
+    const ids = mailAccounts(session).map((a) => a.id);
+    if (cachedSession && (cachedSession.username !== session.username || ids.join() !== accounts.map((a) => a.id).join())) {
+      location.reload();
+      return;
     }
+    for (const s of all.list()) {
+      s.engine.onPersist = (snap) => void saveSnapshot(key(s.info), snap);
+      void s.recipients.start(key(s.info));
+    }
+    await Promise.all(all.list().map((s) => s.engine.start()));
+    let restored = 0;
+    for (const s of all.list()) {
+      const rescued = takeRescue(localStorage, s.info.id);
+      if (rescued.length) s.composers.restore(rescued);
+      restored += rescued.length;
+    }
+    // After a cold start the toast host isn't on screen until this function has returned.
+    if (restored) setTimeout(() => app.toast(restored === 1 ? 'Your unsent draft was restored.' : 'Your unsent drafts were restored.'), 0);
     void calendar.loadCalendars().catch((e) => onAuthError(e));
     // Suggestions are a convenience: a failed scan is dropped unless it is an auth failure.
-    void recipients.scanSent().catch((e) => onAuthError(e));
+    for (const s of all.list()) void s.recipients.scanSent().catch((e) => onAuthError(e));
     push?.close();
     push = openPushStream(client, {
       onStateChange: (c) => {
-        engine.onStateChange(c);
+        each((s) => s.engine.onStateChange(c));
         calendar.onStateChange(c);
       },
       onConnected: (confirmed) => {
@@ -210,14 +278,16 @@ async function boot() {
         const again = confirmed && assumedOpen;
         assumedOpen = !confirmed;
         if (again) return;
-        engine.setOnline(true);
-        void engine.catchUp().catch(logUnexpected);
-        void engine.refreshSettings().catch(logUnexpected);
+        each((s) => {
+          s.engine.setOnline(true);
+          void s.engine.catchUp().catch(logUnexpected);
+          void s.engine.refreshSettings().catch(logUnexpected);
+        });
         calendar.onConnected();
       },
       onDisconnected: (e) => {
         assumedOpen = false;
-        engine.setOnline(false);
+        each((s) => s.engine.setOnline(false));
         connection.reportFailure('push', e);
       },
       onUnauthorized: () => {
@@ -232,14 +302,14 @@ async function boot() {
   connection.onRetry((manual) => {
     // The push stream has its own backoff; only a person asking cuts it short.
     if (manual) push?.wake();
-    if (started) void engine.catchUp().catch(logUnexpected);
+    if (started) each((s) => void s.engine.catchUp().catch(logUnexpected));
   });
   // The browser's word that the network is back is a hint to try, never proof of a connection.
   window.addEventListener('online', () => connection.retryNow());
   // An idle tab makes no requests, and a dropped network leaves the push stream open: find out now.
   window.addEventListener('offline', () => {
     push?.restart();
-    if (started) void engine.catchUp().catch(logUnexpected);
+    if (started) each((s) => void s.engine.catchUp().catch(logUnexpected));
   });
 
   if (!cachedSession) {
@@ -274,6 +344,8 @@ async function boot() {
   }
 
   rendered = true;
+  // Back and forward can cross from one mailbox to another.
+  window.addEventListener('popstate', () => all.show(accountForPath(location.pathname, accounts).id));
   mount(
     () => (
       <ErrorBoundary
@@ -283,7 +355,10 @@ async function boot() {
         }}
       >
         <AppContext.Provider value={app}>
-          <Router root={(p) => <Shell {...p} toasts={toasts.Host} confirmHost={confirmDialog.Host} />}>
+          {/* Keyed on the account: a switch re-mounts the shell under that account's base path. */}
+          <Show when={cur()} keyed>
+            {(space) => (
+          <Router base={space.info.base} root={(p) => <Shell {...p} toasts={toasts.Host} confirmHost={confirmDialog.Host} />}>
             <Route path="/" component={() => <Navigate href="/inbox" />} />
             <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
             <Route
@@ -305,6 +380,8 @@ async function boot() {
             <Route path="/:slug" component={MailView} />
             <Route path="/:slug/t/:threadId" component={MailView} />
           </Router>
+            )}
+          </Show>
         </AppContext.Provider>
       </ErrorBoundary>
     ),

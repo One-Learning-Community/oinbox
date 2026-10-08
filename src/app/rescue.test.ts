@@ -17,6 +17,12 @@ describe('rescue', () => {
     expect(takeRescue(localStorage, 'acc1', 2000).map((r) => r.draft.subject)).toEqual(['a', 'b']);
     expect(takeRescue(localStorage, 'acc1', 2000)).toEqual([]);
   });
+  it('rescues and returns the composers of two accounts independently', () => {
+    saveRescue(localStorage, 'b', [item('mine')], 0);
+    saveRescue(localStorage, 's', [item('support 1'), item('support 2')], 0);
+    expect(takeRescue(localStorage, 's', 1).map((r) => r.draft.subject)).toEqual(['support 1', 'support 2']);
+    expect(takeRescue(localStorage, 'b', 1).map((r) => r.draft.subject)).toEqual(['mine']);
+  });
   it('keeps accounts apart', () => {
     saveRescue(localStorage, 'acc1', [item('mine')], 0);
     expect(takeRescue(localStorage, 'acc2', 0)).toEqual([]);

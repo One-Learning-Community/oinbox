@@ -33,19 +33,25 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
   const [navOpen, setNavOpen] = createSignal(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const inbox = createMemo(() => Object.values(app.engine.state.mailboxes).find((mb) => mb.role === 'inbox'));
-  createEffect(() => (document.title = tabTitle(inbox()?.unreadThreads ?? 0, branding().name)));
-  app.engine.onArrived = createNotifier({
-    api: notifications.api,
-    enabled: notifications.prefs.enabled,
-    away: () => document.visibilityState === 'hidden' || !document.hasFocus(),
-    inboxId: () => inbox()?.id,
-    open: (path) => {
-      window.focus();
-      navigate(path);
-    },
-  });
-  onCleanup(() => (app.engine.onArrived = null));
+  createEffect(() => (document.title = tabTitle(app.spaces.totalUnread(), branding().name)));
+  for (const space of app.spaces.list()) {
+    space.engine.onArrived = createNotifier({
+      api: notifications.api,
+      enabled: notifications.prefs.enabled,
+      away: () => document.visibilityState === 'hidden' || !document.hasFocus(),
+      inboxId: () => Object.values(space.engine.state.mailboxes).find((mb) => mb.role === 'inbox')?.id,
+      account: () => space.info,
+      open: (path) => {
+        window.focus();
+        // A full path, base included, and perhaps another mailbox's: go through the browser, so
+        // that the right account is mounted before its router reads the address.
+        history.pushState(null, '', path);
+        app.spaces.show(space.info.id);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      },
+    });
+  }
+  onCleanup(() => app.spaces.list().forEach((s) => (s.engine.onArrived = null)));
   const dispose = installShortcuts(app, app.nav, navigate, {
     compose: () => app.composers.open('new'),
     reply: (mode) => {

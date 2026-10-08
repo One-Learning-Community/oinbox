@@ -1,6 +1,7 @@
+import { createRoot } from 'solid-js';
 import { describe, expect, it } from 'vitest';
 import type { Session } from '../jmap/types';
-import { accountForPath, mailAccounts, withinAccount } from './accounts';
+import { accountForPath, createSpaces, mailAccounts, storageKey, withinAccount } from './accounts';
 
 const MAIL = 'urn:ietf:params:jmap:mail';
 const session = (accounts: Record<string, { name: string; isPersonal: boolean; mail?: boolean }>, primary = 'b') =>
@@ -51,5 +52,47 @@ describe('withinAccount', () => {
     expect(withinAccount('/shared/s/inbox/t/t1', shared!)).toBe('/inbox/t/t1');
     expect(withinAccount('/shared/s', shared!)).toBe('/');
     expect(withinAccount('/inbox', own!)).toBe('/inbox');
+  });
+});
+
+describe('createSpaces', () => {
+  const list = aliceAndSupport();
+  const fakeSpace = (unread: number) => ({ engine: { state: { mailboxes: { I: { id: 'I', role: 'inbox', unreadThreads: unread }, S: { id: 'S', role: 'sent', unreadThreads: 9 } } } } }) as never;
+
+  it('builds one space per account and starts on the one asked for', () =>
+    createRoot((dispose) => {
+      const spaces = createSpaces(list, (info) => fakeSpace(info.personal ? 2 : 3), 's');
+      expect(spaces.list().map((s) => s.info.id)).toEqual(['b', 's']);
+      expect(spaces.current().info.id).toBe('s');
+      spaces.show('b');
+      expect(spaces.current().info.id).toBe('b');
+      dispose();
+    }));
+  it('counts each Inbox, and all of them together', () =>
+    createRoot((dispose) => {
+      const spaces = createSpaces(list, (info) => fakeSpace(info.personal ? 2 : 3), 'b');
+      expect(spaces.list().map(spaces.unread)).toEqual([2, 3]);
+      expect(spaces.totalUnread()).toBe(5);
+      dispose();
+    }));
+  it('ignores a request to show an account that is not there', () =>
+    createRoot((dispose) => {
+      const spaces = createSpaces(list, () => fakeSpace(0), 'b');
+      spaces.show('gone');
+      expect(spaces.current().info.id).toBe('b');
+      dispose();
+    }));
+  it("starts on the user's own account when the one asked for is not there", () =>
+    createRoot((dispose) => {
+      expect(createSpaces(list, () => fakeSpace(0), 'gone').current().info.id).toBe('b');
+      dispose();
+    }));
+});
+
+describe('storageKey', () => {
+  it('keeps accounts apart under one user', () => {
+    const [own, shared] = aliceAndSupport();
+    expect(storageKey('alice@example.test', own!)).toBe('alice@example.test:b');
+    expect(storageKey('alice@example.test', shared!)).toBe('alice@example.test:s');
   });
 });
