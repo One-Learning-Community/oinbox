@@ -7,7 +7,7 @@ Severity: a **blocker** loses or corrupts data, or stops a main flow for everyon
 
 Status on 2026-10-07, at the checkpoint before any fix beyond N1 and N2. No blocker was found.
 
-Test state at the checkpoint: 496 unit tests pass. End-to-end, all four projects (`pnpm e2e:all`): 343 pass and 1 is skipped. Of those passes, 17 are expected failures that mark open findings and flip to real failures when fixed: E1 (2, WebKit), A1–A4 (10 per desktop engine across five screens and two themes — counted once per engine), P2 and P3 (5, phone). One WebKit run of `compose.spec.ts` "a new message reaches bob…" failed once on a missed "Sending…" toast and passed four times after; CI retries once.
+Test state at the checkpoint: 496 unit tests pass. End-to-end on all four projects (`pnpm e2e:all`): 340 passed, 1 skipped and 3 failed in the full run; the 3 were the dark-theme "search results" axe test on each engine, caused by a draft one of my own test runs left behind (see A2), and they pass with it removed. "Passed" includes the tests marked as expected failures for open findings (E1, A1–A4, P2, P3), which turn into real failures once a finding is fixed. One WebKit run of `compose.spec.ts` "a new message reaches bob…" failed once on a missed "Sending…" toast and passed on four repeats; CI retries once.
 
 | Area | Exit criteria | Blockers | Majors | Minors |
 |---|---|---|---|---|
