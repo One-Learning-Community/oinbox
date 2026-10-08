@@ -8,6 +8,7 @@ const list = (ids: string[]): ListHandle => ({
   threadIdAt: (i) => ids[i] ?? null,
   indexOfThread: (id) => ids.indexOf(id),
   scrollToIndex: () => {},
+  focusCursor: () => {},
 });
 
 describe('nav.targets', () => {
@@ -38,3 +39,24 @@ describe('missingViewText', () => {
     expect(missingViewText(true, false)).toBe('Loading…');
   });
 });
+
+describe('nav.enterList', () => {
+  it('starts a different list at the top with nothing selected', () => {
+    const nav = createRoot(() => createNav());
+    nav.enterList('inbox');
+    nav.setCursor(3);
+    nav.setSelected(new Set(['t2']));
+    nav.enterList('sent');
+    expect(nav.cursor()).toBe(0);
+    expect(nav.selected().size).toBe(0);
+  });
+
+  it('keeps the cursor when the same list comes back, as after closing a conversation', () => {
+    const nav = createRoot(() => createNav());
+    nav.enterList('inbox');
+    nav.setCursor(3);
+    nav.enterList('inbox');
+    expect(nav.cursor()).toBe(3);
+  });
+});
+

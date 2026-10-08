@@ -7,6 +7,8 @@ Reads an extracted copy of the CMU Enron corpus (https://www.cs.cmu.edu/~enron/,
   python3 seed_bulk.py --source /corpus/maildir --count 50000 --spread-days 730
 
 Idempotent: a message whose Message-ID carol already has is skipped.
+Every message is one upload, so Stalwart's default limit of 1000 requests a minute per
+account sets the pace: 50,000 messages take about an hour.
 """
 import argparse
 import base64
@@ -15,6 +17,7 @@ import email.policy
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -24,6 +27,7 @@ PASSWORD = os.environ.get("SEED_PASSWORD", "oinbox-dev-pass")
 USER = "carol@example.test"
 USING = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"]
 BATCH = 50
+PAGE = 500  # Stalwart's maxObjectsInGet
 SENT_FOLDERS = {"sent", "sent_items", "_sent_mail", "sent_mail"}
 INBOX_FOLDERS = {"inbox", "notes_inbox"}
 MAX_LABELS = 20
@@ -31,9 +35,16 @@ AUTH = "Basic " + base64.b64encode(f"{USER}:{PASSWORD}".encode()).decode()
 
 
 def http(path, data=None, content_type="application/json"):
+    """One request. Stalwart allows an account 1000 requests a minute by default and answers 429 beyond that: wait and go on."""
     req = urllib.request.Request(JMAP_BASE + path, data=data, headers={"Authorization": AUTH, "Content-Type": content_type})
-    with urllib.request.urlopen(req, timeout=120) as res:
-        return json.load(res)
+    while True:
+        try:
+            with urllib.request.urlopen(req, timeout=120) as res:
+                return json.load(res)
+        except urllib.error.HTTPError as e:
+            if e.code != 429:
+                raise
+            time.sleep(float(e.headers.get("Retry-After") or 5))
 
 
 def jmap(calls):
@@ -65,14 +76,14 @@ def existing_message_ids(account):
     seen, position = set(), 0
     while True:
         r = jmap([
-            ["Email/query", {"accountId": account, "position": position, "limit": 1000}, "q"],
+            ["Email/query", {"accountId": account, "position": position, "limit": PAGE}, "q"],
             ["Email/get", {"accountId": account, "#ids": {"resultOf": "q", "name": "Email/query", "path": "/ids"}, "properties": ["messageId"]}, "g"],
         ])
         for e in r["g"]["list"]:
             seen.update(e.get("messageId") or [])
-        if len(r["q"]["ids"]) < 1000:
+        if len(r["q"]["ids"]) < PAGE:
             return seen
-        position += 1000
+        position += PAGE
 
 
 def mailboxes(account):

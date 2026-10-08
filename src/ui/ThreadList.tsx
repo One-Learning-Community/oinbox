@@ -22,8 +22,7 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
   };
   createEffect(on(key, (k, prev) => {
     if (prev && prev !== k) engine.closeQuery(prev, (x) => x === inboxKey());
-    nav.setCursor(0);
-    nav.clearSelection();
+    nav.enterList(k);
   }));
 
   let scrollEl: HTMLDivElement | undefined;
@@ -61,6 +60,7 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
       threadIdAt,
       indexOfThread: (tid) => (query()?.slots ?? []).findIndex((id) => !!id && engine.state.emails[id]?.threadId === tid),
       scrollToIndex: (i) => virtualizer.scrollToIndex(i, { align: 'auto' }),
+      focusCursor: () => focusCursorRow(),
     });
   });
   onCleanup(() => nav.setList(null));
@@ -70,6 +70,21 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
     const total = query()?.total ?? 0;
     if (nav.cursor() >= total && total > 0) nav.setCursor(total - 1);
   });
+
+  // The cursor row holds the keyboard focus, so a screen reader hears where j/k went and Tab leaves
+  // from there. Never taken from a control the user is in (a dialog, the search box, a composer).
+  const focusCursorRow = (triesLeft = 20) =>
+    requestAnimationFrame(() => {
+      const active = document.activeElement as HTMLElement | null;
+      const elsewhere = active && active !== document.body && active.offsetParent !== null && !scrollEl?.contains(active);
+      if (props.hidden || elsewhere) return;
+      const row = scrollEl?.querySelector<HTMLElement>('a.row.cursor');
+      // Just after a route change the rows may not be drawn yet.
+      if (row) row.focus({ preventScroll: true });
+      else if (triesLeft > 0) focusCursorRow(triesLeft - 1);
+    });
+  createEffect(on(nav.cursor, () => focusCursorRow(), { defer: true }));
+  // Back from a conversation: its heading had the focus and is gone.
 
   const me = createMemo(() => engine.myAddresses());
 
@@ -190,6 +205,8 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
                       classList={{ unread: r().unread, cursor: nav.cursor() === item.index, selected: nav.selected().has(r().threadId) }}
                       style={{ transform: `translateY(${item.start}px)` }}
                       role="listitem"
+                      tabindex={nav.cursor() === item.index ? 0 : -1}
+                      aria-current={nav.cursor() === item.index ? 'true' : undefined}
                       data-thread-id={r().threadId}
                       onMouseEnter={() => prefetch(r().threadId)}
                       onFocus={() => prefetch(r().threadId)}

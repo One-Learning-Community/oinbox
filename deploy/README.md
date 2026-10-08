@@ -84,7 +84,7 @@ Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwa
      python:3.13.15-alpine python3 -u /seed/seed_bulk.py --source /corpus --count 50000
    ```
 
-   `--count` is the target size of the mailbox and `--spread-days` (default 730) the span the messages are re-dated across. The script skips Message-IDs carol already has, so it can be stopped and run again. Try `--count 2000` first.
+   `--count` is the target size of the mailbox and `--spread-days` (default 730) the span the messages are re-dated across. The script skips Message-IDs carol already has, so it can be stopped and run again. Try `--count 2000` first. Stalwart's default limit of 1000 requests a minute per account sets the pace (the script waits when it gets a 429), so 50,000 messages take about an hour.
 3. Measure: `pnpm build && pnpm e2e:perf` (about 15 minutes; `PERF_QUICK=1` shortens the heap test). Results are printed and written to `test-results/perf.json`.
 
 Corpus folders become the Inbox, Sent Items and up to 20 labels. `docker compose down -v` removes the mailbox with everything else.

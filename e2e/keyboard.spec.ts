@@ -61,3 +61,27 @@ test('o opens the cursor thread, u goes back, ? opens the shortcuts dialog', asy
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
+
+test('the cursor row has real focus, opening a thread moves focus into it, and u brings it back to the row', async ({ page, browserName }) => {
+  await openInbox(page);
+  await page.keyboard.press('j');
+  const id = (await visibleThreadOrder(page))[1]!;
+  await expect(page.locator(`a.row[data-thread-id="${id}"]`)).toBeFocused();
+  await expect(page.locator(`a.row[data-thread-id="${id}"]`)).toHaveAttribute('aria-current', 'true');
+  // One tab stop for the rows: the cursor row.
+  expect(await rows(page).evaluateAll((els) => els.filter((el) => (el as HTMLElement).tabIndex === 0).length)).toBe(1);
+
+  await page.keyboard.press('o');
+  const heading = page.locator('.conv-head h1');
+  await expect(heading).toBeFocused();
+  // Tab from the heading goes on into the conversation, not back to the top of the page.
+  // (Not in WebKit: its Tab goes into the message frame, where shortcuts are dead. docs/beta-audit.md, E5.)
+  if (browserName !== 'webkit') {
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('.conv'))).toBe(true);
+  }
+
+  await page.keyboard.press('u');
+  await expect(page.locator(`a.row[data-thread-id="${id}"]`)).toBeFocused();
+});
+

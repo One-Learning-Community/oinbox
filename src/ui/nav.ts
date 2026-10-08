@@ -9,6 +9,8 @@ export interface ListHandle {
   threadIdAt: (index: number) => Id | null;
   indexOfThread: (threadId: Id) => number;
   scrollToIndex: (index: number) => void;
+  /** Give the cursor row the keyboard focus, unless the user is in some other control. */
+  focusCursor: () => void;
 }
 
 export type PickerKind = 'move' | 'label';
@@ -32,6 +34,18 @@ export function createNav() {
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [labelDialog, setLabelDialog] = createSignal<LabelDialogState | null>(null);
 
+  /**
+   * A thread list for `key` is on screen. The list component is created again on every route
+   * change, so it is the key, not the component, that says whether this is a different list.
+   */
+  let listKey: string | null = null;
+  const enterList = (key: string) => {
+    if (key === listKey) return;
+    listKey = key;
+    setCursor(0);
+    setSelected(new Set<Id>());
+  };
+
   const toggleSelected = (id: Id) => {
     const next = new Set(selected());
     if (next.has(id)) next.delete(id);
@@ -52,6 +66,7 @@ export function createNav() {
   return {
     cursor,
     setCursor,
+    enterList,
     selected,
     setSelected,
     toggleSelected,

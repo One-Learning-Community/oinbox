@@ -22,7 +22,12 @@ export function Conversation(props: { view: View; threadId: Id }) {
   const navigate = useNavigate();
 
   createEffect(() => nav.setOpenThread(props.threadId));
-  onCleanup(() => nav.setOpenThread(null));
+  onCleanup(() => {
+    nav.setOpenThread(null);
+    // The heading that had the focus is going away: hand it to the list's cursor row, once the list
+    // (a new one, when the route changed) has drawn its rows.
+    setTimeout(() => nav.list()?.focusCursor(), 120);
+  });
 
   const [loaded] = createResource(
     () => props.threadId,
@@ -176,7 +181,16 @@ export function Conversation(props: { view: View; threadId: Id }) {
           </Match>
           <Match when={true}>
             <div class="conv-head">
-              <h1>
+              {/* Opening a thread moves the keyboard here, unless the user is already in a control. */}
+              <h1
+                tabindex="-1"
+                ref={(el) =>
+                  queueMicrotask(() => {
+                    const active = document.activeElement as HTMLElement | null;
+                    if (!active || active === document.body || active.offsetParent === null) el.focus({ preventScroll: true });
+                  })
+                }
+              >
                 {subject()}
                 <For each={labels()}>
                   {(l) => (
