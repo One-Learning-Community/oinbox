@@ -3,6 +3,44 @@
 What was checked before `0.1.0-beta.1`, how, and what was found.
 Severity: a **blocker** loses or corrupts data, or stops a main flow for everyone on a supported browser. A **major** makes a main flow fail or unusable for some users with no reasonable workaround. Everything else is a **minor**. Blockers and majors are fixed before the beta; minors are listed under "Known limitations" in the README.
 
+## Summary
+
+Status on 2026-10-07, at the checkpoint before any fix beyond N1 and N2. No blocker was found.
+
+Test state at the checkpoint: 496 unit tests pass. End-to-end, all four projects (`pnpm e2e:all`): 343 pass and 1 is skipped. Of those passes, 17 are expected failures that mark open findings and flip to real failures when fixed: E1 (2, WebKit), A1–A4 (10 per desktop engine across five screens and two themes — counted once per engine), P2 and P3 (5, phone). One WebKit run of `compose.spec.ts` "a new message reaches bob…" failed once on a missed "Sending…" toast and passed four times after; CI retries once.
+
+| Area | Exit criteria | Blockers | Majors | Minors |
+|---|---|---|---|---|
+| Browser engines | Suite passes on Firefox and WebKit, bar E1 | 0 | 1 (E1) | 2 |
+| Accessibility | Not met: axe (A1–A4), keyboard (A5). VoiceOver pass not done | 0 | 4 (A3, A5, and A6, A8 to confirm) | 5 |
+| Phone width | Mail and settings usable; calendar card (P2) and target sizes (P3) not met | 0 | 3 (P2, P3, P4) | 3 |
+| Large mailbox | Not checked: needs the corpus (L1) | – | – | – |
+| Network | Met | 0 | 2, both fixed (N1, N2) | 2 |
+
+### Proposed fix list
+
+| Finding | Approach | Size |
+|---|---|---|
+| E1 Safari cannot expand quoted text | `<details>` instead of a scripted button; frame height from a `ResizeObserver` in the parent; audit other listeners inside the frame | medium |
+| A5 new message does not take focus | Focus To on open; restore focus on close | small |
+| A3 message header is a button around buttons | Separate toggle button inside the header | small to medium |
+| A6 toasts not reliably announced | Standing polite and assertive regions written to by the toast function; needs or works around rozie Toaster | medium; touches rozie |
+| A8 focus not moved on thread open/close; visual-only cursor | Focus the conversation heading on open, the row on return; roving tabindex for the cursor | medium |
+| P2 event card off-screen on phones | Bottom sheet or viewport-capped popover below 700px | small to medium; may touch rozie Popover |
+| P4 search field 47px wide on phones | Expand on focus, or move theme and sign-out into the drawer | small |
+| P3 touch targets under 44px | Coarse-pointer CSS minimums across top bar, list, composer, calendar toolbar | small, wide |
+| A2, A4, A7 | One-line colour, hide two icons from the accessibility tree, a focus outline | trivial; clears axe except A1 |
+| N3, N4 | Static "loading" markup; a fallback around the lazy calendar | trivial |
+
+Not on the list: A1 needs a rozie Popover release (reported); E2, E3, A9, A10, P1, P5, P6 are minors proposed for "Known limitations".
+
+### Open items that need a person
+
+1. **VoiceOver pass** (`docs/a11y-script.md`, about 30 minutes): confirms or clears A6 and A8.
+2. **The corpus** for the 50,000-message run (L1).
+3. **A real Firefox** to see whether E4 exists outside Playwright's build (the status dot should turn green within a second of loading).
+4. **A real phone** for the on-screen keyboard (P1).
+
 ## Browser engines
 
 **Checked:** the whole e2e suite (80 tests) on Playwright's Firefox 155 and WebKit 26.6, desktop 1280×900, 2026-10-07.
@@ -42,7 +80,7 @@ Severity: a **blocker** loses or corrupts data, or stops a main flow for everyon
 | A6 | major (to confirm with VoiceOver) | **Toasts may not be announced.** There is no live region on the page until a toast appears; a region inserted together with its text is often skipped, VoiceOver in particular. The toast also nests one `role="status"` inside another, which can announce twice elsewhere. Errors ("Couldn't send…") and Undo arrive this way. | Archive a thread with VoiceOver on. | To fix: keep one empty polite region and one assertive region mounted for the life of the page and write toast text into them; drop the inner role. The outer element is rozie Toaster's (see `docs/rozie-feedback.md`). |
 | A8 | major (to confirm with VoiceOver) | **Opening and closing a thread does not move focus, and the `j`/`k` cursor is visual only.** After `o` or Enter, focus is on the page, so Tab starts from the top bar and nothing announces the conversation. The cursor row is a CSS class: it has no focus and no `aria-current`, so a screen-reader user cannot tell which row `e` or `#` will act on. Rows are links and can be reached with Tab. | Inbox: `j`, `j`, `o`, then Tab. | To fix: focus the conversation heading on open and the row on return; give the cursor row real focus (roving tabindex). |
 | A1 | minor (axe: critical) | The event card and event form sit in a rozie Popover whose panel has `aria-modal="false"` with no dialog role, which ARIA does not allow. No effect on use was seen. | Calendar: click an event. | rozie defect, reported in `docs/rozie-feedback.md`. It is the only thing that would keep axe red after the other fixes, so it needs a rozie release. |
-| A2 | minor (axe: serious) | "Delete" in the event card has a contrast of 2.39:1 in the dark theme (#b3261e on #232327). | Dark theme, calendar: click an event. | To fix: a lighter danger colour in the dark theme. One line. |
+| A2 | minor (axe: serious) | Red text has a contrast of 2.39:1 in the dark theme (#b3261e on #232327): "Delete" in the event card, and the "Draft" marker on a thread row that holds a draft. The second only shows when such a row is on screen, so the axe test for the list depends on the mailbox. | Dark theme: calendar, click an event; or reply to a thread, close the reply, look at its row. | To fix: a lighter danger colour in the dark theme. One line. |
 | A4 | minor (axe: serious) | FullCalendar's previous and next icons have `role="img"` and no name. The buttons around them are named ("Previous week"), so this is noise more than loss. | Calendar. | To fix: hide the icons from the accessibility tree after render, or through the rozie wrapper if it offers a hook. |
 | A7 | minor | The search field has no focus ring: its box changes background and gains a shadow, which is faint in the dark theme. | Tab to "Search mail". | To fix: an outline on `.search-box:focus-within`. |
 | A9 | minor | An event card opened from the keyboard keeps focus on the event; its Edit and Delete buttons come after every other event in the tab order. | Calendar: focus an event, Enter, Tab. | Deferred: full keyboard editing of events was put off by decision. Escape returns to the event correctly. |

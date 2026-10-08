@@ -17,7 +17,7 @@ pnpm e2e:perf # hand-run measurements against the 50k mailbox (see deploy/README
 
 | Project | Engine | Runs |
 |---|---|---|
-| `chromium`, `firefox`, `webkit` | desktop, 1280×900 | every spec, except tests tagged `@perf` or `@production` |
+| `chromium`, `firefox`, `webkit` | desktop, 1280×900 | every spec, except tests tagged `@phone`, `@perf` or `@production` |
 | `phone` | WebKit as an iPhone 14 (390×844, touch) | only tests tagged `@phone` |
 | `perf` | Chromium | only tests tagged `@perf` |
 

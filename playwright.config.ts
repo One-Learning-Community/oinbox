@@ -7,7 +7,7 @@ const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:8080';
 const auth = { storageState: 'e2e/.auth/alice.json' };
 const desktop = { viewport: { width: 1280, height: 900 }, ...auth };
 // The desktop engines run everything except the tests kept for other projects.
-const suite = { dependencies: ['setup'], testIgnore: /auth\.setup\.ts/, grepInvert: /@perf|@production/ };
+const suite = { dependencies: ['setup'], testIgnore: /auth\.setup\.ts/, grepInvert: /@perf|@production|@phone/ };
 
 export default defineConfig({
   testDir: './e2e',
