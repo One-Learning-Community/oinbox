@@ -1,5 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import type { OAuth } from '../auth/oauth';
+import { BrandMark } from './Brand';
 
 export function SignIn(props: { auth: OAuth; error?: string }) {
   const [busy, setBusy] = createSignal(false);
@@ -19,8 +20,8 @@ export function SignIn(props: { auth: OAuth; error?: string }) {
   return (
     <div class="center">
       <div class="card">
-        <h1 style={{ 'font-weight': 400, margin: '0 0 8px' }}>
-          <b style={{ color: 'var(--accent)' }}>o</b>inbox
+        <h1 class="brand-title">
+          <BrandMark />
         </h1>
         <p style={{ color: 'var(--text-2)', margin: '0 0 24px' }}>Sign in with your mail account.</p>
         <Show when={error()}>

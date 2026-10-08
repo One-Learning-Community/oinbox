@@ -95,6 +95,34 @@ openssl s_client -connect mail.example.com:25 -starttls smtp -servername mail.ex
 
 This arrangement was tested with Caddy's local certificate authority, not against Let's Encrypt itself; the difference is only where Caddy gets the certificate from.
 
+## The image's settings
+
+The release image is configured by environment variables. All are optional.
+
+| Variable | Default | What it sets |
+|---|---|---|
+| `OINBOX_UPSTREAM` | `stalwart:8080` | Where Caddy finds Stalwart's HTTP listener. |
+| `OINBOX_LISTEN` | `:8080` | The address Caddy listens on, in plain HTTP (the image's own configuration; the production template listens on 443 with its own certificate instead). |
+| `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
+| `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
+
+### Branding
+
+`OINBOX_BRAND_LOGO` is the address of an image: an `https://` URL, a `data:image/...` URL, or a path on the same host (`/my-logo.svg`). It is shown at most 32px high in the top bar, so a wide, short image works best; SVG is ideal. Plain `http://` addresses are refused. Neither value may contain a double quote or a backquote.
+
+Caddy hands the two values to the app as `/branding.json`. Behind your own proxy, edit the `branding.json` that ships with the static files instead (`{ "name": "Example Mail", "logo": "/my-logo.svg" }`) and serve it uncached, as `deploy/examples/nginx.conf` does for everything outside `/assets/`.
+
+The browser remembers the branding it last saw, so a change shows on the second load after it is made, not the first. Error messages and the version line in Settings still say "oinbox".
+
+### Behind a load balancer (for example AWS ECS)
+
+Run the image as it is: it serves plain HTTP on `OINBOX_LISTEN` and expects whatever is in front to terminate TLS.
+
+- **Finding Stalwart.** In a task with bridge networking, link the oinbox container to the Stalwart container under the name `stalwart` and the default works. In a task with `awsvpc` networking the containers share one network namespace: set `OINBOX_UPSTREAM=localhost:8080` and move `OINBOX_LISTEN` off 8080, which Stalwart already holds.
+- **The push connection** stays open and is quiet between Stalwart's pings, 30 seconds apart. Keep the load balancer's idle timeout above that (an AWS Application Load Balancer's default of 60 seconds is enough).
+- **`STALWART_PUBLIC_URL`** must still be the public `https://` origin, as in "Install behind a proxy you already run".
+- **Mail ports** (25, 465, 993) do not pass through oinbox; route them to Stalwart yourself, and give Stalwart a certificate for them. The `cert-sync` arrangement below applies only to the Compose template.
+
 ## Install behind a proxy you already run
 
 1. Download `oinbox-<version>.tar.gz` from the release page and check it against `SHA256SUMS`.

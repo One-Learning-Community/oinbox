@@ -58,6 +58,10 @@ services:
         OINBOX_COMMIT: "${OINBOX_COMMIT:-unknown}"
     image: oinbox-web:dev
     restart: unless-stopped
+    environment:
+      # Unset means the defaults: "oinbox", no logo, Stalwart at stalwart:8080.
+      OINBOX_BRAND_NAME: "${OINBOX_BRAND_NAME:-oinbox}"
+      OINBOX_BRAND_LOGO: "${OINBOX_BRAND_LOGO:-}"
     ports:
       - "8080:8080"
     volumes:

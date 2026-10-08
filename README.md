@@ -16,6 +16,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Labels**: create, rename, nest and delete; label from the list or an open thread.
 - **Keyboard**: Gmail's shortcuts (`j k o u x e # ! s I U v l c r a f / g+i ?`).
 - **Settings**: identities and signatures, vacation responder.
+- **Branding**: your own name and logo in place of "oinbox", set by the operator.
 - **Calendar**: month, week and day views of your Stalwart calendars; create, move, resize, rename and delete single events; invitations shown in the message with Accept, Maybe and Decline, and updates and cancellations followed.
 - **Safety**: message HTML is sanitized and shown in a sandboxed frame that runs no scripts, under its own Content-Security-Policy; remote images are blocked until you allow them, per message or per sender.
 - **When things go wrong**: a banner when the server can't be reached, with automatic retry; a failed send or save keeps your text and offers Retry; a fault in one part of the screen is contained there; being signed out keeps the draft you were writing.

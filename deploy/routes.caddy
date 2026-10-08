@@ -21,7 +21,8 @@
 			X-Content-Type-Options "nosniff"
 			Referrer-Policy "no-referrer"
 		}
-		reverse_proxy stalwart:8080 {
+		# Where Stalwart's HTTP listener is. In one ECS task with awsvpc networking that is localhost.
+		reverse_proxy {$OINBOX_UPSTREAM:stalwart:8080} {
 			# A 401 with "WWW-Authenticate: Basic" makes browsers hold fetch() open behind a
 			# native login prompt instead of returning the 401 to the SPA.
 			header_down -Www-Authenticate
@@ -31,6 +32,18 @@
 				read_timeout 0
 			}
 		}
+	}
+
+	# --- Branding ------------------------------------------------------------
+	# The name and logo the app shows, from the environment, so one image serves any installation.
+	# The app reads this at start-up (src/app/branding.ts). Neither value may contain " or a backquote.
+	handle /branding.json {
+		header {
+			Content-Type "application/json"
+			Cache-Control "no-cache"
+			X-Content-Type-Options "nosniff"
+		}
+		respond `{"name":"{$OINBOX_BRAND_NAME:oinbox}","logo":"{$OINBOX_BRAND_LOGO:}"}`
 	}
 
 	# --- SPA ---------------------------------------------------------------

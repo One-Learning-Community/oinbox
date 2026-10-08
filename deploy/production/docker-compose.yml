@@ -51,6 +51,9 @@ services:
     environment:
       OINBOX_DOMAIN: "${OINBOX_DOMAIN}"
       ACME_EMAIL: "${ACME_EMAIL:?set ACME_EMAIL}"
+      # Optional branding (docs/operating.md, "Branding").
+      OINBOX_BRAND_NAME: "${OINBOX_BRAND_NAME:-oinbox}"
+      OINBOX_BRAND_LOGO: "${OINBOX_BRAND_LOGO:-}"
     ports:
       - "80:80"     # redirects to HTTPS; also answers the certificate authority's challenge
       - "443:443"

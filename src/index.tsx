@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createErrorReporter } from './app/errors';
+import { startBranding } from './app/branding';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { createLabels } from './app/labels';
 import { createRecipients } from './app/recipients';
@@ -33,7 +34,7 @@ import './ui/styles.css';
 const CalendarView = lazy(() => import('./ui/CalendarView').then((m) => ({ default: m.CalendarView })));
 
 const root = document.getElementById('root')!;
-/** Put a screen in the page, in place of whatever is there (first, index.html's "Loading oinbox…"). */
+/** Put a screen in the page, in place of whatever is there (first, index.html's "Loading…"). */
 const mount = (ui: () => JSX.Element) => {
   root.textContent = '';
   render(ui, root);
@@ -47,6 +48,7 @@ const auth = new OAuth({
 
 async function boot() {
   const theme = createTheme();
+  await startBranding((url) => fetch(url, { cache: 'no-cache' }), localStorage, document);
 
   if (location.pathname === '/auth/callback') {
     try {

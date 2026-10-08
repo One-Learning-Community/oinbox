@@ -5,7 +5,8 @@
 
 import routes.caddy
 
-:8080 {
+# Plain HTTP: something in front of this (a load balancer, another proxy) terminates TLS.
+{$OINBOX_LISTEN::8080} {
 	log
 	import oinbox_routes
 }

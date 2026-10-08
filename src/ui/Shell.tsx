@@ -4,6 +4,7 @@ import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
 import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
 import { bannerText, vacationStatus } from '../mail/settings';
+import { BrandMark } from './Brand';
 import { now } from './clock';
 import { ConnectionBanner } from './ConnectionBanner';
 import { Conversation } from './Conversation';
@@ -46,7 +47,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
           <Icon name="menu" />
         </button>
         <div class="brand">
-          <b>o</b><span>inbox</span>
+          <BrandMark />
         </div>
         <SearchBox />
         <div class="spacer" />
