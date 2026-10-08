@@ -5,41 +5,44 @@ Severity: a **blocker** loses or corrupts data, or stops a main flow for everyon
 
 ## Summary
 
-Status on 2026-10-07, at the checkpoint before any fix beyond N1 and N2. No blocker was found.
+**Status on 2026-10-08, after the fixes.** No blocker was found. Twelve majors were found. Nine are fixed. Three remain: two are done on oinbox's side and wait on rozie component releases (A6 and P2, along with the minor A1), and one is a Stalwart cost oinbox cannot remove (L2). The table at the audit checkpoint, before the fixes, is kept below it for the record.
 
-Test state at the checkpoint: 496 unit tests pass. End-to-end on all four projects (`pnpm e2e:all`): 340 passed, 1 skipped and 3 failed in the full run; the 3 were the dark-theme "search results" axe test on each engine, caused by a draft one of my own test runs left behind (see A2), and they pass with it removed. "Passed" includes the tests marked as expected failures for open findings (E1, A1–A4, P2, P3), which turn into real failures once a finding is fixed. One WebKit run of `compose.spec.ts` "a new message reaches bob…" failed once on a missed "Sending…" toast and passed on four repeats; CI retries once.
+| Area | Exit criteria now | Majors found | Fixed | Open |
+|---|---|---|---|---|
+| Browser engines | Met: the suite passes on Firefox and WebKit | E1 | E1 | – |
+| Accessibility | axe: met except A1 (rozie). Keyboard: met. VoiceOver: **not yet checked** | A3, A5, A6, A8 | A3, A5, A8; A6 on oinbox's side | A6 (rozie Toaster) |
+| Phone width | Mail and settings met; calendar card pending rozie | P2, P3, P4, P7 | P3, P4, P7; P2 on oinbox's side | P2 (rozie Popover) |
+| Large mailbox | Start-up, rendering, long thread, memory met; paging and search not | L2 | – | L2 (Stalwart) |
+| Network | Met | N1, N2 | N1, N2 | – |
+
+Minors: fixed A2, A4, A7, N3, N4. Left as known limitations (listed in the README): A1 (rozie), A9, A10, E2, E3, E5, P1, P5, P6.
+
+### Waiting on rozie (to be fixed before this slice is finished)
+
+`docs/rozie-feedback.md` has the detail. oinbox is written as though these are done.
+
+| Component | Gap | Finding | What turns green |
+|---|---|---|---|
+| Toaster | Standing polite and assertive live regions; `alert` for error toasts; the `toastSlot` function leaking into a DOM attribute | A6 | A VoiceOver check: an archive toast and a "Couldn't send" toast are read out |
+| Popover | The panel can leave the viewport on a narrow screen | P2 | `e2e/phone.spec.ts` "the calendar opens in day view and an event opens on tap" (an expected failure today) |
+| Popover | `aria-modal="false"` on a panel with no dialog role | A1 | `e2e/a11y.spec.ts` "event card" and "event form", both themes (expected failures today; then delete the `KNOWN` map) |
+
+### Still needs a person
+
+1. **VoiceOver pass** (`docs/a11y-script.md`, about 30 minutes) to confirm A3, A5 and A8 by ear and to check A6 once rozie Toaster is updated.
+2. **A real Firefox**: does the status dot turn green within a second of loading (E4)?
+3. **A real phone**: the on-screen keyboard over the reply composer (P1).
+4. **Stalwart**: raise L2 upstream, or check it on a non-Docker, non-Mac install.
+
+### At the checkpoint (2026-10-07, before the fixes)
 
 | Area | Exit criteria | Blockers | Majors | Minors |
 |---|---|---|---|---|
 | Browser engines | Suite passes on Firefox and WebKit, bar E1 | 0 | 1 (E1) | 2 |
 | Accessibility | Not met: axe (A1–A4), keyboard (A5). VoiceOver pass not done | 0 | 4 (A3, A5, and A6, A8 to confirm) | 5 |
 | Phone width | Mail and settings usable; calendar card (P2) and target sizes (P3) not met | 0 | 3 (P2, P3, P4) | 3 |
-| Large mailbox | Met except list paging and search speed (L2, cause in Stalwart) | 0 | 1 (L2, not fixable in oinbox) | 0 |
+| Large mailbox | Not checked: needed the corpus | – | – | – |
 | Network | Met | 0 | 2, both fixed (N1, N2) | 2 |
-
-### Proposed fix list
-
-| Finding | Approach | Size |
-|---|---|---|
-| E1 Safari cannot expand quoted text | `<details>` instead of a scripted button; frame height from a `ResizeObserver` in the parent; audit other listeners inside the frame | medium |
-| A5 new message does not take focus | Focus To on open; restore focus on close | small |
-| A3 message header is a button around buttons | Separate toggle button inside the header | small to medium |
-| A6 toasts not reliably announced | Standing polite and assertive regions written to by the toast function; needs or works around rozie Toaster | medium; touches rozie |
-| A8 focus not moved on thread open/close; visual-only cursor | Focus the conversation heading on open, the row on return; roving tabindex for the cursor | medium |
-| P2 event card off-screen on phones | Bottom sheet or viewport-capped popover below 700px | small to medium; may touch rozie Popover |
-| P4 search field 47px wide on phones | Expand on focus, or move theme and sign-out into the drawer | small |
-| P3 touch targets under 44px | Coarse-pointer CSS minimums across top bar, list, composer, calendar toolbar | small, wide |
-| A2, A4, A7 | One-line colour, hide two icons from the accessibility tree, a focus outline | trivial; clears axe except A1 |
-| N3, N4 | Static "loading" markup; a fallback around the lazy calendar | trivial |
-
-Not on the list: A1 needs a rozie Popover release (reported); E2, E3, A9, A10, P1, P5, P6 are minors proposed for "Known limitations".
-
-### Open items that need a person
-
-1. **VoiceOver pass** (`docs/a11y-script.md`, about 30 minutes): confirms or clears A6 and A8.
-2. **The corpus** for the 50,000-message run (L1).
-3. **A real Firefox** to see whether E4 exists outside Playwright's build (the status dot should turn green within a second of loading).
-4. **A real phone** for the on-screen keyboard (P1).
 
 ## Browser engines
 
@@ -72,7 +75,8 @@ Not on the list: A1 needs a rozie Popover release (reported); E2, E3, A9, A10, P
 - A keyboard-only pass over the main flows, driven by a script that recorded the focused element and its focus indicator after every step.
 - **Not yet done: the VoiceOver pass** in Safari (`docs/a11y-script.md`). It needs a person at the Mac. A6 and A8 below are predictions from the markup and must be confirmed there.
 
-**Exit criteria:** no serious or critical axe violations — **not met** (A1–A4; five screens are marked `test.fail` with their finding). All eight flows by keyboard alone — **not met** (A5). By VoiceOver alone — **not checked**.
+**Exit criteria at the audit:** no serious or critical axe violations — not met (A1–A4). All eight flows by keyboard alone — not met (A5). By VoiceOver alone — not checked.
+**After the fixes:** axe is clean except A1 (two calendar screens, rozie Popover); the keyboard flows work; VoiceOver is still unchecked.
 
 | # | Severity | Finding | Steps | Fix or reason deferred |
 |---|---|---|---|---|

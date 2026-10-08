@@ -111,6 +111,8 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
             // TipTap's autofocus prop doesn't take (docs/rozie-feedback.md); focus once the editor exists.
             requestAnimationFrame(() =>
               requestAnimationFrame(() => {
+                // The editor arrives a moment after the composer: by then the user may be typing in a field.
+                if (root?.contains(document.activeElement)) return;
                 // A reply starts in the text; a new message starts with who it is for.
                 if (c.mode === 'new' && !d().to.length) {
                   root?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
