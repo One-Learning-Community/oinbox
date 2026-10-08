@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { foldHtmlQuote, splitPlainQuote } from './quotes';
+import { foldBehindToggle, foldHtmlQuote, splitPlainQuote } from './quotes';
 
 describe('splitPlainQuote', () => {
   it('splits an "On … wrote:" block of > lines', () => {
@@ -68,5 +68,26 @@ describe('foldHtmlQuote', () => {
 
   it('folds nothing when there is no quote', () => {
     expect(foldHtmlQuote(doc('<p>Hi</p>'))).toBe(false);
+  });
+});
+
+describe('foldBehindToggle', () => {
+  it('puts the quote in a closed <details>, which opens without any script', () => {
+    const d = doc('<div>Sure</div><div class="gmail_quote"><blockquote>Lunch?</blockquote></div>');
+    foldHtmlQuote(d);
+    foldBehindToggle(d);
+    const details = d.querySelector('details.oinbox-quote')!;
+    expect(details.hasAttribute('open')).toBe(false);
+    const summary = details.querySelector(':scope > summary.oinbox-quote-toggle')!;
+    expect(summary.textContent).toBe('•••');
+    expect(summary.getAttribute('aria-label')).toBe('Show trimmed content');
+    expect(details.querySelector(':scope > [data-oinbox-quote]')!.textContent).toBe('Lunch?');
+    expect(d.body.firstElementChild!.textContent).toBe('Sure');
+  });
+
+  it('leaves a body without a quote alone', () => {
+    const d = doc('<p>Hello</p>');
+    foldBehindToggle(d);
+    expect(d.body.innerHTML).toBe('<p>Hello</p>');
   });
 });

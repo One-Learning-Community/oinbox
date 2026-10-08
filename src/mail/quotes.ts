@@ -107,3 +107,22 @@ function hasTextAfter(node: Element, parent: Element): boolean {
   }
   return false;
 }
+
+/**
+ * Put the `[data-oinbox-quote]` element behind a "•••" toggle. It is a `<details>`, not a button
+ * with a click handler: the message frame runs no scripts, and WebKit won't run a listener in such
+ * a frame even when the parent page added it.
+ */
+export function foldBehindToggle(doc: Document): void {
+  const quote = doc.body.querySelector('[data-oinbox-quote]');
+  if (!quote) return;
+  const details = doc.createElement('details');
+  details.className = 'oinbox-quote';
+  const summary = doc.createElement('summary');
+  summary.className = 'oinbox-quote-toggle';
+  summary.title = 'Show trimmed content';
+  summary.setAttribute('aria-label', 'Show trimmed content');
+  summary.textContent = '•••';
+  quote.before(details);
+  details.append(summary, quote);
+}

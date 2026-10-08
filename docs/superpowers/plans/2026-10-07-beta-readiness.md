@@ -2163,6 +2163,21 @@ Correct locators to the real ones as in earlier tasks.
 
 Written at the checkpoint from the confirmed fix list. Each fix: a test that fails for the finding (remove the matching `test.fail()` where one exists), the fix, the suite green, a commit named for the finding number. Minors are copied to the README's "Known limitations" in Task 16.
 
+**Confirmed by the user on 2026-10-08** (the whole proposed list; VoiceOver verification at the end; no stops between tasks; rozie gaps are documented and oinbox is written as though they are fixed, to be closed by a rozie release before this slice completes).
+
+- [ ] **14a E1** Safari quote toggle: `foldBehindToggle` in `src/mail/quotes.ts` (unit test first), used by `MessageBody`; drop the scripted button; `e2e/html-message.spec.ts` loses its two WebKit `test.fail`.
+- [ ] **14b A5** New message takes focus: focus the To field when a `new` composer opens; give focus back to the element that had it when the composer closes. e2e in `compose.spec.ts`: `c` then typing lands in To; Escape returns focus.
+- [ ] **14c A3** Message header: the expand/collapse toggle becomes its own `<button>` inside `.msg-head`, beside the actions; the header div loses `role="button"`. Remove `conversation` and `inline reply` from `KNOWN` in `e2e/a11y.spec.ts`.
+- [ ] **14d A8** Focus on thread open and close: the conversation heading gets `tabindex="-1"` and focus on open; returning focuses the row; the `j`/`k` cursor row gets real focus (roving tabindex) and `aria-current`. Unit test for the focus helper; e2e in `keyboard.spec.ts`.
+- [ ] **14e A6** Toasts: remove the inner role from oinbox's toast element and rely on rozie Toaster's live regions (documented gap: standing polite and assertive regions; `alert` for errors; the `toastSlot` attribute leak). e2e: exactly one live region carries a toast's text.
+- [ ] **14f A2, A4, A7** Dark danger colour; FullCalendar nav icons hidden from the accessibility tree; focus outline on the search box. Remove `calendar week` from `KNOWN`; `event card` and `event form` keep A1 only (rozie).
+- [ ] **14g P3, P1** Coarse-pointer minimum sizes for icon buttons, list controls, composer toolbar and links, calendar toolbar and toggles, image banner; scroll the composer's action row into view on focus. The four `@phone` target tests lose `test.fail`.
+- [ ] **14h P4** Phone search: the field takes the top bar while focused.
+- [ ] **14i P2** Phone event card: capped to the viewport width by oinbox CSS; staying inside the viewport is rozie Popover's job (documented gap). The `@phone` calendar test keeps `test.fail` with the rozie reason if the popover still overflows.
+- [ ] **14j N3, N4** Static loading markup in `index.html`; a "Loading calendar…" fallback around the lazy view.
+- [ ] **14k L1** Import 50,000 corpus messages into carol, run `pnpm e2e:perf`, record the numbers and any findings; fix blockers and majors.
+- [ ] **14l** Phone tests for the four flows that had none: attach a file, edit a signature, answer an invitation, create and edit an event by form.
+
 ### Task 15: Production template
 
 **Files:**

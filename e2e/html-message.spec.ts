@@ -4,8 +4,7 @@ import { settleAfterArrange } from './support/app';
 
 const REMOTE_HOSTS = ['picsum.photos', 'tracker.design.test'];
 
-test('HTML message: remote images blocked with banner, quote folded, no remote requests', async ({ page, browserName }) => {
-  test.fail(browserName === 'webkit', 'docs/beta-audit.md E1: in WebKit the quote toggle inside the script-less iframe does nothing');
+test('HTML message: remote images blocked with banner, quote folded, no remote requests', async ({ page }) => {
   const erin = (await emailsBySubject('Homepage redesign feedback')).find((e) => e.from?.[0]?.email === 'erin@design.test');
   expect(erin, 'seeded HTML reply from erin').toBeTruthy();
   const read = await markThreadRead(erin!.threadId);
@@ -34,7 +33,7 @@ test('HTML message: remote images blocked with banner, quote folded, no remote r
   expect(await frame.locator('img').count()).toBeGreaterThan(0);
 
   // Quoted reply is folded behind the toggle.
-  const toggle = frame.locator('button.oinbox-quote-toggle');
+  const toggle = frame.locator('.oinbox-quote-toggle');
   const quoted = frame.getByText('The new hero section looks great');
   await expect(toggle).toBeVisible();
   await expect(quoted).toBeHidden();
@@ -51,14 +50,13 @@ test('HTML message: remote images blocked with banner, quote folded, no remote r
 // FIXME(app bug, see e2e/README.md "Known failures"): any update to an open message (star,
 // read/unread, label; locally or via push) re-mounts its Message/MessageBody, recreating the
 // iframe. That silently re-folds an expanded quote and drops a one-off "Show images".
-test('expanded quote stays expanded when the open message is starred', async ({ page, browserName }) => {
-  test.fail(browserName === 'webkit', 'docs/beta-audit.md E1: in WebKit the quote toggle inside the script-less iframe does nothing');
+test('expanded quote stays expanded when the open message is starred', async ({ page }) => {
   const erin = (await emailsBySubject('Homepage redesign feedback')).find((e) => e.from?.[0]?.email === 'erin@design.test')!;
   await page.goto(`/inbox/t/${erin.threadId}`);
   await settleAfterArrange(page, false);
   const frame = page.locator(`article.msg[data-email-id="${erin.id}"]`).frameLocator('.msg-body iframe');
   const quoted = frame.getByText('The new hero section looks great');
-  await frame.locator('button.oinbox-quote-toggle').click();
+  await frame.locator('.oinbox-quote-toggle').click();
   await expect(quoted).toBeVisible();
   try {
     await updateEmails({ [erin.id]: { 'keywords/$flagged': true } });

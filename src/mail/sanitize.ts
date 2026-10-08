@@ -98,7 +98,8 @@ img{max-width:100%;height:auto}
 pre{white-space:pre-wrap}
 a{color:${opts.dark ? '#8ab4f8' : '#0b57d0'}}
 blockquote{margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex}
-[data-oinbox-quote][hidden]{display:none}
+details.oinbox-quote>summary{list-style:none}
+details.oinbox-quote>summary::-webkit-details-marker{display:none}
 .oinbox-quote-toggle{display:inline-block;margin:6px 0;padding:0 8px;border:0;border-radius:8px;background:${opts.dark ? '#444' : '#e8eaed'};color:inherit;font:bold 14px/1.2 system-ui;cursor:pointer;letter-spacing:1px}
 </style></head><body>${bodyHtml}</body></html>`;
 }

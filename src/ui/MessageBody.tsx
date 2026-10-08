@@ -1,7 +1,7 @@
 import { createMemo, createSignal, onCleanup, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import type { EmailBodyPart } from '../jmap/types';
-import { foldHtmlQuote, splitPlainQuote } from '../mail/quotes';
+import { foldBehindToggle, foldHtmlQuote, splitPlainQuote } from '../mail/quotes';
 import { buildFrameDocument, plainTextToHtml, sanitizeEmailHtml } from '../mail/sanitize';
 import type { EmailRec } from '../sync/engine';
 
@@ -33,11 +33,14 @@ export function MessageBody(props: { email: EmailRec }) {
       const html =
         `<div style="white-space:pre-wrap">${plainTextToHtml(main)}</div>` +
         (quote ? `<div data-oinbox-quote style="white-space:pre-wrap">${plainTextToHtml(quote)}</div>` : '');
-      return { html, hasRemoteContent: false, cids: [] as string[], plain: true };
+      const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+      foldBehindToggle(doc);
+      return { html: doc.body.innerHTML, hasRemoteContent: false, cids: [] as string[], plain: true };
     }
     const clean = sanitizeEmailHtml(b.value, { allowRemote: allowRemote() });
     const doc = new DOMParser().parseFromString(`<body>${clean.html}</body>`, 'text/html');
     foldHtmlQuote(doc);
+    foldBehindToggle(doc);
     return { ...clean, html: doc.body.innerHTML, plain: false };
   });
 
@@ -56,22 +59,6 @@ export function MessageBody(props: { email: EmailRec }) {
     const fit = () => {
       frame.style.height = `${doc.documentElement.scrollHeight}px`;
     };
-
-    // Quoted text behind a "•••" toggle. The frame has no scripts, so the parent wires the click.
-    const quote = doc.querySelector<HTMLElement>('[data-oinbox-quote]');
-    if (quote) {
-      quote.hidden = true;
-      const btn = doc.createElement('button');
-      btn.className = 'oinbox-quote-toggle';
-      btn.type = 'button';
-      btn.title = 'Show trimmed content';
-      btn.textContent = '•••';
-      btn.addEventListener('click', () => {
-        quote.hidden = !quote.hidden;
-        fit();
-      });
-      quote.before(btn);
-    }
 
     // Inline cid: images, fetched with auth and swapped for blob URLs.
     const parts = [...(props.email.attachments ?? []), ...(props.email.htmlBody ?? [])];
