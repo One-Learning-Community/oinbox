@@ -1,4 +1,4 @@
-import type { Email, EmailAddress } from '../jmap/types';
+import type { Email, EmailAddress, EmailBodyStructure } from '../jmap/types';
 import type { EmailRec } from '../sync/engine';
 import { displayName } from './participants';
 import { escapeHtml, plainTextToHtml, sanitizeEmailHtml } from './sanitize';
@@ -9,6 +9,15 @@ export interface DraftAttachment {
   blobId: string;
   name: string;
   type: string;
+  size: number;
+}
+
+export interface InlineImage {
+  /** Content-ID without angle brackets; the HTML refers to it as cid:<cid>. */
+  cid: string;
+  blobId: string;
+  type: string;
+  name: string;
   size: number;
 }
 
@@ -26,6 +35,8 @@ export interface Draft {
   signatureHtml: string;
   bodyHtml: string;
   attachments: DraftAttachment[];
+  /** Images the HTML refers to by cid:. The HTML never holds an object URL. */
+  inline: InlineImage[];
 }
 
 const lower = (a: EmailAddress) => a.email.toLowerCase();
@@ -48,6 +59,45 @@ function prefixed(subject: string, prefix: 'Re' | 'Fwd'): string {
 
 export function formatAddress(a: EmailAddress): string {
   return a.name ? `${a.name} <${a.email}>` : a.email;
+}
+
+// Only the src attribute is rewritten, never the document: the editor must get back exactly what it gave.
+const IMG_SRC = /(<img\b[^>]*?\ssrc=)(["'])(.*?)\2/gi;
+
+const unescapeAttr = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/** The content id a cid: source names, or null for any other source. */
+function cidOf(src: string): string | null {
+  const v = unescapeAttr(src).trim();
+  return /^cid:/i.test(v) ? v.slice(4).replace(/^<|>$/g, '') : null;
+}
+
+/** Content ids of the images this HTML refers to. */
+export function referencedCids(html: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of html.matchAll(IMG_SRC)) {
+    const cid = cidOf(m[3]!);
+    if (cid) out.add(cid);
+  }
+  return out;
+}
+
+/** For the editor: cid: sources become the object URLs in `urls` (content id to URL). An image without one keeps its cid:. */
+export function toEditorHtml(html: string, urls: Record<string, string>): string {
+  return html.replace(IMG_SRC, (all, pre: string, q: string, src: string) => {
+    const cid = cidOf(src);
+    const url = cid === null ? undefined : urls[cid];
+    return url ? `${pre}${q}${url}${q}` : all;
+  });
+}
+
+/** From the editor: object URLs become cid: sources again. */
+export function fromEditorHtml(html: string, urls: Record<string, string>): string {
+  const cids = new Map(Object.entries(urls).map(([cid, url]) => [url, cid]));
+  return html.replace(IMG_SRC, (all, pre: string, q: string, src: string) => {
+    const cid = cids.get(unescapeAttr(src));
+    return cid === undefined ? all : `${pre}${q}cid:${escapeHtml(cid)}${q}`;
+  });
 }
 
 /** Parse "Name <a@b>, c@d; "Last, First" <e@f>" into addresses. Invalid bits are dropped. */
@@ -75,7 +125,7 @@ function when(e: EmailRec): string {
 }
 
 export function initialDraft(mode: ComposeMode, original: EmailRec | null, me: Set<string>): Draft {
-  const empty: Draft = { mode, to: [], cc: [], bcc: [], subject: '', inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '', attachments: [] };
+  const empty: Draft = { mode, to: [], cc: [], bcc: [], subject: '', inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '', attachments: [], inline: [] };
   if (!original || mode === 'new') return empty;
 
   const from = original.from ?? [];
@@ -124,9 +174,14 @@ export function initialDraft(mode: ComposeMode, original: EmailRec | null, me: S
   };
 }
 
-/** Plain-text alternative of an HTML body. */
-export function htmlToText(html: string): string {
+/** Plain-text alternative of an HTML body. An inline image reads "[image: name]". */
+export function htmlToText(html: string, images: InlineImage[] = []): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  for (const img of doc.querySelectorAll('img')) {
+    const cid = cidOf(img.getAttribute('src') ?? '');
+    const name = images.find((i) => i.cid === cid)?.name;
+    img.replaceWith(name ? `[image: ${name}]\n` : '');
+  }
   for (const br of doc.querySelectorAll('br')) br.replaceWith('\n');
   for (const el of doc.querySelectorAll('p, div, li, h1, h2, h3, blockquote, tr')) el.append('\n');
   for (const bq of doc.querySelectorAll('blockquote')) {
@@ -135,16 +190,35 @@ export function htmlToText(html: string): string {
   return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
-/** The Email object for Email/set create (RFC 8621 §4.6), stored as a draft. */
-export function buildEmailCreate(draft: Draft, from: EmailAddress, draftsId: string): Partial<Email> {
+/** A draft's whole HTML: the text, the signature block, the quote. */
+export function draftHtml(draft: Draft): string {
   const signature = draft.signatureHtml ? `<div class="oinbox-signature">${draft.signatureHtml}</div>` : '';
-  const html = draft.bodyHtml + signature + draft.quoteHtml;
+  return draft.bodyHtml + signature + draft.quoteHtml;
+}
+
+/**
+ * The Email object for Email/set create (RFC 8621 §4.6), stored as a draft. The structure is
+ * spelled out: given htmlBody and attachments, Stalwart puts an inline image beside the body
+ * (multipart/mixed) instead of with the HTML (multipart/related), and some clients show it twice.
+ */
+export function buildEmailCreate(draft: Draft, from: EmailAddress, draftsId: string): Partial<Email> {
+  const html = draftHtml(draft);
   // "-- " on its own line is the delimiter mail clients use to recognise a signature.
   const text = [
-    htmlToText(draft.bodyHtml).trimEnd(),
+    htmlToText(draft.bodyHtml, draft.inline).trimEnd(),
     draft.signatureHtml ? `-- \n${htmlToText(draft.signatureHtml).trimEnd()}` : '',
-    draft.quoteHtml ? htmlToText(draft.quoteHtml).trim() : '',
+    draft.quoteHtml ? htmlToText(draft.quoteHtml, draft.inline).trim() : '',
   ].filter(Boolean).join('\n\n') + '\n';
+
+  // An image the user deleted from the text stays in the draft (undo brings it back) but not in the message.
+  const used = referencedCids(html);
+  const images: EmailBodyStructure[] = draft.inline.filter((i) => used.has(i.cid)).map((i) => ({ blobId: i.blobId, type: i.type, name: i.name, cid: i.cid, disposition: 'inline' }));
+  const files: EmailBodyStructure[] = draft.attachments.map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, disposition: 'attachment' }));
+  const htmlPart: EmailBodyStructure = { partId: 'html', type: 'text/html' };
+  const body: EmailBodyStructure = {
+    type: 'multipart/alternative',
+    subParts: [{ partId: 'text', type: 'text/plain' }, images.length ? { type: 'multipart/related', subParts: [htmlPart, ...images] } : htmlPart],
+  };
   return {
     mailboxIds: { [draftsId]: true },
     keywords: { $draft: true, $seen: true },
@@ -159,9 +233,7 @@ export function buildEmailCreate(draft: Draft, from: EmailAddress, draftsId: str
       text: { value: text, isEncodingProblem: false, isTruncated: false },
       html: { value: html, isEncodingProblem: false, isTruncated: false },
     },
-    textBody: [{ partId: 'text', type: 'text/plain' }] as Email['textBody'],
-    htmlBody: [{ partId: 'html', type: 'text/html' }] as Email['htmlBody'],
-    attachments: draft.attachments.map((a) => ({ blobId: a.blobId, type: a.type, name: a.name, disposition: 'attachment' })) as Email['attachments'],
+    bodyStructure: files.length ? { type: 'multipart/mixed', subParts: [body, ...files] } : body,
   };
 }
 

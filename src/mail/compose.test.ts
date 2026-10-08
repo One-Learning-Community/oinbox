@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EmailRec } from '../sync/engine';
-import { buildEmailCreate, initialDraft, parseAddressList, formatAddress, splitDraftHtml } from './compose';
+import type { EmailBodyStructure } from '../jmap/types';
+import { buildEmailCreate, fromEditorHtml, initialDraft, parseAddressList, formatAddress, referencedCids, splitDraftHtml, toEditorHtml, type Draft } from './compose';
 
 const me = new Set(['alice@example.test']);
 const original: EmailRec = {
@@ -86,7 +87,7 @@ describe('buildEmailCreate', () => {
       {
         mode: 'reply', to: [{ name: 'Bob', email: 'bob@x.test' }], cc: [], bcc: [], subject: 'Re: Lunch',
         inReplyTo: ['m1@x.test'], references: ['m0@x.test', 'm1@x.test'], quoteHtml: '<blockquote>q</blockquote>', signatureHtml: '', bodyHtml: '<p>Yes <b>12</b></p>',
-        attachments: [{ blobId: 'B1', name: 'a.pdf', type: 'application/pdf', size: 3 }],
+        attachments: [{ blobId: 'B1', name: 'a.pdf', type: 'application/pdf', size: 3 }], inline: [],
       },
       { name: 'Alice', email: 'alice@example.test' },
       'D',
@@ -97,9 +98,15 @@ describe('buildEmailCreate', () => {
     expect(e.inReplyTo).toEqual(['m1@x.test']);
     expect(e.bodyValues!.html!.value).toBe('<p>Yes <b>12</b></p><blockquote>q</blockquote>');
     expect(e.bodyValues!.text!.value).toContain('Yes 12');
-    expect(e.htmlBody).toEqual([{ partId: 'html', type: 'text/html' }]);
-    expect(e.textBody).toEqual([{ partId: 'text', type: 'text/plain' }]);
-    expect(e.attachments).toEqual([{ blobId: 'B1', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' }]);
+    expect(e.bodyStructure).toEqual({
+      type: 'multipart/mixed',
+      subParts: [
+        { type: 'multipart/alternative', subParts: [{ partId: 'text', type: 'text/plain' }, { partId: 'html', type: 'text/html' }] },
+        { blobId: 'B1', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' },
+      ],
+    });
+    expect(e.htmlBody).toBeUndefined();
+    expect(e.attachments).toBeUndefined();
   });
 });
 
@@ -145,5 +152,64 @@ describe('splitDraftHtml', () => {
   it('ignores a signature block nested inside the quote', () => {
     const html = '<p>Hi</p><div class="gmail_quote"><div class="oinbox-signature">Theirs</div></div>';
     expect(splitDraftHtml(html).signatureHtml).toBe('');
+  });
+});
+
+describe('inline images in the HTML', () => {
+  const urls = { 'c1@oinbox': 'blob:http://x/1', 'a&b@x': 'blob:http://x/2' };
+
+  it('swaps cid: sources for object URLs and back, byte for byte', () => {
+    const editor = '<p>a</p><img src="blob:http://x/1" alt="x"><p>b</p><img src="https://r.test/i.png"><img src="blob:http://x/2">';
+    const stored = fromEditorHtml(editor, urls);
+    expect(stored).toBe('<p>a</p><img src="cid:c1@oinbox" alt="x"><p>b</p><img src="https://r.test/i.png"><img src="cid:a&amp;b@x">');
+    expect(toEditorHtml(stored, urls)).toBe(editor);
+  });
+
+  it('leaves an image it has no URL for, and HTML without images, untouched', () => {
+    expect(toEditorHtml('<img src="cid:other@x">', urls)).toBe('<img src="cid:other@x">');
+    expect(toEditorHtml('<p>data-src="cid:c1@oinbox"</p>', urls)).toBe('<p>data-src="cid:c1@oinbox"</p>');
+  });
+
+  it('finds the content ids referred to, with or without angle brackets', () => {
+    expect([...referencedCids('<img src="cid:c1@oinbox"><img alt="" src=\'cid:&lt;c2@x&gt;\'><img src="cid:a&amp;b@x"><img src="x.png">')]).toEqual(['c1@oinbox', 'c2@x', 'a&b@x']);
+  });
+});
+
+describe('buildEmailCreate with inline images', () => {
+  const image = { cid: 'c1@oinbox', blobId: 'I1', type: 'image/png', name: 'chart.png', size: 9 };
+  const base: Draft = { ...initialDraft('new', null, me), bodyHtml: '<p>See</p><img src="cid:c1@oinbox"><p>there</p>', inline: [image] };
+  const from = { name: null, email: 'alice@example.test' };
+  const html = { partId: 'html', type: 'text/html' };
+  const text = { partId: 'text', type: 'text/plain' };
+  const part = { blobId: 'I1', type: 'image/png', name: 'chart.png', cid: 'c1@oinbox', disposition: 'inline' };
+
+  it('puts the image with the HTML in multipart/related', () => {
+    expect(buildEmailCreate(base, from, 'D').bodyStructure).toEqual({ type: 'multipart/alternative', subParts: [text, { type: 'multipart/related', subParts: [html, part] }] });
+  });
+
+  it('wraps that in multipart/mixed when there are attachments too', () => {
+    const e = buildEmailCreate({ ...base, attachments: [{ blobId: 'B1', name: 'a.pdf', type: 'application/pdf', size: 3 }] }, from, 'D');
+    expect(e.bodyStructure).toEqual({
+      type: 'multipart/mixed',
+      subParts: [
+        { type: 'multipart/alternative', subParts: [text, { type: 'multipart/related', subParts: [html, part] }] },
+        { blobId: 'B1', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' },
+      ],
+    });
+  });
+
+  it('needs no multipart/related without images', () => {
+    expect(buildEmailCreate({ ...base, bodyHtml: '<p>x</p>', inline: [] }, from, 'D').bodyStructure).toEqual({ type: 'multipart/alternative', subParts: [text, html] });
+  });
+
+  it('leaves out an image the text no longer refers to, and counts one in the quote', () => {
+    const gone = buildEmailCreate({ ...base, bodyHtml: '<p>See</p>' }, from, 'D').bodyStructure as EmailBodyStructure;
+    expect(gone.subParts).toEqual([text, html]);
+    const quoted = buildEmailCreate({ ...base, bodyHtml: '<p>See</p>', quoteHtml: '<blockquote><img src="cid:c1@oinbox"></blockquote>' }, from, 'D').bodyStructure as EmailBodyStructure;
+    expect(quoted.subParts![1]).toEqual({ type: 'multipart/related', subParts: [html, part] });
+  });
+
+  it('names the image in the plain-text alternative', () => {
+    expect(buildEmailCreate(base, from, 'D').bodyValues!.text!.value).toBe('See\n[image: chart.png]\nthere\n');
   });
 });

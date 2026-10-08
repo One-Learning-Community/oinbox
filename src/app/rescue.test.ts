@@ -4,7 +4,7 @@ import { clearRescue, saveRescue, takeRescue } from './rescue';
 
 const item = (subject: string): RescuedComposer => ({
   mode: 'new', draftId: null, identityId: 'i1', threadId: null, replyTo: null, signatureMode: 'auto',
-  draft: { mode: 'new', to: [], cc: [], bcc: [], subject, inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '<p>x</p>', attachments: [] },
+  draft: { mode: 'new', to: [], cc: [], bcc: [], subject, inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '<p>x</p>', attachments: [], inline: [] },
 });
 const DAY = 24 * 3600_000;
 

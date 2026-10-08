@@ -377,6 +377,7 @@ export function createComposers(
       signatureHtml: parts.signatureHtml,
       bodyHtml: parts.bodyHtml,
       attachments: (email.attachments ?? []).filter((a) => a.blobId).map((a) => ({ blobId: a.blobId!, name: a.name ?? 'attachment', type: a.type, size: a.size })),
+      inline: [],
     };
     const identity = identities().find((i) => i.email.toLowerCase() === email.from?.[0]?.email.toLowerCase());
     const identityId = identity?.id ?? defaultIdentity(null);
