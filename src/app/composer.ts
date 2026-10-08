@@ -144,7 +144,7 @@ export function createComposers(
           if (state === 'gone') setDraftId(null);
           unconfirmedSend = false;
         }
-        const saved = await engine.saveDraft(buildEmailCreate(draft(), { name: identity.name || null, email: identity.email }, drafts), draftId());
+        const saved = await engine.saveDraft(buildEmailCreate(draft(), { name: identity.name || null, email: identity.email }, drafts), draftId() ? [draftId()!] : []);
         setDraftId(saved.id);
         if (status() === 'saving') setStatus('saved');
       } catch (e) {

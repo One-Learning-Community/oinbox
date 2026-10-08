@@ -2,7 +2,7 @@ import { batch as solidBatch } from 'solid-js';
 import { createStore, produce, type SetStoreFunction } from 'solid-js/store';
 import type { BatchResult, JmapClient, UploadResult } from '../jmap/client';
 import type { CallHandle } from '../jmap/request';
-import { CORE, MAIL, VACATION, type Comparator, type Email, type EmailFilter, type Id, type Identity, type Mailbox, type MailboxRole, type SetError, type StateChange, type Thread, type VacationResponse } from '../jmap/types';
+import { CORE, MAIL, VACATION, type Comparator, type Email, type EmailBodyPart, type EmailFilter, type Id, type Identity, type Mailbox, type MailboxRole, type SetError, type StateChange, type Thread, type VacationResponse } from '../jmap/types';
 import type { IdentityValue, VacationPatch } from '../mail/settings';
 import type { LabelPlan } from '../mail/labels';
 import { applyEmailPatch, onlyIn, unlabelPatch, type EmailPatch, type MutableEmail } from './patch';
@@ -106,6 +106,22 @@ export type VacationLoad = 'idle' | 'loading' | 'ready' | 'failed' | 'unsupporte
 
 export function queryKey(spec: QuerySpec): string {
   return JSON.stringify([spec.filter, spec.sort, spec.collapseThreads, !!spec.snippets]);
+}
+
+/** A draft the server would not store. `type` is the JMAP SetError type, e.g. blobNotFound. */
+export class DraftSaveError extends Error {
+  constructor(readonly type: string, description?: string | null) {
+    super(description ?? type);
+  }
+}
+
+export interface SavedDraft {
+  id: Id;
+  threadId: Id;
+  /** The new version's attachment parts (inline ones included); null when they could not be read. */
+  parts: EmailBodyPart[] | null;
+  /** Whether the versions it replaces are gone. */
+  replaced: boolean;
 }
 
 /**
@@ -472,23 +488,40 @@ export class MailEngine {
   }
 
   /**
-   * Save a draft. JMAP emails are immutable, so each save creates a new email and
-   * destroys the previous version in the same request. Returns the new id.
+   * Save a draft. JMAP emails are immutable, so each save creates a new email. The versions it
+   * replaces are destroyed in a second request, once the new one exists: Stalwart destroys even
+   * when the create in the same request fails. That request also reads the new version's parts,
+   * whose blob ids are its own (the old ones die with the old version).
    */
-  async saveDraft(email: Partial<Email>, replaces: Id | null): Promise<{ id: Id; threadId: Id }> {
+  async saveDraft(email: Partial<Email>, replaces: Id[]): Promise<SavedDraft> {
     const b = this.client.batch();
-    const call = b.call('Email/set', {
-      accountId: this.accountId,
-      create: { draft: email },
-      ...(replaces ? { destroy: [replaces] } : {}),
-    });
+    const call = b.call('Email/set', { accountId: this.accountId, create: { draft: email } });
     const r = (await this.client.send(b)).get(call);
     const created = r.created?.draft;
     if (!created) {
       const err = r.notCreated?.draft;
-      throw new Error(err?.description ?? err?.type ?? 'Draft was not saved');
+      throw new DraftSaveError(err?.type ?? 'serverFail', err?.description ?? (err ? null : 'Draft was not saved'));
     }
-    return { id: created.id!, threadId: created.threadId! };
+    const saved = { id: created.id!, threadId: created.threadId! };
+    try {
+      const b2 = this.client.batch();
+      const get = b2.call('Email/get', { accountId: this.accountId, ids: [saved.id], properties: ['attachments'] });
+      if (replaces.length) b2.call('Email/set', { accountId: this.accountId, destroy: replaces });
+      const parts = (await this.client.send(b2)).get(get).list[0]?.attachments ?? null;
+      return { ...saved, parts, replaced: true };
+    } catch (e) {
+      // The draft is saved. The caller passes the old versions again with its next save.
+      logUnexpected(e);
+      return { ...saved, parts: null, replaced: false };
+    }
+  }
+
+  /** The attachment parts of a stored draft, with the blob ids that version owns. Null: no such message. */
+  async draftParts(id: Id): Promise<EmailBodyPart[] | null> {
+    const b = this.client.batch();
+    const call = b.call('Email/get', { accountId: this.accountId, ids: [id], properties: ['attachments'] });
+    const email = (await this.client.send(b)).get(call).list[0];
+    return email ? (email.attachments ?? []) : null;
   }
 
   async destroyEmails(ids: Id[]): Promise<void> {

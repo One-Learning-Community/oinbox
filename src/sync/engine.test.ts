@@ -1,7 +1,7 @@
 import { createRoot } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VACATION } from '../jmap/types';
-import { DEFAULT_SORT, MailEngine, SetFailure } from './engine';
+import { DEFAULT_SORT, DraftSaveError, MailEngine, SetFailure } from './engine';
 import { fakeClient, FakeJmap } from './fake-jmap';
 import { archivePatch, keywordPatch, unlabelPatch } from './patch';
 
@@ -738,5 +738,60 @@ describe('an engine for a shared account', () => {
     const upload = vi.spyOn(client, 'upload').mockResolvedValue({ accountId: 'g', blobId: 'b', type: 't', size: 1 });
     await group.upload(new Blob(['x']));
     expect(upload).toHaveBeenCalledWith(expect.any(Blob), 'g');
+  });
+});
+
+describe('saveDraft', () => {
+  const setup = async () => {
+    const server = new FakeJmap();
+    server.addMailbox('D', 'Drafts', 'drafts');
+    server.uploads.add('up1');
+    const client = server.client();
+    const engine = createRoot(() => new MailEngine(client, { settleDelayMs: 0 }));
+    await engine.start();
+    return { server, client, engine };
+  };
+  const draft = (blobId: string, subject = 'v') => ({
+    mailboxIds: { D: true as const }, subject, bodyValues: { text: { value: 't', isEncodingProblem: false, isTruncated: false } },
+    bodyStructure: { type: 'multipart/mixed', subParts: [{ partId: 'text', type: 'text/plain' }, { blobId, type: 'text/plain', name: 'a.txt', disposition: 'attachment' }] },
+  });
+
+  it('returns the new version\'s parts and removes the versions it replaces', async () => {
+    const { server, engine } = await setup();
+    const v1 = await engine.saveDraft(draft('up1'), []);
+    expect(v1.parts!.map((p) => p.name)).toEqual(['a.txt']);
+    expect(v1.parts![0]!.blobId).not.toBe('up1');
+    const v2 = await engine.saveDraft(draft(v1.parts![0]!.blobId!, 'v2'), [v1.id]);
+    expect(v2.replaced).toBe(true);
+    expect([...server.emails.keys()]).toEqual([v2.id]);
+  });
+
+  it('leaves the previous version alone when the new one cannot be created', async () => {
+    const { server, engine } = await setup();
+    const v1 = await engine.saveDraft(draft('up1'), []);
+    const failed = engine.saveDraft(draft('gone'), [v1.id]);
+    await expect(failed).rejects.toBeInstanceOf(DraftSaveError);
+    await expect(failed).rejects.toMatchObject({ type: 'blobNotFound' });
+    expect(server.emails.has(v1.id)).toBe(true);
+  });
+
+  it('still reports the save when the follow-up request fails', async () => {
+    const { server, client, engine } = await setup();
+    const v1 = await engine.saveDraft(draft('up1'), []);
+    // The request that would destroy the old version never gets out.
+    const real = client.send.bind(client);
+    const destroys = (b: Parameters<typeof client.send>[0]) => b.build([]).methodCalls.some(([name, args]) => name === 'Email/set' && !!args.destroy);
+    vi.spyOn(client, 'send').mockImplementation((b) => (destroys(b) ? Promise.reject(new TypeError('Failed to fetch')) : real(b)));
+    const v2 = await engine.saveDraft(draft('up1', 'v2'), [v1.id]);
+    expect(v2).toMatchObject({ parts: null, replaced: false });
+    expect(server.emails.has(v1.id)).toBe(true);
+    expect(server.emails.has(v2.id)).toBe(true);
+  });
+
+  it('reads a draft\'s parts, and null for one that is gone', async () => {
+    const { engine } = await setup();
+    const v1 = await engine.saveDraft(draft('up1'), []);
+    expect((await engine.draftParts(v1.id))!.map((p) => p.blobId)).toEqual(v1.parts!.map((p) => p.blobId));
+    expect(await engine.draftParts('nope')).toBeNull();
   });
 });
