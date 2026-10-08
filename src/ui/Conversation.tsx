@@ -9,6 +9,7 @@ import { hiddenMailboxIds, isHidden, isLabel, type View } from '../sync/selector
 import { Icon } from './icons';
 import { InviteCard } from './InviteCard';
 import { MessageBody } from './MessageBody';
+import { PaneBoundary } from './PaneBoundary';
 
 const ComposerView = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposerView })));
 
@@ -212,7 +213,11 @@ export function Conversation(props: { view: View; threadId: Id }) {
               </div>
             </Show>
             <Show when={inlineComposer()} fallback={<ReplyBar threadId={props.threadId} />}>
-              {(c) => <ComposerView composer={c()} inline />}
+              {(c) => (
+                <PaneBoundary name="composer">
+                  <ComposerView composer={c()} inline />
+                </PaneBoundary>
+              )}
             </Show>
           </Match>
         </Switch>
@@ -297,8 +302,13 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
       </div>
       <Show when={props.expanded}>
         <div class="msg-body">
-          <InviteCard email={props.email} />
-          <MessageBody email={props.email} />
+          <PaneBoundary name="invite card" silent>
+            <InviteCard email={props.email} />
+          </PaneBoundary>
+          {/* One malformed message must not hide the rest of its thread. */}
+          <PaneBoundary name="message">
+            <MessageBody email={props.email} />
+          </PaneBoundary>
           <Attachments email={props.email} />
           <Show when={isDraft()}>
             <button class="btn tonal" style={{ 'margin-top': '12px' }} onClick={() => composers.openDraft(props.email)}>

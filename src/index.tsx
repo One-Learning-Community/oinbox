@@ -1,9 +1,10 @@
 /* @refresh reload */
 import { Navigate, Route, Router } from '@solidjs/router';
-import { lazy } from 'solid-js';
+import { ErrorBoundary, lazy } from 'solid-js';
 import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
+import { createErrorReporter } from './app/errors';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { createLabels } from './app/labels';
 import { createRecipients } from './app/recipients';
@@ -18,6 +19,8 @@ import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
 import { MailEngine } from './sync/engine';
 import { createConfirmDialog } from './ui/ConfirmDialog';
 import { SettingsView } from './ui/SettingsView';
+import { PaneBoundary } from './ui/PaneBoundary';
+import { RootFallback } from './ui/RootFallback';
 import { MailView, Shell } from './ui/Shell';
 import { SignIn } from './ui/SignIn';
 import { createNav } from './ui/nav';
@@ -64,6 +67,7 @@ async function boot() {
   const calendar = new CalendarStore(client, (m, t, a) => toasts.toast(m, t, a));
   const toasts = createToasts();
   const confirmDialog = createConfirmDialog();
+  const errors = createErrorReporter(toasts.toast);
 
   const signOut = () => {
     const user = client.hasSession ? client.session.username : null;
@@ -78,9 +82,8 @@ async function boot() {
     }
     return false;
   };
-  window.addEventListener('unhandledrejection', (ev) => {
-    if (onAuthError(ev.reason)) ev.preventDefault();
-  });
+  // Event handlers and rejected promises are out of reach of the error boundaries below.
+  errors.install(window, onAuthError);
 
   // Warm start: render from the cached session + snapshot, then reconcile.
   const cachedSession = loadCachedSession();
@@ -97,6 +100,7 @@ async function boot() {
     hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS],
     auth,
     toast: toasts.toast,
+    errors,
     actions: createActions(engine, toasts.toast, confirmDialog.confirm),
     labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session) : DEFAULT_LIMITS)),
     settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
@@ -148,23 +152,37 @@ async function boot() {
 
   render(
     () => (
-      <AppContext.Provider value={app}>
-        <Router root={(p) => <Shell {...p} toasts={toasts.Host} confirmHost={confirmDialog.Host} />}>
-          <Route path="/" component={() => <Navigate href="/inbox" />} />
-          <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
-          <Route path="/calendar" component={() => (app.hasCalendars() ? <CalendarView /> : <Navigate href="/inbox" />)} />
-          <Route path="/search/:q" component={MailView} />
-          <Route path="/search/:q/t/:threadId" component={MailView} />
-          <Route path="/label/:id" component={MailView} />
-          <Route path="/label/:id/t/:threadId" component={MailView} />
-          <Route path="/settings" component={SettingsView} />
-          <Route path="/:slug" component={MailView} />
-          <Route path="/:slug/t/:threadId" component={MailView} />
-        </Router>
-      </AppContext.Provider>
+      <ErrorBoundary
+        fallback={(e) => {
+          console.error(e);
+          return <RootFallback error={e} />;
+        }}
+      >
+        <AppContext.Provider value={app}>
+          <Router root={(p) => <Shell {...p} toasts={toasts.Host} confirmHost={confirmDialog.Host} />}>
+            <Route path="/" component={() => <Navigate href="/inbox" />} />
+            <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
+            <Route
+              path="/calendar"
+              component={() => <PaneBoundary name="calendar">{app.hasCalendars() ? <CalendarView /> : <Navigate href="/inbox" />}</PaneBoundary>}
+            />
+            <Route path="/search/:q" component={MailView} />
+            <Route path="/search/:q/t/:threadId" component={MailView} />
+            <Route path="/label/:id" component={MailView} />
+            <Route path="/label/:id/t/:threadId" component={MailView} />
+            <Route path="/settings" component={() => <PaneBoundary name="settings"><SettingsView /></PaneBoundary>} />
+            <Route path="/:slug" component={MailView} />
+            <Route path="/:slug/t/:threadId" component={MailView} />
+          </Router>
+        </AppContext.Provider>
+      </ErrorBoundary>
     ),
     root,
   );
 }
 
-void boot();
+void boot().catch((e) => {
+  console.error(e);
+  root.textContent = '';
+  render(() => <RootFallback error={e} />, root);
+});

@@ -1,6 +1,7 @@
 import { createContext, createSignal, useContext, type Accessor } from 'solid-js';
 import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
+import type { ErrorReporter } from './errors';
 import type { Labels } from './labels';
 import type { Recipients } from './recipients';
 import type { Settings } from './settings';
@@ -21,6 +22,8 @@ export interface App {
   hasCalendars: () => boolean;
   auth: OAuth;
   toast: ToastFn;
+  /** Where a caught error goes: the console and one toast. */
+  errors: ErrorReporter;
   actions: Actions;
   labels: Labels;
   settings: Settings;

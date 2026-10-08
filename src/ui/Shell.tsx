@@ -11,6 +11,7 @@ import { installShortcuts } from './keyboard';
 import { LabelDialog } from './LabelDialog';
 import { LabelMenu } from './LabelMenu';
 import { missingViewText } from './nav';
+import { PaneBoundary } from './PaneBoundary';
 import { HelpDialog, MailboxPicker } from './Overlays';
 import { latestReplyable } from './Conversation';
 import { ThreadList } from './ThreadList';
@@ -73,7 +74,9 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         <button class="compose-fab" onClick={() => app.composers.open('new')} title="Compose (c)">
           <Icon name="edit" /> Compose
         </button>
-        <Sidebar current={location.pathname} />
+        <PaneBoundary name="sidebar">
+          <Sidebar current={location.pathname} />
+        </PaneBoundary>
       </nav>
       <main class="main">
         <Show when={vacationBanner()}>
@@ -83,7 +86,9 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       </main>
       <props.toasts />
       <Show when={app.composers.list().length}>
-        <ComposeDock />
+        <PaneBoundary name="composer">
+          <ComposeDock />
+        </PaneBoundary>
       </Show>
       <MailboxPicker />
       <HelpDialog />
@@ -246,8 +251,16 @@ export function MailView() {
     <Show when={view()} fallback={<div class="list-empty">{missingViewText(!!params.id, engine.state.ready)}</div>} keyed>
       {(v) => (
         <>
-          <ThreadList view={v} hidden={!!params.threadId} />
-          <Show when={params.threadId}>{(tid) => <Conversation view={v} threadId={tid()} />}</Show>
+          <PaneBoundary name="thread list">
+            <ThreadList view={v} hidden={!!params.threadId} />
+          </PaneBoundary>
+          <Show when={params.threadId}>
+            {(tid) => (
+              <PaneBoundary name="conversation">
+                <Conversation view={v} threadId={tid()} />
+              </PaneBoundary>
+            )}
+          </Show>
         </>
       )}
     </Show>
