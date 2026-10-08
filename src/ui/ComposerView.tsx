@@ -1,5 +1,5 @@
 import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
 import { formatAddress } from '../mail/compose';
@@ -15,6 +15,12 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
   const [dragging, setDragging] = createSignal(false);
   let editor: TipTapHandle | undefined;
   let root: HTMLDivElement | undefined;
+  // Closing gives the keyboard back to whatever opened the composer, if that is still on the page.
+  const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+  onCleanup(() => {
+    const lost = !document.activeElement || document.activeElement === document.body || root?.contains(document.activeElement);
+    if (opener?.isConnected && lost) queueMicrotask(() => opener.focus());
+  });
   let fileInput: HTMLInputElement | undefined;
   const d = () => c.draft();
 
@@ -103,14 +109,17 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
           ref={(h) => {
             editor = h;
             // TipTap's autofocus prop doesn't take (docs/rozie-feedback.md); focus once the editor exists.
-            if (c.mode !== 'new' || d().to.length) {
-              requestAnimationFrame(() =>
-                requestAnimationFrame(() => {
-                  h.focusEditor();
-                  if (!root?.contains(document.activeElement)) root?.querySelector<HTMLElement>('[contenteditable]')?.focus();
-                }),
-              );
-            }
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                // A reply starts in the text; a new message starts with who it is for.
+                if (c.mode === 'new' && !d().to.length) {
+                  root?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+                  return;
+                }
+                h.focusEditor();
+                if (!root?.contains(document.activeElement)) root?.querySelector<HTMLElement>('[contenteditable]')?.focus();
+              }),
+            );
           }}
           html={d().bodyHtml}
           onHtmlChange={(html: string) => {

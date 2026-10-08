@@ -377,3 +377,18 @@ test('removing a recipient from the keyboard keeps focus in the field', async ({
   await expect(recipientInput(c)).toBeFocused();
 });
 
+test('a new message takes the keyboard: focus goes to To, and closing gives it back', async ({ page }) => {
+  await openInbox(page);
+  const compose = page.getByRole('button', { name: 'Compose' });
+  await compose.focus();
+  await page.keyboard.press('Enter');
+  const c = floatingComposer(page);
+  await expect(recipientInput(c)).toBeFocused();
+  // Typing goes to the field without a click. Nothing is committed, so no draft is left behind.
+  await page.keyboard.type('zed');
+  await expect(recipientInput(c)).toHaveValue('zed');
+  await recipientInput(c).fill('');
+  await page.keyboard.press('Escape');
+  await expect(c).toHaveCount(0);
+  await expect(compose).toBeFocused();
+});
