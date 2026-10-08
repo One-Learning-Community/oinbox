@@ -6,6 +6,7 @@ import { createNotifier, notifications, tabTitle } from '../app/notify';
 import type { Mailbox } from '../jmap/types';
 import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
 import { bannerText, vacationStatus } from '../mail/settings';
+import { AccountSwitcher } from './AccountSwitcher';
 import { BrandMark } from './Brand';
 import { now } from './clock';
 import { ConnectionBanner } from './ConnectionBanner';
@@ -94,6 +95,14 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         <div class="scrim" onClick={() => setNavOpen(false)} />
       </Show>
       <nav class="sidebar" classList={{ open: navOpen() }} onClick={(e) => (e.target as Element).closest('a, .compose-fab') && setNavOpen(false)}>
+        <AccountSwitcher
+          spaces={app.spaces}
+          onSwitch={(space) => {
+            // Through the browser, not the router: the other account's router does not exist yet.
+            history.pushState(null, '', `${space.info.base}/inbox`);
+            app.spaces.show(space.info.id);
+          }}
+        />
         <button class="compose-fab" onClick={() => app.composers.open('new')} title="Compose (c)">
           <Icon name="edit" /> Compose
         </button>
