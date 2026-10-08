@@ -532,7 +532,8 @@ export class MailEngine {
     const b = this.client.batch();
     const call = b.call('Email/set', { accountId: this.accountId, destroy: ids });
     const r = (await this.client.send(b)).get(call);
-    const failed = Object.values(r.notDestroyed ?? {})[0];
+    // A message that is not found is gone already, which is what the caller wanted.
+    const failed = Object.values(r.notDestroyed ?? {}).find((e) => e.type !== 'notFound');
     if (failed) throw new Error(failed.description ?? failed.type);
   }
 

@@ -248,6 +248,115 @@ describe('composer safety', () => {
   });
 });
 
+describe('older draft versions a save could not remove', () => {
+  const bob = { name: null, email: 'bob@example.test' };
+  const autosave = () => vi.advanceTimersByTimeAsync(2000);
+
+  async function setup() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const server = new FakeJmap();
+    server.addMailbox('D', 'Drafts', 'drafts');
+    server.addMailbox('S', 'Sent', 'sent');
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    const toast = vi.fn();
+    const composers = createRoot(() => createComposers(engine, toast, vi.fn(async () => true), vi.fn()));
+    return { server, engine, toast, composers };
+  }
+  /** A composer whose first version is left behind by its second save. */
+  async function withStale() {
+    const s = await setup();
+    const c = s.composers.open('new');
+    c.update({ to: [bob], subject: 'one' });
+    await autosave();
+    const old = c.draftId()!;
+    s.server.rejectDestroys.add(old);
+    c.update({ subject: 'two' });
+    await autosave();
+    expect(s.server.emails.has(old)).toBe(true);
+    expect(c.draftId()).not.toBe(old);
+    s.server.rejectDestroys.delete(old);
+    return { ...s, c, old };
+  }
+  afterEach(() => vi.useRealTimers());
+
+  it('go with the next autosave', async () => {
+    const { server, engine, c, old } = await withStale();
+    const save = vi.spyOn(engine, 'saveDraft');
+    c.update({ subject: 'three' });
+    await autosave();
+    expect(save.mock.calls[0]![1]).toContain(old);
+    expect([...server.emails.values()].map((e) => e.subject)).toEqual(['three']);
+  });
+
+  it('are removed when the message is sent, and the sent one is left', async () => {
+    const { server, composers, c, old } = await withStale();
+    // The send's own save cannot remove it either; the removal after it can.
+    server.rejectDestroys.add(old);
+    let destroys = 0;
+    server.onCall = (name, args) => {
+      if (name === 'Email/set' && args.destroy && ++destroys === 2) server.rejectDestroys.delete(old);
+    };
+    await composers.send(c);
+    expect(server.emails.has(old)).toBe(false);
+    expect([...server.emails.keys()]).toEqual([c.draftId()]);
+  });
+
+  it('are removed when the composer is closed', async () => {
+    const { server, composers, c, old } = await withStale();
+    c.update({ subject: 'three' });
+    await composers.close(c);
+    expect(server.emails.has(old)).toBe(false);
+    expect([...server.emails.values()].map((e) => e.subject)).toEqual(['three']);
+  });
+
+  it('are removed when a composer with nothing to save is closed', async () => {
+    const { server, composers, c, old } = await withStale();
+    expect(c.status()).toBe('saved');
+    await composers.close(c);
+    expect(server.emails.has(old)).toBe(false);
+    expect(server.emails.size).toBe(1);
+  });
+
+  it('are removed with the draft when it is discarded', async () => {
+    const { server, composers, c } = await withStale();
+    await composers.discard(c);
+    expect(server.emails.size).toBe(0);
+  });
+
+  it('are removed on discard even when the draft itself is left alone because it may have been sent', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { server, engine, composers, c, old } = await withStale();
+    vi.spyOn(engine, 'sendDraft').mockRejectedValueOnce(new RequestError(0, 'timeout'));
+    vi.spyOn(engine, 'draftState').mockResolvedValueOnce('draft').mockResolvedValue('sent');
+    server.rejectDestroys.add(old);
+    await composers.send(c);
+    const sending = c.draftId()!;
+    server.rejectDestroys.delete(old);
+    log.mockRestore();
+    await vi.advanceTimersByTimeAsync(UNDO_SEND_MS);
+    await composers.discard(composers.list()[0]!);
+    expect(server.emails.has(old)).toBe(false);
+    expect([...server.emails.keys()]).toEqual([sending]);
+  });
+
+  it('are carried into the composer Undo brings back, whose next save removes them', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { server, composers, toast, c, old } = await withStale();
+    // The removal at Send fails too.
+    server.rejectDestroys.add(old);
+    await composers.send(c);
+    server.rejectDestroys.delete(old);
+    log.mockRestore();
+    expect(server.emails.has(old)).toBe(true);
+    (toast.mock.calls.find((call) => call[0] === 'Sending…')![2] as { run: () => void }).run();
+    const back = composers.list().at(-1)!;
+    back.update({ subject: 'three' });
+    await autosave();
+    expect([...server.emails.values()].map((e) => e.subject)).toEqual(['three']);
+  });
+});
+
 describe('a draft\'s blob ids', () => {
   const start = async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });

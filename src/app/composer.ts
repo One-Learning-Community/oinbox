@@ -99,6 +99,8 @@ export function createComposers(
     /** True when an earlier send of this draft turns out to have reached the server. */
     wasSent: () => Promise<boolean>;
     snapshot: () => RescuedComposer;
+    /** Older versions of the draft that a save could not confirm as removed. */
+    staleIds: () => Id[];
     releaseImages: () => void;
   };
 
@@ -111,7 +113,12 @@ export function createComposers(
     signatureMode?: SignatureMode;
     /** A send of `draftId` failed and we could not find out whether it reached the server. */
     unconfirmedSend?: boolean;
+    /** Older versions still on the server: the next save removes them. */
+    stale?: Id[];
   }
+
+  /** Remove draft versions left behind, best effort: a version that is not found is already gone. */
+  const dropStale = (ids: Id[]): Promise<void> => (ids.length ? engine.destroyEmails(ids).catch(logUnexpected) : Promise.resolve());
 
   /** An autosave found that the message went out after all: edits made since then have nowhere to go. */
   const sentMeanwhile = (c: Composer) => {
@@ -136,7 +143,7 @@ export function createComposers(
     let saving: Promise<void> = Promise.resolve();
     let unconfirmedSend = restore?.unconfirmedSend ?? false;
     /** Older versions a save could not confirm as removed; the next save takes them along. */
-    let stale: Id[] = [];
+    let stale: Id[] = restore?.stale ?? [];
 
     const [imageUrls, setImageUrls] = createSignal<Record<string, string>>({});
     /** The images' bytes, by content id: enough to upload one again if its blob is lost. */
@@ -316,6 +323,7 @@ export function createComposers(
       cancelAutosave: () => clearTimeout(timer),
       signatureMode,
       markDirty: scheduleSave,
+      staleIds: () => stale.filter((x) => x !== draftId()),
       wasSent: async () => unconfirmedSend && !!draftId() && (await engine.draftState(draftId()!)) === 'sent',
       snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode() }),
     };
@@ -355,7 +363,9 @@ export function createComposers(
       }
       toast('Draft saved.');
     }
+    const stale = internals(c).staleIds();
     remove(c);
+    await dropStale(stale);
   };
 
   /** Try a failed save again (the Retry button, and by itself when the connection returns). */
@@ -379,14 +389,16 @@ export function createComposers(
     const ok = await confirm({ title: 'Discard draft?', message: 'This draft will be permanently deleted.', confirmLabel: 'Discard' });
     if (!ok) return;
     // After a send that may have gone through, the "draft" can be the copy in Sent: leave it be.
+    const stale = internals(c).staleIds();
     if (await internals(c).wasSent().catch(() => false)) {
       remove(c);
+      await dropStale(stale);
       toast('Message sent.', 'success');
       return;
     }
     remove(c);
     const id = c.draftId();
-    if (id) await engine.destroyEmails([id]).catch(logUnexpected);
+    await dropStale(id ? [id, ...stale] : stale);
     toast('Draft discarded.');
   };
 
@@ -420,7 +432,8 @@ export function createComposers(
     const draftId = c.draftId()!;
     // After the save: the draft now names the stored version's blobs.
     const saved = c.draft();
-    const snapshot: Restore = { draft: saved, draftId, identityId, threadId: c.threadId, replyTo: c.replyTo, signatureMode: internals(c).signatureMode() };
+    const stale = internals(c).staleIds();
+    const snapshot: Restore = { draft: saved, draftId, identityId, threadId: c.threadId, replyTo: c.replyTo, signatureMode: internals(c).signatureMode(), stale };
     remove(c);
 
     let cancelled = false;
@@ -458,6 +471,11 @@ export function createComposers(
         toast('Sending undone.');
       },
     });
+    // Older versions would look like unsent copies of this message. If they stay, a restored composer takes them along.
+    if (stale.length) {
+      const failed = await engine.destroyEmails(stale).then(() => false, (e) => (logUnexpected(e), true));
+      if (!failed) snapshot.stale = [];
+    }
   };
 
   /** Reopen a saved draft from the Drafts mailbox. */
