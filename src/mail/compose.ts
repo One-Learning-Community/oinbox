@@ -1,4 +1,4 @@
-import type { Email, EmailAddress, EmailBodyStructure } from '../jmap/types';
+import type { Email, EmailAddress, EmailBodyPart, EmailBodyStructure } from '../jmap/types';
 import type { EmailRec } from '../sync/engine';
 import { displayName } from './participants';
 import { escapeHtml, plainTextToHtml, sanitizeEmailHtml } from './sanitize';
@@ -100,6 +100,49 @@ export function fromEditorHtml(html: string, urls: Record<string, string>): stri
   });
 }
 
+const bareCid = (cid: string | null) => cid?.replace(/^<|>$/g, '') ?? '';
+
+/** Sort a stored message's parts: an image the HTML refers to by content id is inline, the rest are attachments. */
+export function splitParts(html: string, parts: EmailBodyPart[]): { inline: InlineImage[]; attachments: DraftAttachment[] } {
+  const used = referencedCids(html);
+  const inline: InlineImage[] = [];
+  const attachments: DraftAttachment[] = [];
+  const seen = new Set<string>();
+  for (const p of parts) {
+    // Stalwart can list one image under both htmlBody and attachments.
+    if (!p.blobId || seen.has(p.blobId)) continue;
+    seen.add(p.blobId);
+    const cid = bareCid(p.cid);
+    if (cid && p.type.startsWith('image/') && used.has(cid)) {
+      if (!inline.some((i) => i.cid === cid)) inline.push({ cid, blobId: p.blobId, type: p.type, name: p.name ?? 'image', size: p.size });
+    } else attachments.push({ blobId: p.blobId, name: p.name ?? 'attachment', type: p.type, size: p.size });
+  }
+  return { inline, attachments };
+}
+
+/** Old blob id to new, for a draft's parts as the server stored them: images by content id, attachments by name and type, in order. */
+export function blobIdChanges(draft: Draft, stored: EmailBodyPart[]): Map<string, string> {
+  const now = splitParts(draftHtml(draft), stored);
+  const changes = new Map<string, string>();
+  for (const i of draft.inline) {
+    const s = now.inline.find((x) => x.cid === i.cid);
+    if (s && s.blobId !== i.blobId) changes.set(i.blobId, s.blobId);
+  }
+  const left = [...now.attachments];
+  for (const a of draft.attachments) {
+    const at = left.findIndex((s) => s.name === a.name && s.type === a.type);
+    if (at < 0) continue;
+    const [s] = left.splice(at, 1);
+    if (s!.blobId !== a.blobId) changes.set(a.blobId, s!.blobId);
+  }
+  return changes;
+}
+
+export function withBlobIds(draft: Draft, changes: Map<string, string>): Draft {
+  const swap = <T extends { blobId: string }>(x: T): T => (changes.has(x.blobId) ? { ...x, blobId: changes.get(x.blobId)! } : x);
+  return { ...draft, inline: draft.inline.map(swap), attachments: draft.attachments.map(swap) };
+}
+
 /** Parse "Name <a@b>, c@d; "Last, First" <e@f>" into addresses. Invalid bits are dropped. */
 export function parseAddressList(input: string): EmailAddress[] {
   const out: EmailAddress[] = [];
@@ -111,10 +154,25 @@ export function parseAddressList(input: string): EmailAddress[] {
   return out;
 }
 
+const CID_MARK = /<img\b[^>]*?\sdata-oinbox-cid="([^"]*)"[^>]*>/gi;
+
+/** The original's parts a quote can refer to or carry along. */
+function originalParts(e: EmailRec): EmailBodyPart[] {
+  // Stalwart lists an inline image under htmlBody when the sender put it beside the body.
+  return [...(e.attachments ?? []), ...(e.htmlBody ?? []).filter((p) => p.cid && p.type.startsWith('image/'))];
+}
+
 function originalHtml(e: EmailRec): string {
   const values = e.bodyValues ?? {};
   const html = (e.htmlBody ?? []).filter((p) => p.type === 'text/html' && p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
-  if (html.trim()) return sanitizeEmailHtml(html, { allowRemote: false }).html;
+  if (html.trim()) {
+    // The sanitizer takes the source off cid: images and marks them. In a quote, the ones the
+    // original has a part for get their cid: back: the new message carries that part.
+    const known = new Set(originalParts(e).filter((p) => p.blobId && p.type.startsWith('image/')).map((p) => bareCid(p.cid)));
+    return sanitizeEmailHtml(html, { allowRemote: false }).html.replace(CID_MARK, (tag, raw: string) =>
+      known.has(unescapeAttr(raw)) ? tag.replace(/\sdata-oinbox-cid="[^"]*"/, ` src="cid:${raw}"`) : tag,
+    );
+  }
   const text = (e.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
   return `<div style="white-space:pre-wrap">${plainTextToHtml(text || e.preview || '')}</div>`;
 }
@@ -131,6 +189,9 @@ export function initialDraft(mode: ComposeMode, original: EmailRec | null, me: S
   const from = original.from ?? [];
   const sender = from[0];
   const subject = original.subject ?? '';
+  const quoted = originalHtml(original);
+  // Blobs are reused, not uploaded again; the first save gives the draft copies of its own.
+  const carried = splitParts(quoted, originalParts(original));
 
   if (mode === 'forward') {
     const header = [
@@ -141,7 +202,7 @@ export function initialDraft(mode: ComposeMode, original: EmailRec | null, me: S
       `To: ${escapeHtml((original.to ?? []).map(formatAddress).join(', '))}`,
       ...(original.cc?.length ? [`Cc: ${escapeHtml(original.cc.map(formatAddress).join(', '))}`] : []),
     ].join('<br>');
-    return { ...empty, subject: prefixed(subject, 'Fwd'), quoteHtml: `<br><div class="gmail_quote">${header}<br><br>${originalHtml(original)}</div>` };
+    return { ...empty, subject: prefixed(subject, 'Fwd'), quoteHtml: `<br><div class="gmail_quote">${header}<br><br>${quoted}</div>`, inline: carried.inline, attachments: carried.attachments };
   }
 
   const fromMe = !!sender && me.has(lower(sender));
@@ -170,7 +231,8 @@ export function initialDraft(mode: ComposeMode, original: EmailRec | null, me: S
     subject: prefixed(subject, 'Re'),
     inReplyTo: messageId,
     references: [...(original.references ?? []), ...messageId],
-    quoteHtml: `<br><div class="gmail_quote"><div class="gmail_attr">${attribution}</div><blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${originalHtml(original)}</blockquote></div>`,
+    inline: carried.inline,
+    quoteHtml: `<br><div class="gmail_quote"><div class="gmail_attr">${attribution}</div><blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${quoted}</blockquote></div>`,
   };
 }
 

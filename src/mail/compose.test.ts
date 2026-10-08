@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EmailRec } from '../sync/engine';
-import type { EmailBodyStructure } from '../jmap/types';
-import { buildEmailCreate, fromEditorHtml, initialDraft, parseAddressList, formatAddress, referencedCids, splitDraftHtml, toEditorHtml, type Draft } from './compose';
+import type { EmailBodyPart, EmailBodyStructure } from '../jmap/types';
+import { blobIdChanges, buildEmailCreate, fromEditorHtml, initialDraft, parseAddressList, formatAddress, referencedCids, splitDraftHtml, splitParts, toEditorHtml, withBlobIds, type Draft } from './compose';
 
 const me = new Set(['alice@example.test']);
 const original: EmailRec = {
@@ -211,5 +211,93 @@ describe('buildEmailCreate with inline images', () => {
 
   it('names the image in the plain-text alternative', () => {
     expect(buildEmailCreate(base, from, 'D').bodyValues!.text!.value).toBe('See\n[image: chart.png]\nthere\n');
+  });
+});
+
+const bodyPart = (p: Partial<EmailBodyPart>): EmailBodyPart => ({ partId: null, blobId: null, size: 1, type: 'application/octet-stream', name: null, cid: null, disposition: null, ...p });
+
+describe('splitParts', () => {
+  const png = bodyPart({ blobId: 'P1', type: 'image/png', name: 'chart.png', cid: '<c1@x>', disposition: 'inline', size: 9 });
+  const pdf = bodyPart({ blobId: 'P2', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment', size: 3 });
+
+  it('takes an image the HTML refers to as inline and everything else as an attachment', () => {
+    expect(splitParts('<img src="cid:c1@x">', [png, pdf])).toEqual({
+      inline: [{ cid: 'c1@x', blobId: 'P1', type: 'image/png', name: 'chart.png', size: 9 }],
+      attachments: [{ blobId: 'P2', name: 'a.pdf', type: 'application/pdf', size: 3 }],
+    });
+  });
+
+  it('keeps an image as an attachment when the HTML does not refer to it, or it is not an image', () => {
+    expect(splitParts('<p>x</p>', [png]).attachments.map((a) => a.name)).toEqual(['chart.png']);
+    const ics = bodyPart({ blobId: 'P3', type: 'text/calendar', name: 'i.ics', cid: 'c1@x' });
+    expect(splitParts('<img src="cid:c1@x">', [ics])).toMatchObject({ inline: [], attachments: [{ name: 'i.ics' }] });
+  });
+
+  it('reads a part once when the server lists it twice, and skips parts without a blob', () => {
+    // Another client's draft: the image sits in multipart/mixed, and Stalwart lists it in htmlBody as well.
+    const r = splitParts('<img src="cid:c1@x">', [png, { ...png }, bodyPart({ type: 'text/html', partId: '1' })]);
+    expect(r.inline).toHaveLength(1);
+    expect(r.attachments).toEqual([]);
+  });
+});
+
+describe('blob ids after a save', () => {
+  const draft: Draft = {
+    ...initialDraft('new', null, me), bodyHtml: '<img src="cid:c1@x">',
+    inline: [{ cid: 'c1@x', blobId: 'up1', type: 'image/png', name: 'chart.png', size: 9 }, { cid: 'c2@x', blobId: 'up2', type: 'image/png', name: 'gone.png', size: 9 }],
+    attachments: [{ blobId: 'up3', name: 'a.pdf', type: 'application/pdf', size: 3 }, { blobId: 'up4', name: 'a.pdf', type: 'application/pdf', size: 4 }],
+  };
+  const stored = [
+    bodyPart({ blobId: 'n1.p3', type: 'image/png', name: 'chart.png', cid: 'c1@x', disposition: 'inline' }),
+    bodyPart({ blobId: 'n1.p4', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' }),
+    bodyPart({ blobId: 'n1.p5', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' }),
+  ];
+
+  it('matches images by content id and attachments by name and type, in order', () => {
+    expect([...blobIdChanges(draft, stored)]).toEqual([['up1', 'n1.p3'], ['up3', 'n1.p4'], ['up4', 'n1.p5']]);
+  });
+
+  it('leaves alone what the stored message does not have', () => {
+    const later = withBlobIds({ ...draft, attachments: [...draft.attachments, { blobId: 'up9', name: 'new.txt', type: 'text/plain', size: 1 }] }, blobIdChanges(draft, stored));
+    expect(later.inline.map((i) => i.blobId)).toEqual(['n1.p3', 'up2']);
+    expect(later.attachments.map((a) => a.blobId)).toEqual(['n1.p4', 'n1.p5', 'up9']);
+  });
+});
+
+describe('the original\'s parts in a reply and a forward', () => {
+  const withParts: EmailRec = {
+    ...original,
+    htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+    bodyValues: { h: { value: '<p>Look</p><img src="cid:c1@x"><img src="cid:missing@x"><img src="https://r.test/t.png">', isEncodingProblem: false, isTruncated: false } },
+    attachments: [
+      bodyPart({ blobId: 'O1', type: 'image/png', name: 'chart.png', cid: 'c1@x', disposition: 'inline', size: 9 }),
+      bodyPart({ blobId: 'O2', type: 'application/pdf', name: 'a.pdf', disposition: 'attachment', size: 3 }),
+    ],
+  };
+
+  it('a reply keeps the inline image and drops the attachment', () => {
+    const d = initialDraft('reply', withParts, me);
+    expect(d.quoteHtml).toContain('<img src="cid:c1@x">');
+    expect(d.inline).toEqual([{ cid: 'c1@x', blobId: 'O1', type: 'image/png', name: 'chart.png', size: 9 }]);
+    expect(d.attachments).toEqual([]);
+  });
+
+  it('a forward keeps both', () => {
+    const d = initialDraft('forward', withParts, me);
+    expect(d.quoteHtml).toContain('<img src="cid:c1@x">');
+    expect(d.inline.map((i) => i.blobId)).toEqual(['O1']);
+    expect(d.attachments).toEqual([{ blobId: 'O2', name: 'a.pdf', type: 'application/pdf', size: 3 }]);
+  });
+
+  it('leaves an image the original has no part for without a source, and remote images blocked', () => {
+    const d = initialDraft('reply', withParts, me);
+    expect(d.quoteHtml).not.toContain('cid:missing@x');
+    expect(d.quoteHtml).not.toMatch(/\ssrc="https:\/\/r\.test/);
+  });
+
+  it('copes with a plain-text original that has an attachment', () => {
+    const d = initialDraft('forward', { ...original, attachments: [bodyPart({ blobId: 'O2', type: 'text/plain', name: 'n.txt' })] }, me);
+    expect(d.inline).toEqual([]);
+    expect(d.attachments.map((a) => a.name)).toEqual(['n.txt']);
   });
 });
