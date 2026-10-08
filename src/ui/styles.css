@@ -326,6 +326,8 @@ a { color: var(--accent); }
 .compose-body { flex: 1; overflow: auto; padding: 8px 16px; min-height: 160px; }
 .compose-editor { outline: none; min-height: 120px; font-size: 14px; }
 .compose-editor p { margin: 0 0 4px; }
+.compose-editor img { max-width: 100%; height: auto; }
+.compose-loading { color: var(--text-3); }
 .compose-format { display: flex; gap: 2px; margin-bottom: 6px; }
 .compose-format button { border: 0; background: none; color: var(--text-2); min-width: 28px; height: 28px; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .compose-format button:hover { background: var(--hover); }

@@ -296,3 +296,13 @@ opens on tap" is an expected failure until then.
 **Intent (2026-10-08): to be fixed in rozie before the slice is finished, with the `aria-modal` item
 above.**
 
+
+## TipTap 0.5.2: paste and drop take one image
+
+Found 2026-10-08 while adding inline images. With `uploadImage` set, the wrapper's `handlePaste` and
+`handleDrop` look for the first image file (`findImageFile`) and upload that one. Pasting or dropping
+several images inserts only the first; the others are dropped silently. oinbox's toolbar button
+inserts several, so the gap shows only on paste and drop.
+
+Also noted: the inserted node gets `src` alone. A way to return `{ src, alt }` from `uploadImage`
+would let the image carry its file name as alt text.

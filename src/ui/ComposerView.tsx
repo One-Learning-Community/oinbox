@@ -2,7 +2,7 @@ import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
 import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
-import { formatAddress } from '../mail/compose';
+import { formatAddress, fromEditorHtml, toEditorHtml } from '../mail/compose';
 import { fileSize } from '../mail/format';
 import { FormatToolbar } from './FormatToolbar';
 import { Icon } from './icons';
@@ -24,19 +24,37 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
   let fileInput: HTMLInputElement | undefined;
   const d = () => c.draft();
 
+  /** The editor's HTML as the draft keeps it: images by content id. */
+  const stored = (html: string) => fromEditorHtml(html, c.imageUrls());
+  /** The draft's HTML as the editor shows it: images by object URL. */
+  const shown = (html: string) => toEditorHtml(html, c.imageUrls());
+
+  const insertImages = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const src = await c.insertImage(file);
+        editor?.chain().focus().setImage({ src, alt: file.name }).run();
+      } catch {
+        // insertImage has told the user.
+      }
+    }
+  };
+
   const statusText = () =>
     ({ idle: '', dirty: '', saving: 'Saving…', saved: 'Draft saved', error: 'Couldn’t save draft' })[c.status()];
 
-  const expandQuote = () => {
-    const html = (editor?.getHTML() ?? d().bodyHtml) + d().quoteHtml;
+  const expandQuote = async () => {
+    // The quote's images need their URLs before the editor is given them.
+    await c.loadImages();
+    const html = stored(editor?.getHTML() ?? d().bodyHtml) + d().quoteHtml;
     c.update({ bodyHtml: html, quoteHtml: '' });
-    editor?.setContent(html);
+    editor?.setContent(shown(html));
   };
 
   const inlineSignature = () => {
-    const html = (editor?.getHTML() ?? d().bodyHtml) + d().signatureHtml;
+    const html = stored(editor?.getHTML() ?? d().bodyHtml) + d().signatureHtml;
     c.inlineSignature(html);
-    editor?.setContent(html);
+    editor?.setContent(shown(html));
   };
 
   return (
@@ -62,6 +80,8 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         setDragging(false);
+        // An image dropped on the text went inline: the editor has dealt with it.
+        if (e.defaultPrevented) return;
         if (e.dataTransfer?.files.length) {
           e.preventDefault();
           void c.attach(e.dataTransfer.files);
@@ -105,33 +125,37 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
       </Show>
 
       <div class="compose-body">
-        <TipTap
-          ref={(h) => {
-            editor = h;
-            // TipTap's autofocus prop doesn't take (docs/rozie-feedback.md); focus once the editor exists.
-            requestAnimationFrame(() =>
-              requestAnimationFrame(() => {
-                // The editor arrives a moment after the composer: by then the user may be typing in a field.
-                if (root?.contains(document.activeElement)) return;
-                // A reply starts in the text; a new message starts with who it is for.
-                if (c.mode === 'new' && !d().to.length) {
-                  root?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
-                  return;
-                }
-                h.focusEditor();
-                if (!root?.contains(document.activeElement)) root?.querySelector<HTMLElement>('[contenteditable]')?.focus();
-              }),
-            );
-          }}
-          html={d().bodyHtml}
-          onHtmlChange={(html: string) => {
-            if (html !== d().bodyHtml) c.update({ bodyHtml: html === '<p></p>' ? '' : html });
-          }}
-          placeholder={c.mode === 'new' ? '' : 'Write your reply…'}
-          ariaLabel="Message body"
-          editorClass="compose-editor"
-          toolbarSlot={() => <FormatToolbar editor={() => editor} />}
-        />
+        <Show when={c.imagesReady()} fallback={<div class="compose-editor compose-loading" role="status">Loading images…</div>}>
+          <TipTap
+            ref={(h) => {
+              editor = h;
+              // TipTap's autofocus prop doesn't take (docs/rozie-feedback.md); focus once the editor exists.
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  // The editor arrives a moment after the composer: by then the user may be typing in a field.
+                  if (root?.contains(document.activeElement)) return;
+                  // A reply starts in the text; a new message starts with who it is for.
+                  if (c.mode === 'new' && !d().to.length) {
+                    root?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
+                    return;
+                  }
+                  h.focusEditor();
+                  if (!root?.contains(document.activeElement)) root?.querySelector<HTMLElement>('[contenteditable]')?.focus();
+                }),
+              );
+            }}
+            html={shown(d().bodyHtml)}
+            onHtmlChange={(html: string) => {
+              const next = stored(html);
+              if (next !== d().bodyHtml) c.update({ bodyHtml: next === '<p></p>' ? '' : next });
+            }}
+            uploadImage={(file: File) => c.insertImage(file)}
+            placeholder={c.mode === 'new' ? '' : 'Write your reply…'}
+            ariaLabel="Message body"
+            editorClass="compose-editor"
+            toolbarSlot={() => <FormatToolbar editor={() => editor} onImage={(files) => void insertImages(files)} />}
+          />
+        </Show>
         <Show when={d().signatureHtml}>
           <div class="compose-signature">
             {/* Sanitized by signatureForCompose; contained so its styles can't reach the page. */}
@@ -147,7 +171,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
           </div>
         </Show>
         <Show when={d().quoteHtml}>
-          <button type="button" class="quote-toggle" title="Show trimmed content" onClick={expandQuote}>
+          <button type="button" class="quote-toggle" title="Show trimmed content" onClick={() => void expandQuote()}>
             •••
           </button>
         </Show>
