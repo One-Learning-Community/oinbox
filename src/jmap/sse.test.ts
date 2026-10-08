@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JmapClient } from './client';
+import { JmapClient, UnauthorizedError } from './client';
 import { openPushStream, SseParser } from './sse';
 import type { Session } from './types';
 
@@ -191,6 +191,23 @@ describe('openPushStream', () => {
     const connected = vi.fn();
     const push = openPushStream(silentClient(() => {}), { onStateChange: () => {}, onConnected: connected });
     await vi.waitFor(() => expect(connected).toHaveBeenCalledWith(true));
+    push.close();
+  });
+
+  it('keeps trying when told the session is still good after a 401', async () => {
+    let calls = 0;
+    const client = {
+      eventSourceUrl: () => 'http://x/es',
+      authFetch: async () => {
+        calls++;
+        throw new UnauthorizedError();
+      },
+    } as unknown as JmapClient;
+    const dropped = vi.fn();
+    const push = openPushStream(client, { onStateChange: () => {}, onUnauthorized: () => false, onDisconnected: dropped });
+    await vi.waitFor(() => expect(dropped).toHaveBeenCalled());
+    push.wake();
+    await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(2));
     push.close();
   });
 });

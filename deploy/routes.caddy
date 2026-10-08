@@ -45,10 +45,25 @@
 		# The app is one 870 kB script; compressed it is under a third of that. Only here: the
 		# event stream in the block above must not be buffered by an encoder.
 		encode zstd gzip
-		@immutable path /assets/*
+		# File names under /assets/ change with their content: cache those for good, but only when the
+		# file exists. Everything else is index.html in one guise or another and must be revalidated,
+		# or a browser keeps starting an old version after an upgrade.
+		@immutable {
+			path /assets/*
+			file
+		}
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@app not path /assets/*
+		header @app Cache-Control "no-cache"
 		root * /srv/oinbox/dist
-		try_files {path} /index.html
+		# The app's routes fall back to index.html; a missing asset is a 404, never HTML under a script's URL.
+		@route {
+			not path /assets/*
+			file {
+				try_files {path} /index.html
+			}
+		}
+		rewrite @route {file_match.relative}
 		file_server
 	}
 }

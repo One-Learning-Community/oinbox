@@ -170,3 +170,34 @@ test('a rejected refresh token signs out in place; the unsaved draft returns aft
     await context.close();
   }
 });
+
+test('a refresh refused before any request is made signs out in place too, and keeps the draft', async ({ browser }) => {
+  test.setTimeout(90_000);
+  // The usual end of a session: the token is renewed ahead of expiry and the server says no.
+  const context = await browser.newContext({ storageState: 'e2e/.auth/alice.json' });
+  const page = await context.newPage();
+  try {
+    await openInbox(page);
+    await waitLive(page);
+    const c = await openComposer(page);
+    await page.route('**/auth/token', (route) => route.fulfill({ status: 400, contentType: 'application/json', body: '{"error":"invalid_grant"}' }));
+    await page.evaluate(() => {
+      const tokens = JSON.parse(localStorage.getItem('oinbox.tokens')!);
+      localStorage.setItem('oinbox.tokens', JSON.stringify({ ...tokens, expiresAt: 0 }));
+    });
+    await subjectInput(c).fill('written just before the session ended');
+    await expect(page.getByRole('status').filter({ hasText: "You've been signed out." })).toBeVisible({ timeout: 45_000 });
+    await expect(banner(page)).toHaveCount(0);
+    // Typed after the banner: still rescued when the user goes to sign in.
+    await subjectInput(c).fill('and finished after it');
+    await page.getByRole('button', { name: 'Sign in again' }).click();
+    await page.waitForURL((u) => u.pathname === '/login');
+    await page.goBack().catch(() => undefined);
+    const saved = await page.evaluate(() => Object.entries(localStorage).filter(([k]) => k.startsWith('oinbox.rescue.')).map(([, v]) => v));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toContain('and finished after it');
+  } finally {
+    await context.close();
+  }
+});
+

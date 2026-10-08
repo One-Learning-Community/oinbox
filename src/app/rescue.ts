@@ -23,6 +23,8 @@ function remove(storage: Storage, key: string): void {
 
 /** Unsaved composer text, kept across an involuntary sign-out. Best effort: storage may be full or blocked. */
 export function saveRescue(storage: Storage, accountId: string, items: RescuedComposer[], now = Date.now()): void {
+  // Saved again as the user goes on typing: the newest save is the whole truth.
+  for (const key of keys(storage)) if (key.startsWith(`${PREFIX}${accountId}.`)) remove(storage, key);
   items.forEach((composer, i) => {
     try {
       storage.setItem(`${PREFIX}${accountId}.${i}`, JSON.stringify({ savedAt: now, composer } satisfies Stored));

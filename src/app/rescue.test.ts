@@ -46,3 +46,11 @@ describe('rescue', () => {
     expect(() => clearRescue(blocked)).not.toThrow();
   });
 });
+
+describe('rescue, saved again', () => {
+  it('replaces what was saved before for that account', () => {
+    saveRescue(localStorage, 'acc1', [item('a'), item('b')], 0);
+    saveRescue(localStorage, 'acc1', [item('c')], 0);
+    expect(takeRescue(localStorage, 'acc1', 0).map((r) => r.draft.subject)).toEqual(['c']);
+  });
+});

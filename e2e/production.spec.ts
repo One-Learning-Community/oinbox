@@ -32,6 +32,13 @@ test('@production sends HSTS and the CSP, compresses the app, and offers no CORS
   expect(asset.headers()['content-encoding']).toBe('gzip');
   expect(asset.headers()['cache-control']).toContain('immutable');
 
+  // index.html is revalidated on every load, under any of the app's routes; a missing asset is a 404, not HTML.
+  expect(home.headers()['cache-control']).toBe('no-cache');
+  expect((await request.get('/label/anything')).headers()['cache-control']).toBe('no-cache');
+  const missing = await request.get('/assets/not-there-123.js');
+  expect(missing.status()).toBe(404);
+  expect(missing.headers()['cache-control'] ?? '').not.toContain('immutable');
+
   // Another site's page must not be able to read answers from here.
   const session = await request.get('/jmap/session', { headers: { origin: 'https://evil.example' } });
   expect(session.headers()['access-control-allow-origin']).toBeUndefined();

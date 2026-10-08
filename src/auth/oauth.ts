@@ -69,6 +69,8 @@ export class OAuth {
       if (!r.ok) throw new Error(`OAuth discovery failed: ${r.status}`);
       return (await r.json()) as ServerMetadata;
     });
+    // A failed attempt (offline at wake-up, say) must not be the answer for the rest of the session.
+    this.meta.catch(() => (this.meta = null));
     return this.meta;
   }
 

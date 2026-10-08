@@ -118,6 +118,9 @@ export class JmapClient {
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${await this.opts.getToken()}`);
     const own = !init.signal && !noTimeout;
+    // A request with its own signal is a stream (the push connection): its owner reports on it, or a
+    // failure to open it would count twice.
+    const report = init.signal ? undefined : this.opts.onOutcome;
     const signal = init.signal ?? (noTimeout ? undefined : AbortSignal.timeout(this.opts.timeoutMs ?? 30_000));
     let res: Response;
     try {
@@ -126,11 +129,11 @@ export class JmapClient {
       const timedOut = own && (e as Error).name === 'TimeoutError';
       const err = timedOut ? new RequestError(0, 'the mail server did not respond in time') : e;
       // An abort is the caller closing its own request, not a connection problem.
-      if ((e as Error).name !== 'AbortError') this.opts.onOutcome?.(err);
+      if ((e as Error).name !== 'AbortError') report?.(err);
       throw err;
     }
-    if (res.status === 502 || res.status === 503 || res.status === 504) this.opts.onOutcome?.(new RequestError(res.status, 'the mail server is unavailable'));
-    else this.opts.onOutcome?.(null);
+    if (res.status === 502 || res.status === 503 || res.status === 504) report?.(new RequestError(res.status, 'the mail server is unavailable'));
+    else report?.(null);
     if (res.status === 401) {
       if (!retried && (await this.opts.onUnauthorized?.())) return this.authFetch(url, init, true, noTimeout);
       throw new UnauthorizedError();

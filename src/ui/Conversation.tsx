@@ -21,12 +21,23 @@ export function Conversation(props: { view: View; threadId: Id }) {
   const { engine, toast, actions, nav, composers } = useApp();
   const navigate = useNavigate();
 
-  createEffect(() => nav.setOpenThread(props.threadId));
+  // Remembered here: the route's params can no longer be read once this is being torn down.
+  let shown: Id = props.threadId;
+  createEffect(() => nav.setOpenThread((shown = props.threadId)));
   onCleanup(() => {
     nav.setOpenThread(null);
     // The heading that had the focus is going away: hand it to the list's cursor row, once the list
     // (a new one, when the route changed) has drawn its rows.
-    setTimeout(() => nav.list()?.focusCursor(), 120);
+    const closed = shown;
+    setTimeout(() => {
+      const list = nav.list();
+      if (!list) return;
+      // The cursor is a position, and mail may have arrived while this was open: put it back on
+      // the thread that was read, so the next `e` or `#` cannot land on its neighbour.
+      const index = list.indexOfThread(closed);
+      if (index >= 0) nav.setCursor(index);
+      list.focusCursor();
+    }, 120);
   });
 
   const [loaded] = createResource(

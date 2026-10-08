@@ -114,3 +114,34 @@ describe('createConnection', () => {
     expect(retry).not.toHaveBeenCalled();
   });
 });
+
+describe('createConnection, by source', () => {
+  it('stays up while one source keeps failing, however often the other succeeds', () => {
+    const c = createConnection();
+    const seen = new Set<string>();
+    c.reportFailure('push', new Error('closed'));
+    c.reportFailure('push', new Error('closed'));
+    for (let i = 0; i < 10; i++) {
+      c.reportSuccess('request');
+      seen.add(c.state());
+      c.reportFailure('push', new Error('closed'));
+      seen.add(c.state());
+      vi.advanceTimersByTime(1000);
+    }
+    expect([...seen]).toEqual(['retrying']);
+    c.reportSuccess('push');
+    expect(c.state()).toBe('ok');
+  });
+
+  it('tells retry listeners whether a person asked', () => {
+    const c = createConnection();
+    const retry = vi.fn();
+    c.onRetry(retry);
+    c.reportFailure('request', net());
+    c.reportFailure('request', net());
+    vi.advanceTimersByTime(1000);
+    expect(retry).toHaveBeenLastCalledWith(false);
+    c.retryNow();
+    expect(retry).toHaveBeenLastCalledWith(true);
+  });
+});

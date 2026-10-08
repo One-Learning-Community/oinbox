@@ -7,8 +7,26 @@ import { BOB, accountId, deliverToAlice, destroyEmails, emailsBySubject, jmap, m
 
 // Runs in the `phone` project only: WebKit as an iPhone 14, 390×844, touch.
 
+/**
+ * Nothing is wider than the screen: not the page, not a pane that scrolls or clips inside it (the page
+ * itself never grows, because `.main` hides overflow), and not the content of a message frame.
+ */
 const noSidewaysScroll = async (page: Page, where: string) =>
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${where} scrolls sideways`).toBeLessThanOrEqual(0);
+  expect(
+    await page.evaluate(() => {
+      const wide: string[] = [];
+      if (document.documentElement.scrollWidth > window.innerWidth) wide.push('page');
+      for (const el of document.querySelectorAll<HTMLElement>('.main, .conv, .list-scroll, .settings, .calendar-view, .compose-dock .composer, .msg-body')) {
+        if (el.checkVisibility() && el.scrollWidth > el.clientWidth + 1) wide.push(`${el.className.split(' ')[0]} ${el.scrollWidth}>${el.clientWidth}`);
+      }
+      for (const frame of document.querySelectorAll<HTMLIFrameElement>('.msg-body iframe')) {
+        const doc = frame.contentDocument?.documentElement;
+        if (doc && doc.scrollWidth > frame.clientWidth + 1) wide.push(`message ${doc.scrollWidth}>${frame.clientWidth}`);
+      }
+      return wide;
+    }),
+    `${where} is wider than the screen`,
+  ).toEqual([]);
 
 /** Visible controls smaller than 44px in either direction. Controls inside text (links in a sentence) are exempt in WCAG; none are expected here. */
 const smallTargets = (page: Page) =>
@@ -146,19 +164,24 @@ test('@phone settings fit the screen and the vacation switch works', async ({ pa
   await dialog.getByRole('button', { name: 'Cancel' }).tap();
 });
 
-test('@phone the calendar opens in day view and an event opens on tap', async ({ page }) => {
-  test.fail(true, 'docs/beta-audit.md P2: rozie Popover lets the panel leave the viewport (docs/rozie-feedback.md)');
+test('@phone the calendar opens in day view and fits', async ({ page }) => {
   await page.goto('/calendar');
   await expect(page.locator('.fc-timeGridDay-view')).toBeVisible();
   await noSidewaysScroll(page, 'calendar');
+});
+
+test('@phone an event card opened in week view stays on the screen', async ({ page }) => {
+  await page.goto('/calendar');
+  await expect(page.locator('.fc-timeGridDay-view')).toBeVisible();
   await page.getByRole('button', { name: 'week', exact: true }).tap();
   await page.locator('.calendar-view .fc-event').filter({ hasText: 'Design review' }).tap();
   const card = page.getByRole('dialog', { name: 'Design review' });
   await expect(card).toBeVisible();
+  // Everything up to here must work. Only the card's position is the open finding.
+  test.fail(true, 'docs/beta-audit.md P2: rozie Popover lets the panel leave the viewport (docs/rozie-feedback.md)');
   const b = (await card.boundingBox())!;
   expect(b.x).toBeGreaterThanOrEqual(0);
   expect(b.x + b.width).toBeLessThanOrEqual(390);
-  await noSidewaysScroll(page, 'event card');
 });
 
 test('@phone a file can be attached to a new message', async ({ page }) => {
@@ -241,7 +264,10 @@ test('@phone an event can be created through the form, without dragging', async 
 for (const path of ['/inbox', '/settings', '/calendar']) {
   test(`@phone touch targets on ${path} are at least 44px`, async ({ page }) => {
     await page.goto(path);
+    // The scan must look at the app, not at a page still loading.
+    await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible();
     await page.waitForTimeout(1000);
+    expect(await page.locator('button, a[href]').count()).toBeGreaterThan(5);
     expect(await smallTargets(page)).toEqual([]);
   });
 }

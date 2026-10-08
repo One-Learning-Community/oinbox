@@ -111,8 +111,13 @@ export async function createInvitedEvent(title: string, start: string, timeZone:
     await jmap([['CalendarEvent/set', { accountId: bobAccount, sendSchedulingMessages: false, destroy: [bobEventId] }, 'd']], BOB, CAL_USING).catch(() => undefined);
     await destroyE2eEvents();
     const mail = await accountId();
-    const found = await jmap([['Email/query', { accountId: mail, filter: { subject: title } }, 'q']], ALICE);
-    const ids = found.q.ids as string[];
+    // Alice's newest mail, filtered here: a subject search misses what the index has not caught up with,
+    // and invitations left behind push the seeded threads out of the first screen for every later test.
+    const found = await jmap([
+      ['Email/query', { accountId: mail, sort: [{ property: 'receivedAt', isAscending: false }], limit: 50 }, 'q'],
+      ['Email/get', { accountId: mail, '#ids': { resultOf: 'q', name: 'Email/query', path: '/ids' }, properties: ['subject'] }, 'g'],
+    ], ALICE);
+    const ids = (found.g.list as { id: string; subject: string | null }[]).filter((e) => (e.subject ?? '').includes(title)).map((e) => e.id);
     if (ids.length) await jmap([['Email/set', { accountId: mail, destroy: ids }, 'd']], ALICE);
   };
   return { cleanup, bobEventId };

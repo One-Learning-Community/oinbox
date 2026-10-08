@@ -70,7 +70,7 @@ Whatever proxy you use, it has five jobs. `deploy/routes.caddy` is the reference
 
    If you prefer Stalwart's WebUI, make the same settings there; the file is short and readable.
 
-5. **Create accounts** in Stalwart's WebUI at `https://mail.example.com/admin/`, signed in as the recovery admin.
+5. **Create accounts** in Stalwart's WebUI at `https://mail.example.com/admin/`, signed in as the recovery admin. Note that `/admin` and `/api` are reachable from the internet on this host, protected by that password alone: make it a long random one, or restrict those two paths in the proxy to the addresses you administer from.
 
 6. **Set up DNS for mail** (MX, SPF, DKIM, DMARC) as Stalwart's documentation describes. oinbox has no part in this, but mail will not flow without it.
 
@@ -80,10 +80,10 @@ Caddy obtains and renews one certificate for the host name. Stalwart needs the s
 
 - a small `cert-sync` service copies Caddy's certificate to a volume Stalwart can read (Caddy keeps its own copy readable by root only), at start and twice a day;
 - Stalwart's `Certificate` setting points at that copy;
-- Stalwart re-reads it only when told. **After a renewal, run `./apply.sh --reload-tls`.** Certificates are renewed about every 60 days, so a monthly cron job covers it:
+- Stalwart re-reads it only when told, with `./apply.sh --reload-tls`. Run that every night from cron, so a renewed certificate is never more than a day from being served (it costs nothing when nothing changed):
 
   ```cron
-  0 4 1 * * cd /path/to/oinbox/deploy/production && ./apply.sh --reload-tls
+  0 4 * * * cd /path/to/oinbox/deploy/production && ./apply.sh --reload-tls
   ```
 
 Check what the mail ports present with:

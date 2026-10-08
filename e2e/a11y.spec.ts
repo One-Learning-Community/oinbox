@@ -11,7 +11,7 @@ async function check(page: Page, name: string) {
   // The message frame runs no scripts, so axe cannot get into it (it hangs trying). Its content is the sender's HTML.
   const { violations } = await new AxeBuilder({ page }).withTags(TAGS).exclude('.msg-body iframe').analyze();
   const bad = violations
-    .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+    .filter((v) => (v.impact === 'serious' || v.impact === 'critical') && !isA1(v))
     .map((v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.length} node(s), e.g. ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(' | ')}`);
   if (process.env.A11Y_DUMP) {
     const { appendFileSync } = await import('node:fs');
@@ -84,24 +84,31 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
   },
 };
 
-/** Screens with an open finding in docs/beta-audit.md. Remove a line when its finding is fixed: the test then has to pass. */
-const KNOWN: Record<string, string> = {
-  'event card': 'A1: rozie Popover puts aria-modal on a panel with no dialog role (docs/rozie-feedback.md)',
-  'event form': 'A1: rozie Popover puts aria-modal on a panel with no dialog role (docs/rozie-feedback.md)',
-};
+/**
+ * The one open finding (docs/beta-audit.md, A1): rozie Popover puts aria-modal on a panel with no dialog
+ * role. It is left out of the screen checks, so those still catch anything else, and has a test of
+ * its own below that turns green when rozie is fixed.
+ */
+const isA1 = (v: { id: string; nodes: { target: unknown[] }[] }) => v.id === 'aria-allowed-attr' && v.nodes.every((n) => n.target.join(' ') === '#rozie-popover-panel');
 
 for (const scheme of ['light', 'dark'] as const) {
   test.describe(`accessibility, ${scheme}`, () => {
     test.use({ colorScheme: scheme });
     for (const [name, open] of Object.entries(screens)) {
       test(`${name} has no serious axe violations`, async ({ page }) => {
-        test.fail(name in KNOWN, KNOWN[name]);
         await open(page);
         await check(page, `${name} (${scheme})`);
       });
     }
   });
 }
+
+test('the event card popover has no ARIA attribute it may not have', async ({ page }) => {
+  test.fail(true, 'docs/beta-audit.md A1: waiting on rozie Popover (docs/rozie-feedback.md)');
+  await screens['event card']!(page);
+  const { violations } = await new AxeBuilder({ page }).withRules(['aria-allowed-attr']).analyze();
+  expect(violations.flatMap((v) => v.nodes.map((n) => n.target.join(' ')))).toEqual([]);
+});
 
 test('a toast is announced by one live region, not two nested ones', async ({ page }) => {
   // A label that doesn't exist is the cheapest way to a toast: nothing to clean up.

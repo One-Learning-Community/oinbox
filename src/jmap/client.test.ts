@@ -220,6 +220,11 @@ describe('JmapClient outcomes', () => {
     await expect(client.authFetch('http://x/a')).rejects.toMatchObject({ status: 0 });
     expect(onOutcome.mock.calls[0]![0]).toMatchObject({ status: 0 });
   });
+  it('leaves a stream (a request with its own signal) to its owner to report', async () => {
+    const { client, onOutcome } = make(async () => new Response('', { status: 503 }));
+    await client.authFetch('http://x/es', { signal: new AbortController().signal });
+    expect(onOutcome).not.toHaveBeenCalled();
+  });
   it('does not report a caller abort', async () => {
     const ac = new AbortController();
     const hang: typeof fetch = (_u, init) => new Promise((_r, reject) => init!.signal!.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));

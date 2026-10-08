@@ -87,6 +87,8 @@ export function createComposers(
     cancelAutosave: () => void;
     signatureMode: () => SignatureMode;
     markDirty: () => void;
+    /** True when an earlier send of this draft turns out to have reached the server. */
+    wasSent: () => Promise<boolean>;
     snapshot: () => RescuedComposer;
   };
 
@@ -100,6 +102,14 @@ export function createComposers(
     /** A send of `draftId` failed and we could not find out whether it reached the server. */
     unconfirmedSend?: boolean;
   }
+
+  /** An autosave found that the message went out after all: edits made since then have nowhere to go. */
+  const sentMeanwhile = (c: Composer) => {
+    remove(c);
+    const d = c.draft();
+    if (c.draftId()) onSent(c.draftId()!, [...d.to, ...d.cc, ...d.bcc]);
+    toast('This message had already been sent, so your latest changes were not included.', 'info');
+  };
 
   const create = (mode: ComposeMode, original: EmailRec | null, restore?: Restore): Composer => {
     const id = ++seq;
@@ -125,7 +135,11 @@ export function createComposers(
         if (unconfirmedSend && draftId()) {
           // The last send may have gone through, and saving replaces the draft: that would destroy the sent copy.
           const state = await engine.draftState(draftId()!);
-          if (state === 'sent') throw new AlreadySentError();
+          if (state === 'sent') {
+            // Stop here for good: there is no draft left to save to.
+            clearTimeout(timer);
+            throw new AlreadySentError();
+          }
           if (state === 'gone') setDraftId(null);
           unconfirmedSend = false;
         }
@@ -148,7 +162,7 @@ export function createComposers(
     const scheduleSave = () => {
       setStatus('dirty');
       clearTimeout(timer);
-      timer = setTimeout(() => void save().catch(() => undefined), AUTOSAVE_MS);
+      timer = setTimeout(() => void save().catch((e) => e instanceof AlreadySentError && sentMeanwhile(composer)), AUTOSAVE_MS);
     };
 
     const composer: Internal = {
@@ -203,6 +217,7 @@ export function createComposers(
       cancelAutosave: () => clearTimeout(timer),
       signatureMode,
       markDirty: scheduleSave,
+      wasSent: async () => unconfirmedSend && !!draftId() && (await engine.draftState(draftId()!)) === 'sent',
       snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode() }),
     };
     return composer;
@@ -263,6 +278,12 @@ export function createComposers(
   const discard = async (c: Composer) => {
     const ok = await confirm({ title: 'Discard draft?', message: 'This draft will be permanently deleted.', confirmLabel: 'Discard' });
     if (!ok) return;
+    // After a send that may have gone through, the "draft" can be the copy in Sent: leave it be.
+    if (await internals(c).wasSent().catch(() => false)) {
+      remove(c);
+      toast('Message sent.', 'success');
+      return;
+    }
     remove(c);
     const id = c.draftId();
     if (id) await engine.destroyEmails([id]).catch(logUnexpected);
@@ -317,7 +338,8 @@ export function createComposers(
           toast('Message sent.', 'success');
           return;
         }
-        const reopened = create(c.mode, null, { ...snapshot, draftId: state === 'gone' ? null : draftId, unconfirmedSend: state === null });
+        // Still a draft for now, perhaps: the submission may be in flight yet, so check again before any save.
+        const reopened = create(c.mode, null, { ...snapshot, draftId: state === 'gone' ? null : draftId, unconfirmedSend: state !== 'gone' });
         setList([...list(), reopened]);
         toast("Couldn't send. Your message is still here.", 'error', { label: 'Retry', run: () => void send(reopened) });
       }

@@ -26,7 +26,8 @@ export interface Connection {
   reportFailure(source: ConnectionSource, error: unknown): void;
   reportSuccess(source: ConnectionSource): void;
   signedOut(): void;
-  onRetry(fn: () => void): () => void;
+  /** `manual` is true when a person (or the browser coming back online) asked, false for the timed retries. */
+  onRetry(fn: (manual: boolean) => void): () => void;
   onRecovered(fn: () => void): () => void;
   retryNow(): void;
 }
@@ -35,7 +36,9 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
   const graceMs = opts.graceMs ?? GRACE_MS;
   const failuresToShow = opts.failuresToShow ?? FAILURES_TO_SHOW;
   const [state, setState] = createSignal<ConnectionState>('ok');
-  const retryFns = new Set<() => void>();
+  const retryFns = new Set<(manual: boolean) => void>();
+  /** Sources whose last report was a failure. The banner goes only when there are none. */
+  const failing = new Set<ConnectionSource>();
   const recoveredFns = new Set<() => void>();
   let failures = 0;
   let grace: ReturnType<typeof setTimeout> | undefined;
@@ -46,7 +49,7 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
     clearTimeout(retryTimer);
     retryTimer = setTimeout(() => {
       attempt++;
-      for (const fn of retryFns) fn();
+      for (const fn of retryFns) fn(false);
       if (state() === 'retrying') scheduleRetry();
     }, Math.min(RETRY_CAP_MS, 1000 * 2 ** attempt));
   };
@@ -72,12 +75,16 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
       if (state() === 'signed-out') return;
       // A dropped push stream is a transport failure whatever the error looks like.
       if (source === 'request' && !isTransportFailure(error)) return;
+      failing.add(source);
       failures++;
       if (failures >= failuresToShow) show();
       else grace ??= setTimeout(show, graceMs);
     },
-    reportSuccess() {
+    reportSuccess(source) {
       if (state() === 'signed-out') return;
+      failing.delete(source);
+      // One source answering says nothing about the other: requests can work while push cannot.
+      if (failing.size) return;
       failures = 0;
       const was = state();
       stopTimers();
@@ -101,7 +108,7 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
     retryNow() {
       if (state() !== 'retrying') return;
       attempt = 0;
-      for (const fn of retryFns) fn();
+      for (const fn of retryFns) fn(true);
       scheduleRetry();
     },
   };

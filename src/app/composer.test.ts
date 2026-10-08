@@ -192,4 +192,43 @@ describe('composer safety', () => {
       expect(save).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('a send that may have gone through', () => {
+    const failedSend = async (state: 'draft' | 'sent') => {
+      const s = await setup();
+      const c = s.composers.open('new');
+      c.update({ to: [bob], subject: 'Maybe', bodyHtml: '<p>v1</p>' });
+      vi.spyOn(s.engine, 'sendDraft').mockRejectedValueOnce(new RequestError(0, 'timeout'));
+      const draftState = vi.spyOn(s.engine, 'draftState').mockResolvedValueOnce('draft').mockResolvedValue(state);
+      await s.composers.send(c);
+      await vi.advanceTimersByTimeAsync(UNDO_SEND_MS);
+      return { ...s, draftState, reopened: s.composers.list()[0]! };
+    };
+
+    it('checks again before saving even when the first check said it was still a draft', async () => {
+      const { composers, engine, toast, reopened, draftState } = await failedSend('sent');
+      const save = vi.spyOn(engine, 'saveDraft');
+      await composers.send(reopened);
+      expect(draftState).toHaveBeenCalledTimes(2);
+      expect(save).not.toHaveBeenCalled();
+      expect(composers.list()).toHaveLength(0);
+      expect(toast).toHaveBeenLastCalledWith('Message sent.', 'success');
+    });
+
+    it('does not delete the sent copy when the reopened composer is discarded', async () => {
+      const { composers, engine, reopened } = await failedSend('sent');
+      const destroy = vi.spyOn(engine, 'destroyEmails');
+      await composers.discard(reopened);
+      expect(destroy).not.toHaveBeenCalled();
+      expect(composers.list()).toHaveLength(0);
+    });
+
+    it('closes the composer and says so when an autosave finds the message was sent', async () => {
+      const { composers, toast, reopened } = await failedSend('sent');
+      reopened.update({ bodyHtml: '<p>v2</p>' });
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(composers.list()).toHaveLength(0);
+      expect(toast).toHaveBeenLastCalledWith('This message had already been sent, so your latest changes were not included.', 'info');
+    });
+  });
 });

@@ -69,7 +69,8 @@ export interface PushOptions {
    * chunk, which is the server's first ping, 30 s in. It is called again, confirmed, when that arrives.
    */
   onConnected?: (confirmed: boolean) => void;
-  onUnauthorized?: () => void;
+  /** The server refused our credentials. Return false to keep trying (they may still be good); anything else stops the stream. */
+  onUnauthorized?: () => boolean | void;
   /** The stream ended or could not be opened; a reconnect follows. */
   onDisconnected?: (error: unknown) => void;
 }
@@ -104,7 +105,7 @@ export function openPushStream(client: JmapClient, opts: PushOptions): PushStrea
         clearTimeout(stale);
         stale = setTimeout(() => stream.abort(), STALE_MS);
       };
-      const assume = setTimeout(() => opts.onConnected?.(false), ASSUME_OPEN_MS);
+      const assume = setTimeout(() => !closed && opts.onConnected?.(false), ASSUME_OPEN_MS);
       try {
         const res = await client.authFetch(client.eventSourceUrl(PUSH_TYPES), {
           headers: { accept: 'text/event-stream' },
@@ -135,10 +136,7 @@ export function openPushStream(client: JmapClient, opts: PushOptions): PushStrea
         clearTimeout(assume);
         clearTimeout(stale);
         if (closed) return;
-        if (e instanceof UnauthorizedError) {
-          opts.onUnauthorized?.();
-          return;
-        }
+        if (e instanceof UnauthorizedError && opts.onUnauthorized?.() !== false) return;
         opts.onDisconnected?.(e);
       }
       if (closed) return;

@@ -70,4 +70,17 @@ describe('OAuth', () => {
     expect(auth.isSignedIn()).toBe(false);
     await expect(auth.getToken()).rejects.toThrow(/signed in/);
   });
+
+  it('asks for the server metadata again after a failed attempt', async () => {
+    let online = false;
+    const f = vi.fn(async (url: string) => {
+      if (!online) throw new TypeError('Failed to fetch');
+      return url.includes('.well-known') ? json(meta) : json({ access_token: 'A2', expires_in: 3600 });
+    });
+    localStorage.setItem('oinbox.tokens', JSON.stringify({ accessToken: 'old', expiresAt: 0, refreshToken: 'R1' }));
+    const auth = new OAuth({ origin: 'http://localhost:8080', clientId: 'oinbox', fetch: f as unknown as typeof fetch });
+    await expect(auth.getToken()).rejects.toBeInstanceOf(TypeError);
+    online = true;
+    await expect(auth.getToken()).resolves.toBe('A2');
+  });
 });

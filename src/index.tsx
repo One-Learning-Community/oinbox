@@ -69,6 +69,13 @@ async function boot() {
     // A token refresh can fail on the network too, before any request is made.
     getToken: () =>
       auth.getToken().catch((e) => {
+        // The usual way a session ends: the token is renewed ahead of expiry and the server refuses
+        // (password changed, refresh token expired, signed out in another tab). No request is made,
+        // so no 401 comes back to say so.
+        if (e instanceof NotSignedInError && !auth.isSignedIn()) {
+          if (rendered) sessionLost();
+          throw new UnauthorizedError();
+        }
         connection.reportFailure('request', e);
         throw e;
       }),
@@ -91,19 +98,27 @@ async function boot() {
   const confirmDialog = createConfirmDialog();
   const errors = createErrorReporter(toasts.toast);
 
-  const signOut = () => {
-    // A deliberate sign-out leaves no draft text behind in this browser.
-    clearRescue(localStorage);
+  /** Drop the session and go to the sign-in card. */
+  const leave = () => {
     const user = client.hasSession ? client.session.username : null;
     auth.signOut();
     recipients.stop();
     void (user ? clearCache(user) : Promise.resolve()).finally(() => location.assign('/'));
   };
+  const signOut = () => {
+    // A deliberate sign-out leaves no draft text behind in this browser. (An involuntary one must
+    // not: a rescued draft is waiting for exactly the sign-in that follows it.)
+    clearRescue(localStorage);
+    leave();
+  };
+  const rescueDrafts = () => {
+    if (client.hasSession) saveRescue(localStorage, client.accountId, app.composers.snapshot());
+  };
   /** The server no longer accepts our tokens. Stay on the page, so nothing the user was writing is lost. */
   const sessionLost = () => {
     if (connection.state() === 'signed-out') return;
     // What the server doesn't have yet comes back after signing in again (same account, within 7 days).
-    if (client.hasSession) saveRescue(localStorage, client.accountId, app.composers.snapshot());
+    rescueDrafts();
     const user = client.hasSession ? client.session.username : null;
     auth.signOut();
     recipients.stop();
@@ -112,7 +127,14 @@ async function boot() {
     if (user) void clearCache(user);
     connection.signedOut();
   };
-  const signIn = () => void auth.authorizationUrl(location.pathname + location.search).then((url) => location.assign(url));
+  const signIn = () => {
+    // The page stays usable while signed out; keep what was typed since the banner appeared.
+    rescueDrafts();
+    void auth.authorizationUrl(location.pathname + location.search).then((url) => location.assign(url));
+  };
+  window.addEventListener('pagehide', () => {
+    if (connection.state() === 'signed-out') rescueDrafts();
+  });
   let rendered = false;
   const onAuthError = (e: unknown) => {
     if (e instanceof UnauthorizedError || e instanceof NotSignedInError) {
@@ -120,7 +142,7 @@ async function boot() {
       if (auth.isSignedIn() && rendered) return true;
       // Before the app is on screen there is nothing to keep: go to the sign-in card.
       if (rendered) sessionLost();
-      else signOut();
+      else leave();
       return true;
     }
     return false;
@@ -196,12 +218,18 @@ async function boot() {
         engine.setOnline(false);
         connection.reportFailure('push', e);
       },
-      onUnauthorized: () => sessionLost(),
+      onUnauthorized: () => {
+        // A 401 whose renewal failed on the network leaves the tokens in place: not a sign-out.
+        if (auth.isSignedIn()) return false;
+        sessionLost();
+        return true;
+      },
     });
   };
   let started = false;
-  connection.onRetry(() => {
-    push?.wake();
+  connection.onRetry((manual) => {
+    // The push stream has its own backoff; only a person asking cuts it short.
+    if (manual) push?.wake();
     if (started) void engine.catchUp().catch(logUnexpected);
   });
   // The browser's word that the network is back is a hint to try, never proof of a connection.
@@ -226,18 +254,20 @@ async function boot() {
     const tryStart = (): Promise<void> =>
       start().then(
         () => void (started = true),
-        (e) => {
-          if (onAuthError(e)) return;
-          if (!isTransportFailure(e)) {
+        async (e) => {
+          if (e instanceof UnauthorizedError || e instanceof NotSignedInError) {
+            // Stalwart answers a session request it doesn't recognise with 200 and no accounts.
+            if (!auth.isSignedIn() || (!(await auth.renew()) && !auth.isSignedIn())) return sessionLost();
+          } else if (!isTransportFailure(e) && !startFailureShown) {
+            startFailureShown = true;
             app.toast(`Couldn't reach the mail server: ${String(e)}`, 'error');
-            return;
           }
-          const off = connection.onRetry(() => {
-            off();
-            void tryStart();
-          });
+          // Until it works: without a session there is no push and no catch-up, only a stale snapshot.
+          setTimeout(() => void tryStart(), Math.min(30_000, 2000 * 2 ** startAttempt++));
         },
       );
+    let startAttempt = 0;
+    let startFailureShown = false;
     void tryStart();
   }
 
