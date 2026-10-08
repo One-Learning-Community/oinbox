@@ -73,9 +73,10 @@ export interface EmailInfo {
   keywords: Record<string, boolean>;
   from: { name: string | null; email: string }[] | null;
   messageId: string[] | null;
+  preview?: string;
 }
 
-const EMAIL_PROPS = ['threadId', 'subject', 'receivedAt', 'mailboxIds', 'keywords', 'from', 'messageId'];
+const EMAIL_PROPS = ['threadId', 'subject', 'receivedAt', 'mailboxIds', 'keywords', 'from', 'messageId', 'preview'];
 
 /** All emails (any mailbox) whose subject contains `subject`, oldest first. */
 export async function emailsBySubject(subject: string, user = ALICE): Promise<EmailInfo[]> {
@@ -158,6 +159,8 @@ export interface OutgoingMail {
   text: string;
   messageId?: string;
   inReplyTo?: string;
+  /** A ready-made MIME body with its Content-Type, in place of `text` as text/plain. */
+  mime?: { contentType: string; body: string };
 }
 
 const addrOf = (s: string) => (/<([^>]+)>/.exec(s)?.[1] ?? s).trim();
@@ -173,10 +176,9 @@ export async function sendMail(m: OutgoingMail): Promise<string> {
     `Message-ID: <${messageId}>`,
     ...(m.inReplyTo ? [`In-Reply-To: <${m.inReplyTo}>`, `References: <${m.inReplyTo}>`] : []),
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=utf-8',
-    'Content-Transfer-Encoding: 8bit',
+    ...(m.mime ? [`Content-Type: ${m.mime.contentType}`] : ['Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit']),
   ];
-  const body = m.text.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+  const body = (m.mime?.body ?? m.text).replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
   const data = `${headers.join('\r\n')}\r\n\r\n${body}\r\n.\r\n`;
 
   const sock = net.connect(SMTP_PORT, 'localhost');

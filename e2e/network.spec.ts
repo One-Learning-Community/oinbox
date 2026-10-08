@@ -124,12 +124,12 @@ test('an upload cut off by the network fails visibly and leaves the draft intact
   await subjectInput(c).fill(subject);
   await typeBody(c, 'draft text');
   await context.setOffline(true);
-  await c.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await c.locator('input[type=file]:not([accept])').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
   await expect(toast(page, /Couldn't attach notes\.txt/)).toBeVisible({ timeout: 45_000 });
   await expect(bodyEditor(c)).toContainText('draft text');
   await context.setOffline(false);
   await expect(banner(page)).toHaveCount(0, { timeout: 45_000 });
-  await c.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await c.locator('input[type=file]:not([accept])').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
   await expect(c.getByText('notes.txt')).toBeVisible({ timeout: 20_000 });
   await c.getByRole('button', { name: 'Discard draft' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Discard' }).click();

@@ -2,6 +2,22 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Images in the text of a message: paste one, drop it on the text, or use the toolbar's Insert image. It is sent as a real inline part, so other mail clients show it in place.
+- A reply or a forward keeps the inline images of the message it quotes, and a forward carries the original's attachments.
+
+### Fixed
+
+- A draft with attachments that was reopened from Drafts could no longer be saved after its first save, and the failed save removed it from the server. Saving now creates the new version before it removes the old one.
+
+### Known limits
+
+- Pasting or dropping several images at once inserts the first only; the toolbar button takes several.
+- Images cannot be resized, and are uploaded at their original size. Stalwart's default allows an account 50 MB of uploads an hour.
+
 ## 0.1.0-beta.1
 
 The first public release. Tested against Stalwart 0.16.23 with Meilisearch 1.54.

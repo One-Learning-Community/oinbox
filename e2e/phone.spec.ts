@@ -189,7 +189,7 @@ test('@phone a file can be attached to a new message', async ({ page }) => {
   await page.getByRole('button', { name: 'Menu' }).tap();
   await page.getByRole('button', { name: 'Compose' }).tap();
   const c = floatingComposer(page);
-  await c.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+  await c.locator('input[type=file]:not([accept])').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
   await expect(c.getByText('notes.txt')).toBeVisible({ timeout: 20_000 });
   await noSidewaysScroll(page, 'composer with an attachment');
   await c.getByRole('button', { name: 'Discard draft' }).tap();

@@ -84,3 +84,49 @@ export async function destroyBySubject(subject: string) {
     await destroyEmails((await emailsBySubject(subject, user)).map((e) => e.id), user);
   }
 }
+
+/** A 1×1 PNG. */
+export const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+export const PNG = Buffer.from(PNG_BASE64, 'base64');
+
+/** A message whose HTML shows an inline image, optionally with notes.txt attached, for sendMail's `mime`. */
+export function inlineImageMail(cid: string, attachment?: string): { contentType: string; body: string } {
+  const related = [
+    '--rel', 'Content-Type: text/html; charset=utf-8', '', `<p>Before</p><img src="cid:${cid}"><p>After</p>`,
+    '--rel', 'Content-Type: image/png; name="chart.png"', 'Content-Transfer-Encoding: base64', `Content-ID: <${cid}>`, 'Content-Disposition: inline; filename="chart.png"', '', PNG_BASE64,
+    '--rel--',
+  ];
+  if (attachment === undefined) return { contentType: 'multipart/related; boundary="rel"', body: related.join('\n') };
+  const mixed = [
+    '--mix', 'Content-Type: multipart/related; boundary="rel"', '', ...related,
+    '--mix', 'Content-Type: text/plain; name="notes.txt"', 'Content-Disposition: attachment; filename="notes.txt"', '', attachment,
+    '--mix--',
+  ];
+  return { contentType: 'multipart/mixed; boundary="mix"', body: mixed.join('\n') };
+}
+
+export interface MessageParts {
+  html: string;
+  /** Every leaf part, in order, with the multipart types above it. */
+  leaves: { type: string; name: string | null; cid: string | null; disposition: string | null; within: string[] }[];
+}
+
+/** A stored message's HTML and MIME layout. */
+export async function messageParts(id: string, user = ALICE): Promise<MessageParts> {
+  const r = await jmap(
+    [['Email/get', {
+      accountId: await accountId(user), ids: [id], properties: ['bodyStructure', 'bodyValues', 'htmlBody'], fetchHTMLBodyValues: true,
+      bodyProperties: ['partId', 'type', 'name', 'cid', 'disposition', 'subParts'],
+    }, 'g']],
+    user,
+  );
+  const e = r.g.list[0];
+  const leaves: MessageParts['leaves'] = [];
+  const walk = (p: any, within: string[]) => {
+    if (p.subParts) for (const s of p.subParts) walk(s, [...within, p.type]);
+    else leaves.push({ type: p.type, name: p.name ?? null, cid: p.cid ?? null, disposition: p.disposition ?? null, within });
+  };
+  walk(e.bodyStructure, []);
+  const htmlPart = (e.htmlBody as { partId: string; type: string }[]).find((p) => p.type === 'text/html');
+  return { html: htmlPart ? e.bodyValues[htmlPart.partId].value : '', leaves };
+}

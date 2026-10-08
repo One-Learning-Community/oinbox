@@ -146,7 +146,7 @@ test('an attached file is uploaded, sent, and arrives intact', async ({ page }) 
   const content = `attachment body ${uniqueTag()}\n`;
   await openInbox(page);
   const c = await composeNew(page, { to: BOB, subject, body: 'File attached.' });
-  await c.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from(content) });
+  await c.locator('input[type=file]:not([accept])').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from(content) });
   await expect(c.locator('.compose-attachments .attachment', { hasText: 'notes.txt' })).toBeVisible();
   await expect(c.locator('.compose-attachments')).not.toContainText('Uploading');
   await sendAndWait(page, c);
