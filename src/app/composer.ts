@@ -1,9 +1,9 @@
 import { createSignal, type Accessor } from 'solid-js';
 import type { EmailAddress, Id, Identity } from '../jmap/types';
-import { buildEmailCreate, initialDraft, splitDraftHtml, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
+import { blobIdChanges, buildEmailCreate, initialDraft, splitDraftHtml, withBlobIds, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
 import { signatureForCompose } from '../mail/settings';
 import { logUnexpected } from '../sync/connection';
-import type { EmailRec, MailEngine } from '../sync/engine';
+import { DraftSaveError, type EmailRec, type MailEngine, type SavedDraft } from '../sync/engine';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
 
@@ -126,6 +126,14 @@ export function createComposers(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let saving: Promise<void> = Promise.resolve();
     let unconfirmedSend = restore?.unconfirmedSend ?? false;
+    /** Older versions a save could not confirm as removed; the next save takes them along. */
+    let stale: Id[] = [];
+
+    /** New blob ids for parts whose blobs are gone: those of the version the server has now. */
+    const recoverBlobs = async (sent: Draft): Promise<Map<string, string>> => {
+      const parts = draftId() ? await engine.draftParts(draftId()!) : null;
+      return parts ? blobIdChanges(sent, parts) : new Map();
+    };
 
     const doSave = async () => {
       const identity = identities().find((i) => i.id === identityId());
@@ -144,7 +152,25 @@ export function createComposers(
           if (state === 'gone') setDraftId(null);
           unconfirmedSend = false;
         }
-        const saved = await engine.saveDraft(buildEmailCreate(draft(), { name: identity.name || null, email: identity.email }, drafts), draftId() ? [draftId()!] : []);
+        const from = { name: identity.name || null, email: identity.email };
+        const replaces = [...stale, ...(draftId() ? [draftId()!] : [])];
+        let sent = draft();
+        let saved: SavedDraft;
+        try {
+          saved = await engine.saveDraft(buildEmailCreate(sent, from, drafts), replaces);
+        } catch (e) {
+          // A part's blob went with an earlier version: find where its content is now, once.
+          const changes = e instanceof DraftSaveError && e.type === 'blobNotFound' ? await recoverBlobs(sent) : null;
+          if (!changes?.size) throw e;
+          setDraft(withBlobIds(draft(), changes));
+          sent = withBlobIds(sent, changes);
+          saved = await engine.saveDraft(buildEmailCreate(sent, from, drafts), replaces);
+        }
+        // The stored version has blob ids of its own, and the old ones die with the old version.
+        // Only what was sent is renamed: a part added since keeps its upload's id until the next save.
+        const changes = saved.parts ? blobIdChanges(sent, saved.parts) : null;
+        if (changes?.size) setDraft(withBlobIds(draft(), changes));
+        stale = saved.replaced ? [] : replaces;
         setDraftId(saved.id);
         if (status() === 'saving') setStatus('saved');
       } catch (e) {
@@ -319,7 +345,9 @@ export function createComposers(
       return;
     }
     const draftId = c.draftId()!;
-    const snapshot: Restore = { draft: d, draftId, identityId, threadId: c.threadId, replyTo: c.replyTo, signatureMode: internals(c).signatureMode() };
+    // After the save: the draft now names the stored version's blobs.
+    const saved = c.draft();
+    const snapshot: Restore = { draft: saved, draftId, identityId, threadId: c.threadId, replyTo: c.replyTo, signatureMode: internals(c).signatureMode() };
     remove(c);
 
     let cancelled = false;
@@ -329,13 +357,13 @@ export function createComposers(
       if (cancelled) return;
       try {
         await engine.sendDraft(draftId, identityId);
-        onSent(draftId, [...d.to, ...d.cc, ...d.bcc]);
+        onSent(draftId, [...saved.to, ...saved.cc, ...saved.bcc]);
         toast('Message sent.', 'success');
       } catch {
         // The request may have reached the server even though we saw it fail.
         const state = await engine.draftState(draftId).catch(() => null);
         if (state === 'sent') {
-          onSent(draftId, [...d.to, ...d.cc, ...d.bcc]);
+          onSent(draftId, [...saved.to, ...saved.cc, ...saved.bcc]);
           toast('Message sent.', 'success');
           return;
         }

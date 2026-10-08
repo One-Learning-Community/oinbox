@@ -247,3 +247,124 @@ describe('composer safety', () => {
     });
   });
 });
+
+describe('a draft\'s blob ids', () => {
+  const start = async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const server = new FakeJmap();
+    server.addMailbox('D', 'Drafts', 'drafts');
+    server.uploads.add('up1');
+    const client = server.client();
+    const engine = createRoot(() => new MailEngine(client, { settleDelayMs: 0 }));
+    await engine.start();
+    const toast = vi.fn();
+    const composers = createRoot(() => createComposers(engine, toast, vi.fn(async () => true), vi.fn()));
+    return { server, client, engine, composers, toast };
+  };
+  afterEach(() => vi.useRealTimers());
+  const file = { blobId: 'up1', name: 'a.pdf', type: 'application/pdf', size: 3 };
+  const autosave = () => vi.advanceTimersByTimeAsync(2000);
+
+  it('are the stored version\'s after each save, so a third save still works', async () => {
+    const { server, composers } = await start();
+    const c = composers.open('new');
+    for (const subject of ['one', 'two', 'three']) {
+      c.update({ subject, attachments: c.draft().attachments.length ? c.draft().attachments : [file] });
+      await autosave();
+      expect(c.status()).toBe('saved');
+    }
+    expect(server.emails.size).toBe(1);
+    const stored = [...server.emails.values()][0]!;
+    expect(stored.subject).toBe('three');
+    expect(c.draft().attachments[0]!.blobId).toBe(stored.attachments![0]!.blobId);
+  });
+
+  it('let a draft reopened from Drafts be saved more than once', async () => {
+    const { server, composers } = await start();
+    const first = composers.open('new');
+    first.update({ subject: 'kept', attachments: [file] });
+    await autosave();
+    await composers.close(first);
+    composers.openDraft(structuredClone([...server.emails.values()][0]!));
+    const c = composers.list().at(-1)!;
+    expect(c.draft().attachments.map((a) => a.name)).toEqual(['a.pdf']);
+    for (const subject of ['again', 'and again']) {
+      c.update({ subject });
+      await autosave();
+      expect(c.status()).toBe('saved');
+    }
+    expect([...server.emails.values()].map((e) => e.subject)).toEqual(['and again']);
+  });
+
+  it('are not touched for an attachment added while the save was on its way', async () => {
+    const { server, composers } = await start();
+    server.uploads.add('up2');
+    const c = composers.open('new');
+    c.update({ subject: 's', attachments: [file] });
+    let release = () => {};
+    server.holds.push(new Promise((r) => (release = r)));
+    const saving = autosave();
+    await vi.waitFor(() => expect(c.status()).toBe('saving'));
+    c.update({ attachments: [...c.draft().attachments, { blobId: 'up2', name: 'b.txt', type: 'text/plain', size: 1 }] });
+    release();
+    await saving;
+    await vi.waitFor(() => expect(c.draft().attachments.map((a) => a.blobId)).toEqual([[...server.emails.values()][0]!.attachments![0]!.blobId, 'up2']));
+  });
+
+  it('keep the last saved version on the server when a save fails', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { server, composers } = await start();
+      const c = composers.open('new');
+      c.update({ subject: 'good' });
+      await autosave();
+      c.update({ subject: 'bad', attachments: [{ ...file, blobId: 'never-uploaded' }] });
+      await autosave();
+      expect(c.status()).toBe('error');
+      expect([...server.emails.values()].map((e) => e.subject)).toEqual(['good']);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('are read again from the server when it says a blob is gone', async () => {
+    const { server, client, composers } = await start();
+    const c = composers.open('new');
+    c.update({ subject: 'one', attachments: [file] });
+    await autosave();
+    // The next save's follow-up is lost on the way back: the old version is destroyed, but we never learn the new ids.
+    const real = client.send.bind(client);
+    let lost = false;
+    vi.spyOn(client, 'send').mockImplementation(async (b) => {
+      const r = await real(b);
+      if (!lost && b.build([]).methodCalls.some(([name, args]) => name === 'Email/set' && !!args.destroy)) {
+        lost = true;
+        throw new TypeError('Failed to fetch');
+      }
+      return r;
+    });
+    c.update({ subject: 'two' });
+    await autosave();
+    expect(c.status()).toBe('saved');
+    c.update({ subject: 'three' });
+    await autosave();
+    expect(c.status()).toBe('saved');
+    expect([...server.emails.values()].map((e) => e.subject)).toEqual(['three']);
+  });
+
+  it('are current in the composer Undo brings back after Send', async () => {
+    const { server, composers, toast } = await start();
+    const c = composers.open('new');
+    c.update({ to: [{ name: null, email: 'bob@x.test' }], subject: 'undo me', attachments: [file] });
+    await composers.send(c);
+    const undo = toast.mock.calls.find((call) => call[0] === 'Sending…')![2] as { run: () => void };
+    undo.run();
+    const back = composers.list().at(-1)!;
+    expect(back.draft().attachments[0]!.blobId).toBe([...server.emails.values()][0]!.attachments![0]!.blobId);
+    for (const subject of ['x', 'y']) {
+      back.update({ subject });
+      await autosave();
+      expect(back.status()).toBe('saved');
+    }
+  });
+});
