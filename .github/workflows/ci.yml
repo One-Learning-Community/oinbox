@@ -112,7 +112,7 @@ jobs:
       - name: Collect the stack's logs
         if: failure()
         working-directory: deploy/production
-        run: docker compose --env-file "$ENV_FILE" $COMPOSE_ARGS logs --no-color > ../../test-results/production-stack.log 2>&1 || true
+        run: mkdir -p ../../test-results && docker compose --env-file "$ENV_FILE" $COMPOSE_ARGS logs --no-color > ../../test-results/production-stack.log 2>&1 || true
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

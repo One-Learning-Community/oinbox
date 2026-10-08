@@ -1,5 +1,7 @@
 # oinbox dev stack
 
+> This is the stack oinbox is built and tested on: plain HTTP, seeded test accounts, relaxed mail checks. **For a real installation use `production/` and [docs/operating.md](../docs/operating.md).**
+
 Stalwart 0.16.23 (JMAP + SMTP), Meilisearch 1.54.0 (Stalwart's full-text search store) and the app. The `caddy` service is built from the repo-root `Dockerfile`: `pnpm build` output served by Caddy 2.11.4, which also proxies Stalwart on the same origin, **http://localhost:8080**.
 
 ## Run
@@ -71,6 +73,24 @@ Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwa
 * `STALWART_PUBLIC_URL=http://localhost:8080` controls the base of every URL in the JMAP session and in the OAuth/OIDC discovery documents.
 * `stalwart/config.json` names only the datastore (RocksDB). In Stalwart 0.16, every other setting lives in the database and is applied from `plan.ndjson`. There is no TOML and no `/api` REST management API any more.
 * `OidcProvider.requireClientRegistration=true`: unregistered `client_id`s and unregistered `redirect_uri`s are rejected. The WebUI's `stalwart-webui` client is registered too.
+
+## Proxy routing
+
+`routes.caddy` holds the routing and headers as a Caddy snippet (`oinbox_routes`). The dev `Caddyfile` and `production/Caddyfile` both import it, so the paths below and the security headers are the same in both. `examples/nginx.conf` is the same thing for nginx, tested in place of this stack's Caddy.
+
+## Testing the production template
+
+`production/` can be started on a machine with no public name: `ci.override.yml` builds the app from this checkout, uses Caddy's local certificate authority, and moves the ports to 8443 (HTTPS), 8081 (HTTP), 2526, 4465 and 4993, clear of this stack. `ci.env` holds throwaway values. From `deploy/production`:
+
+```sh
+export ENV_FILE=ci.env COMPOSE_ARGS="-p oinbox-prod -f docker-compose.yml -f ci.override.yml" PUBLIC_ORIGIN=https://localhost:8443
+docker compose --env-file ci.env $COMPOSE_ARGS up -d --build --wait
+./apply.sh && ./create-test-user.sh
+(cd ../.. && pnpm e2e:production)       # sign-in over HTTPS, headers, no CORS, TLS on the mail ports
+docker compose --env-file ci.env $COMPOSE_ARGS down -v
+```
+
+CI runs exactly this as the "Production template" job.
 
 ## Large mailbox (carol)
 

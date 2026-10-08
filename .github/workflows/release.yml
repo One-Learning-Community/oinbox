@@ -1,0 +1,62 @@
+name: Release
+
+# Pushing a tag such as v0.1.0-beta.1 builds the release: the container image (Caddy plus the app,
+# for amd64 and arm64), a tarball of the static files with checksums, and a DRAFT GitHub release
+# holding both. A person reads the draft and publishes it.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6 # version from package.json "packageManager"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: The tag must match package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+        env:
+          OINBOX_COMMIT: ${{ github.sha }}
+      - name: Tarball and checksums
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          tar -C dist -czf "oinbox-$v.tar.gz" .
+          sha256sum "oinbox-$v.tar.gz" > SHA256SUMS
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image for amd64 and arm64
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --build-arg "OINBOX_COMMIT=${{ github.sha }}" \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.version=$v" \
+            --label "org.opencontainers.image.licenses=MIT" \
+            -t "ghcr.io/one-learning-community/oinbox:$v" --push .
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          # This version's section of the changelog, without its heading.
+          awk -v v="$v" '$0 == "## " v {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          test -s notes.md
+          gh release create "$GITHUB_REF_NAME" "oinbox-$v.tar.gz" SHA256SUMS \
+            --draft --prerelease --title "oinbox $v" --notes-file notes.md
