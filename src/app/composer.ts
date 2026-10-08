@@ -1,6 +1,6 @@
 import { createSignal, type Accessor } from 'solid-js';
 import type { EmailAddress, Id, Identity } from '../jmap/types';
-import { blobIdChanges, buildEmailCreate, initialDraft, splitDraftHtml, withBlobIds, type ComposeMode, type Draft, type DraftAttachment } from '../mail/compose';
+import { blobIdChanges, buildEmailCreate, draftHtml, initialDraft, referencedCids, splitDraftHtml, splitParts, withBlobIds, type ComposeMode, type Draft, type DraftAttachment, type InlineImage } from '../mail/compose';
 import { signatureForCompose } from '../mail/settings';
 import { logUnexpected } from '../sync/connection';
 import { DraftSaveError, type EmailRec, type MailEngine, type SavedDraft } from '../sync/engine';
@@ -43,6 +43,14 @@ export interface Composer {
   uploading: Accessor<number>;
   attach: (files: FileList | File[]) => Promise<void>;
   removeAttachment: (blobId: string) => void;
+  /** Upload an image and remember it; resolves to the object URL to show it with. Rejects after telling the user. */
+  insertImage: (file: File) => Promise<string>;
+  /** Content id to object URL, for the images that have been loaded. */
+  imageUrls: Accessor<Record<string, string>>;
+  /** False while images the text itself refers to are still being fetched. */
+  imagesReady: Accessor<boolean>;
+  /** Resolves once every image of the draft has been fetched or has failed. */
+  loadImages: () => Promise<void>;
   /** Id of the saved draft email, if any. */
   draftId: Accessor<Id | null>;
   removeSignature: () => void;
@@ -91,6 +99,7 @@ export function createComposers(
     /** True when an earlier send of this draft turns out to have reached the server. */
     wasSent: () => Promise<boolean>;
     snapshot: () => RescuedComposer;
+    releaseImages: () => void;
   };
 
   interface Restore {
@@ -116,7 +125,7 @@ export function createComposers(
     const id = ++seq;
     const startIdentity = restore?.identityId ?? defaultIdentity(original);
     const [draft, setDraft] = createSignal<Draft>(
-      restore?.draft ?? { ...initialDraft(mode, original, engine.myAddresses()), signatureHtml: signatureOf(startIdentity) },
+      restore?.draft ? { ...restore.draft, inline: restore.draft.inline ?? [] } : { ...initialDraft(mode, original, engine.myAddresses()), signatureHtml: signatureOf(startIdentity) },
     );
     const [identityId, setIdentityId] = createSignal<Id | null>(startIdentity);
     const [signatureMode, setSignatureMode] = createSignal<SignatureMode>(restore?.signatureMode ?? 'auto');
@@ -129,10 +138,47 @@ export function createComposers(
     /** Older versions a save could not confirm as removed; the next save takes them along. */
     let stale: Id[] = [];
 
-    /** New blob ids for parts whose blobs are gone: those of the version the server has now. */
+    const [imageUrls, setImageUrls] = createSignal<Record<string, string>>({});
+    /** The images' bytes, by content id: enough to upload one again if its blob is lost. */
+    const imageBlobs = new Map<string, Blob>();
+    const fetching = new Map<string, Promise<void>>();
+    /** Fetch one image and make a URL for it. A failure leaves it without one: it shows as broken, the rest works. */
+    const fetchImage = (i: InlineImage): Promise<void> => {
+      let p = fetching.get(i.cid);
+      if (!p) {
+        p = engine
+          .fetchBlob(i.blobId, i.name, i.type)
+          .then((blob) => {
+            imageBlobs.set(i.cid, blob);
+            setImageUrls({ ...imageUrls(), [i.cid]: URL.createObjectURL(blob) });
+          })
+          .catch(logUnexpected);
+        fetching.set(i.cid, p);
+      }
+      return p;
+    };
+    const loadImages = () => Promise.all(draft().inline.map(fetchImage)).then(() => undefined);
+    // A reopened or rescued draft has images in its own text: the editor waits for those.
+    // A quote's images are only needed once the quote is expanded.
+    const inText = referencedCids(draft().bodyHtml);
+    const awaited = draft().inline.filter((i) => inText.has(i.cid));
+    const [imagesReady, setImagesReady] = createSignal(awaited.length === 0);
+    if (awaited.length) void Promise.all(awaited.map(fetchImage)).then(() => setImagesReady(true));
+    void loadImages();
+
+    /** New blob ids for parts whose blobs are gone: those of the version the server has now, or a fresh upload of an image it lacks. */
     const recoverBlobs = async (sent: Draft): Promise<Map<string, string>> => {
       const parts = draftId() ? await engine.draftParts(draftId()!) : null;
-      return parts ? blobIdChanges(sent, parts) : new Map();
+      const changes = parts ? blobIdChanges(sent, parts) : new Map<string, string>();
+      const html = draftHtml(sent);
+      const stored = new Set(splitParts(html, parts ?? []).inline.map((i) => i.cid));
+      const used = referencedCids(html);
+      for (const i of sent.inline) {
+        const blob = imageBlobs.get(i.cid);
+        if (!blob || stored.has(i.cid) || !used.has(i.cid)) continue;
+        changes.set(i.blobId, (await engine.upload(blob)).blobId);
+      }
+      return changes;
     };
 
     const doSave = async () => {
@@ -239,6 +285,32 @@ export function createComposers(
         setDraft({ ...draft(), attachments: draft().attachments.filter((a) => a.blobId !== blobId) });
         scheduleSave();
       },
+      insertImage: async (file) => {
+        const name = file.name || 'image';
+        setUploading((n) => n + 1);
+        try {
+          const r = await engine.upload(file);
+          const cid = `${crypto.randomUUID()}@oinbox`;
+          const url = URL.createObjectURL(file);
+          fetching.set(cid, Promise.resolve());
+          imageBlobs.set(cid, file);
+          setImageUrls({ ...imageUrls(), [cid]: url });
+          // Not saved yet: the editor puts the image in the text, and that change saves.
+          setDraft({ ...draft(), inline: [...draft().inline, { cid, blobId: r.blobId, type: file.type || r.type, name, size: file.size }] });
+          return url;
+        } catch (e) {
+          toast(`Couldn't add ${name}: ${(e as Error).message}`, 'error');
+          throw e;
+        } finally {
+          setUploading((n) => n - 1);
+        }
+      },
+      imageUrls,
+      imagesReady,
+      loadImages,
+      releaseImages: () => {
+        for (const url of Object.values(imageUrls())) URL.revokeObjectURL(url);
+      },
       draftId,
       save,
       cancelAutosave: () => clearTimeout(timer),
@@ -254,6 +326,7 @@ export function createComposers(
 
   const remove = (c: Composer) => {
     internals(c).cancelAutosave();
+    internals(c).releaseImages();
     setList(list().filter((x) => x.id !== c.id));
   };
 
@@ -390,9 +463,10 @@ export function createComposers(
   /** Reopen a saved draft from the Drafts mailbox. */
   const openDraft = (email: EmailRec) => {
     const values = email.bodyValues ?? {};
-    const html = (email.htmlBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
+    const html = (email.htmlBody ?? []).filter((p) => p.type === 'text/html' && p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
     const text = (email.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
     const parts = html ? splitDraftHtml(html) : { bodyHtml: `<p>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>`, signatureHtml: '', quoteHtml: '' };
+    const stored = splitParts(html, email.attachments ?? []);
     const draft: Draft = {
       mode: 'new',
       to: email.to ?? [],
@@ -404,8 +478,8 @@ export function createComposers(
       quoteHtml: parts.quoteHtml,
       signatureHtml: parts.signatureHtml,
       bodyHtml: parts.bodyHtml,
-      attachments: (email.attachments ?? []).filter((a) => a.blobId).map((a) => ({ blobId: a.blobId!, name: a.name ?? 'attachment', type: a.type, size: a.size })),
-      inline: [],
+      attachments: stored.attachments,
+      inline: stored.inline,
     };
     const identity = identities().find((i) => i.email.toLowerCase() === email.from?.[0]?.email.toLowerCase());
     const identityId = identity?.id ?? defaultIdentity(null);

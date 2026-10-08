@@ -368,3 +368,156 @@ describe('a draft\'s blob ids', () => {
     }
   });
 });
+
+describe('composer images', () => {
+  let made = 0;
+  const revoked: string[] = [];
+  const realCreate = URL.createObjectURL;
+  const realRevoke = URL.revokeObjectURL;
+  beforeEach(() => {
+    made = 0;
+    revoked.length = 0;
+    // jsdom has neither.
+    URL.createObjectURL = vi.fn(() => `blob:test/${++made}`);
+    URL.revokeObjectURL = vi.fn((u: string) => void revoked.push(u));
+  });
+  afterEach(() => {
+    URL.createObjectURL = realCreate;
+    URL.revokeObjectURL = realRevoke;
+  });
+  const start = async () => {
+    const server = new FakeJmap();
+    server.addMailbox('D', 'Drafts', 'drafts');
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    let n = 0;
+    const upload = vi.spyOn(engine, 'upload').mockImplementation(async () => {
+      const blobId = `up${++n}`;
+      server.uploads.add(blobId);
+      return { accountId: 'a1', blobId, type: 'image/png', size: 4 };
+    });
+    const fetchBlob = vi.spyOn(engine, 'fetchBlob').mockResolvedValue(new Blob(['x']));
+    const toast = vi.fn();
+    const composers = createRoot(() => createComposers(engine, toast, vi.fn(async () => true), vi.fn()));
+    return { server, engine, composers, toast, upload, fetchBlob };
+  };
+  const png = (name = 'chart.png') => new File(['data'], name, { type: 'image/png' });
+
+  it('uploads an image and hands back a URL for it', async () => {
+    const { composers } = await start();
+    const c = composers.open('new');
+    const url = await c.insertImage(png());
+    const [image] = c.draft().inline;
+    expect(image).toMatchObject({ blobId: 'up1', type: 'image/png', name: 'chart.png', size: 4 });
+    expect(image!.cid).toMatch(/^[0-9a-f-]{36}@oinbox$/);
+    expect(c.imageUrls()).toEqual({ [image!.cid]: url });
+    expect(c.uploading()).toBe(0);
+  });
+
+  it('gives the same file inserted twice two content ids', async () => {
+    const { composers } = await start();
+    const c = composers.open('new');
+    const a = await c.insertImage(png());
+    const b = await c.insertImage(png());
+    expect(a).not.toBe(b);
+    expect(new Set(c.draft().inline.map((i) => i.cid)).size).toBe(2);
+  });
+
+  it('says so and inserts nothing when the upload fails', async () => {
+    const { composers, toast, upload } = await start();
+    upload.mockRejectedValueOnce(new Error('Upload quota exceeded'));
+    const c = composers.open('new');
+    await expect(c.insertImage(png())).rejects.toThrow('Upload quota exceeded');
+    expect(toast).toHaveBeenCalledWith("Couldn't add chart.png: Upload quota exceeded", 'error');
+    expect(c.draft().inline).toEqual([]);
+    expect(c.uploading()).toBe(0);
+  });
+
+  it('keeps a removed image while the composer is open, so undo can bring it back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { server, composers } = await start();
+      const c = composers.open('new');
+      await c.insertImage(png());
+      const cid = c.draft().inline[0]!.cid;
+      c.update({ subject: 's', bodyHtml: `<img src="cid:${cid}">` });
+      await vi.advanceTimersByTimeAsync(2000);
+      c.update({ bodyHtml: '<p>no image</p>' });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect([...server.emails.values()][0]!.attachments).toEqual([]);
+      c.update({ bodyHtml: `<img src="cid:${cid}">` });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(c.status()).toBe('saved');
+      expect([...server.emails.values()][0]!.attachments!.map((p) => p.cid)).toEqual([cid]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reopens a draft with its images inline, loaded before the editor shows', async () => {
+    const { composers, fetchBlob } = await start();
+    composers.openDraft({
+      id: 'd1', threadId: 't9', from: [{ name: null, email: 'alice@example.test' }], to: [], receivedAt: '2026-09-01T10:00:00Z',
+      htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+      bodyValues: { h: { value: '<p>Hi</p><img src="cid:c1@x">', isEncodingProblem: false, isTruncated: false } },
+      attachments: [
+        { partId: null, blobId: 'P1', size: 9, type: 'image/png', name: 'chart.png', cid: 'c1@x', disposition: 'inline' },
+        { partId: null, blobId: 'P2', size: 3, type: 'application/pdf', name: 'a.pdf', cid: null, disposition: 'attachment' },
+      ],
+    });
+    const c = composers.list().at(-1)!;
+    expect(c.draft().inline.map((i) => i.blobId)).toEqual(['P1']);
+    expect(c.draft().attachments.map((a) => a.name)).toEqual(['a.pdf']);
+    expect(c.imagesReady()).toBe(false);
+    await c.loadImages();
+    expect(fetchBlob).toHaveBeenCalledWith('P1', 'chart.png', 'image/png');
+    expect(c.imagesReady()).toBe(true);
+    expect(c.imageUrls()).toEqual({ 'c1@x': 'blob:test/1' });
+  });
+
+  it('is ready at once when only the quote has images, and loads those too', async () => {
+    const { composers } = await start();
+    const c = composers.open('reply', {
+      id: 'e1', threadId: 't1', subject: 'Hi', from: [{ name: 'Bob', email: 'bob@x.test' }], to: [], receivedAt: '2026-09-01T10:00:00Z',
+      htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+      bodyValues: { h: { value: '<img src="cid:c1@x">', isEncodingProblem: false, isTruncated: false } },
+      attachments: [{ partId: null, blobId: 'O1', size: 9, type: 'image/png', name: 'chart.png', cid: 'c1@x', disposition: 'inline' }],
+    });
+    expect(c.imagesReady()).toBe(true);
+    await c.loadImages();
+    expect(c.imageUrls()['c1@x']).toBe('blob:test/1');
+  });
+
+  it('carries on when an image cannot be fetched', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { composers, fetchBlob } = await start();
+      fetchBlob.mockRejectedValueOnce(new Error('404'));
+      composers.restore([{
+        mode: 'new', draftId: null, identityId: 'id1', threadId: null, replyTo: null, signatureMode: 'auto',
+        draft: { mode: 'new', to: [], cc: [], bcc: [], subject: 's', inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '<img src="cid:c1@x">', attachments: [], inline: [{ cid: 'c1@x', blobId: 'gone', type: 'image/png', name: 'chart.png', size: 9 }] },
+      }]);
+      const c = composers.list().at(-1)!;
+      await c.loadImages();
+      expect(c.imagesReady()).toBe(true);
+      expect(c.imageUrls()).toEqual({});
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('reads a composer rescued before images existed', async () => {
+    const { composers } = await start();
+    const old = { mode: 'new', to: [], cc: [], bcc: [], subject: 's', inReplyTo: [], references: [], quoteHtml: '', signatureHtml: '', bodyHtml: '<p>x</p>', attachments: [] };
+    composers.restore([{ mode: 'new', draftId: null, identityId: 'id1', threadId: null, replyTo: null, signatureMode: 'auto', draft: old as never }]);
+    expect(composers.list().at(-1)!.draft().inline).toEqual([]);
+  });
+
+  it('releases its URLs when the composer goes', async () => {
+    const { composers } = await start();
+    const c = composers.open('new');
+    const url = await c.insertImage(png());
+    await composers.close(c);
+    expect(revoked).toEqual([url]);
+  });
+});
