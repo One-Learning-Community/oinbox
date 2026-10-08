@@ -1,6 +1,6 @@
 /* @refresh reload */
 import { Navigate, Route, Router } from '@solidjs/router';
-import { ErrorBoundary, lazy } from 'solid-js';
+import { ErrorBoundary, lazy, Suspense, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
@@ -33,6 +33,11 @@ import './ui/styles.css';
 const CalendarView = lazy(() => import('./ui/CalendarView').then((m) => ({ default: m.CalendarView })));
 
 const root = document.getElementById('root')!;
+/** Put a screen in the page, in place of whatever is there (first, index.html's "Loading oinbox…"). */
+const mount = (ui: () => JSX.Element) => {
+  root.textContent = '';
+  render(ui, root);
+};
 const origin = location.origin;
 const auth = new OAuth({
   origin,
@@ -48,13 +53,13 @@ async function boot() {
       const returnTo = await auth.handleCallback(new URL(location.href));
       history.replaceState(null, '', returnTo);
     } catch (e) {
-      render(() => <SignIn auth={auth} error={String((e as Error).message)} />, root);
+      mount(() => <SignIn auth={auth} error={String((e as Error).message)} />);
       return;
     }
   }
 
   if (!auth.isSignedIn()) {
-    render(() => <SignIn auth={auth} />, root);
+    mount(() => <SignIn auth={auth} />);
     return;
   }
 
@@ -206,7 +211,7 @@ async function boot() {
       await start();
       started = true;
     } catch (e) {
-      if (!onAuthError(e)) render(() => <SignIn auth={auth} error={`Couldn't reach the mail server: ${String(e)}`} />, root);
+      if (!onAuthError(e)) mount(() => <SignIn auth={auth} error={`Couldn't reach the mail server: ${String(e)}`} />);
       return;
     }
   } else {
@@ -231,7 +236,7 @@ async function boot() {
   }
 
   rendered = true;
-  render(
+  mount(
     () => (
       <ErrorBoundary
         fallback={(e) => {
@@ -245,7 +250,14 @@ async function boot() {
             <Route path="/auth/callback" component={() => <Navigate href="/inbox" />} />
             <Route
               path="/calendar"
-              component={() => <PaneBoundary name="calendar">{app.hasCalendars() ? <CalendarView /> : <Navigate href="/inbox" />}</PaneBoundary>}
+              component={() => (
+                <PaneBoundary name="calendar">
+                  {/* The calendar is its own download; say so while it arrives. */}
+                  <Suspense fallback={<div class="list-empty" role="status">Loading calendar…</div>}>
+                    {app.hasCalendars() ? <CalendarView /> : <Navigate href="/inbox" />}
+                  </Suspense>
+                </PaneBoundary>
+              )}
             />
             <Route path="/search/:q" component={MailView} />
             <Route path="/search/:q/t/:threadId" component={MailView} />
@@ -258,12 +270,10 @@ async function boot() {
         </AppContext.Provider>
       </ErrorBoundary>
     ),
-    root,
   );
 }
 
 void boot().catch((e) => {
   console.error(e);
-  root.textContent = '';
-  render(() => <RootFallback error={e} />, root);
+  mount(() => <RootFallback error={e} />);
 });
