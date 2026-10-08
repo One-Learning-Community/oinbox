@@ -174,4 +174,18 @@ describe('FakeJmap message parts (as Stalwart 0.16.23)', () => {
     expect(r.notCreated.c.type).toBe('blobNotFound');
     expect(s.emails.has(first)).toBe(false);
   });
+
+  it('answers notDestroyed: notFound for an unknown id, forbidden for a rejected one that stays', () => {
+    const s = server();
+    const id = eset(s, { create: { c: message('up1') } }).created.c.id as string;
+    s.rejectDestroys.add(id);
+    const r = eset(s, { destroy: [id, 'nope'] });
+    expect(r.notDestroyed).toEqual({ [id]: { type: 'forbidden' }, nope: { type: 'notFound' } });
+    expect(r.destroyed).toEqual([]);
+    expect(s.emails.has(id)).toBe(true);
+    s.rejectDestroys.clear();
+    const r2 = eset(s, { destroy: [id] });
+    expect(r2.destroyed).toEqual([id]);
+    expect(r2.notDestroyed).toBeNull();
+  });
 });

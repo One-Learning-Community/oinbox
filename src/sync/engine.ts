@@ -506,9 +506,12 @@ export class MailEngine {
     try {
       const b2 = this.client.batch();
       const get = b2.call('Email/get', { accountId: this.accountId, ids: [saved.id], properties: ['attachments'] });
-      if (replaces.length) b2.call('Email/set', { accountId: this.accountId, destroy: replaces });
-      const parts = (await this.client.send(b2)).get(get).list[0]?.attachments ?? null;
-      return { ...saved, parts, replaced: true };
+      const destroy = replaces.length ? b2.call('Email/set', { accountId: this.accountId, destroy: replaces }) : null;
+      const res = await this.client.send(b2);
+      const parts = res.get(get).list[0]?.attachments ?? null;
+      // A version that is not found is gone; any other refusal leaves it behind.
+      const refused = destroy ? Object.values(res.get(destroy).notDestroyed ?? {}).some((e) => e.type !== 'notFound') : false;
+      return { ...saved, parts, replaced: !refused };
     } catch (e) {
       // The draft is saved. The caller passes the old versions again with its next save.
       logUnexpected(e);

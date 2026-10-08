@@ -16,6 +16,8 @@ export class FakeJmap {
   log: { state: number; created: string[]; updated: string[]; destroyed: string[] }[] = [];
   /** Email ids whose updates the server rejects. */
   rejectUpdates = new Set<string>();
+  /** Email ids whose destroy the server rejects. */
+  rejectDestroys = new Set<string>();
   queryChangesUnsupported = false;
   /** Simulates the server no longer being able to compute type-level /changes (stale cursor). */
   changesUnsupported = false;
@@ -459,12 +461,22 @@ export class FakeJmap {
           created[cid] = { id, threadId: `t-${id}` };
         }
         // As Stalwart: a failed create does not stop the destroy.
-        const destroyed = ((args.destroy ?? []) as string[]).filter((id) => this.emails.delete(id));
+        const destroyed: string[] = [];
+        const notDestroyed: Record<string, { type: string }> = {};
+        for (const id of (args.destroy ?? []) as string[]) {
+          if (!this.emails.has(id)) notDestroyed[id] = { type: 'notFound' };
+          else if (this.rejectDestroys.has(id)) notDestroyed[id] = { type: 'forbidden' };
+          else {
+            this.emails.delete(id);
+            destroyed.push(id);
+          }
+        }
         if (destroyed.length) this.bump({ destroyed });
         return [name, {
           accountId: 'a1', oldState: null, newState: `e${this.emailState}`, created, destroyed, updated,
           notCreated: Object.keys(notCreated).length ? notCreated : null,
           notUpdated: Object.keys(notUpdated).length ? notUpdated : null,
+          notDestroyed: Object.keys(notDestroyed).length ? notDestroyed : null,
         }];
       }
     }

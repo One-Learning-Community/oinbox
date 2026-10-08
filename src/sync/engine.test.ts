@@ -788,6 +788,23 @@ describe('saveDraft', () => {
     expect(server.emails.has(v2.id)).toBe(true);
   });
 
+  it('reports the old version as not replaced when the server refuses to destroy it', async () => {
+    const { server, engine } = await setup();
+    const v1 = await engine.saveDraft(draft('up1'), []);
+    server.rejectDestroys.add(v1.id);
+    const v2 = await engine.saveDraft(draft('up1', 'v2'), [v1.id]);
+    expect(v2.replaced).toBe(false);
+    expect(v2.parts).not.toBeNull();
+    expect(server.emails.has(v1.id)).toBe(true);
+    expect(server.emails.has(v2.id)).toBe(true);
+  });
+
+  it('counts a version that is already gone as replaced', async () => {
+    const { engine } = await setup();
+    const v = await engine.saveDraft(draft('up1'), ['gone']);
+    expect(v.replaced).toBe(true);
+  });
+
   it('reads a draft\'s parts, and null for one that is gone', async () => {
     const { engine } = await setup();
     const v1 = await engine.saveDraft(draft('up1'), []);
