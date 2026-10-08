@@ -26,6 +26,9 @@
 			# A 401 with "WWW-Authenticate: Basic" makes browsers hold fetch() open behind a
 			# native login prompt instead of returning the 401 to the SPA.
 			header_down -Www-Authenticate
+			# One address, the one Caddy worked out: Stalwart bans by it, and must not be left to
+			# pick an entry out of a list the client can add to.
+			header_up X-Forwarded-For {client_ip}
 			# EventSource: stream immediately, never buffer.
 			flush_interval -1
 			transport http {

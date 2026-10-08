@@ -13,6 +13,10 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 - A draft with attachments that was reopened from Drafts could no longer be saved after its first save, and the failed save removed it from the server. Saving now creates the new version before it removes the old one.
 
+### Changed
+
+- The image passes Stalwart the client's address, taken from `X-Forwarded-For` when the request comes from a trusted proxy (`OINBOX_TRUSTED_PROXIES`, by default private addresses). Before, behind a load balancer, Stalwart saw the load balancer's address for everyone. Stalwart needs `Http.useXForwarded` on to read it.
+
 ### Known limits
 
 - Pasting several images at once inserts the first only. Several images dropped at once are attached, not put into the text, and so is any drop of files that are not one image; the toolbar button takes several.

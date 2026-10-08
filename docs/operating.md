@@ -103,6 +103,7 @@ The release image is configured by environment variables. All are optional.
 |---|---|---|
 | `OINBOX_UPSTREAM` | `stalwart:8080` | Where Caddy finds Stalwart's HTTP listener. |
 | `OINBOX_LISTEN` | `:8080` | The address Caddy listens on, in plain HTTP (the image's own configuration; the production template listens on 443 with its own certificate instead). |
+| `OINBOX_TRUSTED_PROXIES` | `private_ranges` | The proxies in front of the image whose `X-Forwarded-For` Caddy believes, as addresses or ranges separated by spaces. Only the image's own configuration reads it; in the production template Caddy faces the internet and trusts no one. |
 | `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
 | `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
 
@@ -119,6 +120,7 @@ The browser remembers the branding it last saw, so a change shows on the second 
 Run the image as it is: it serves plain HTTP on `OINBOX_LISTEN` and expects whatever is in front to terminate TLS.
 
 - **Finding Stalwart.** In a task with bridge networking, link the oinbox container to the Stalwart container under the name `stalwart` and the default works. In a task with `awsvpc` networking the containers share one network namespace: set `OINBOX_UPSTREAM=localhost:8080` and move `OINBOX_LISTEN` off 8080, which Stalwart already holds.
+- **The client's address.** Stalwart bans addresses after failed sign-ins, so it has to see the client's, not the load balancer's. Caddy takes it from `X-Forwarded-For` when the request comes from a trusted proxy, and passes Stalwart that one address. The default trusts private addresses, which covers a load balancer in the same network. If the proxy in front has public addresses (Cloudflare, for example), list its ranges in `OINBOX_TRUSTED_PROXIES`, with `private_ranges` as well if there is also a private hop. Stalwart must be told to read the header: `Http.useXForwarded` set to true, as the production template's `plan.ndjson` does. To check, sign in from outside and look for your own address in Stalwart's log.
 - **The push connection** stays open and is quiet between Stalwart's pings, 30 seconds apart. Keep the load balancer's idle timeout above that (an AWS Application Load Balancer's default of 60 seconds is enough).
 - **`STALWART_PUBLIC_URL`** must still be the public `https://` origin, as in "Install behind a proxy you already run".
 - **Mail ports** (25, 465, 993) do not pass through oinbox; route them to Stalwart yourself, and give Stalwart a certificate for them. The `cert-sync` arrangement below applies only to the Compose template.

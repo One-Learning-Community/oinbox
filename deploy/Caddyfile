@@ -1,6 +1,15 @@
 {
 	admin off
 	auto_https off
+	servers {
+		# Something in front terminates TLS, so the peer is a proxy and the client's address is in
+		# X-Forwarded-For. Private ranges cover a load balancer in the same network; a proxy on public
+		# addresses (Cloudflare, say) has to be listed.
+		trusted_proxies static {$OINBOX_TRUSTED_PROXIES:private_ranges}
+		# Read the header from the right: a proxy appends the address it saw to whatever the client
+		# sent, so the leftmost entry is the client's to forge.
+		trusted_proxies_strict
+	}
 }
 
 import routes.caddy
