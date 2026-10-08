@@ -1,9 +1,11 @@
 name: CI
 
-# Every push, on any branch. The repo takes no pull requests from forks, so a push trigger
-# alone covers pull requests too, without running each commit twice.
+# Every push to a branch. The repo takes no pull requests from forks, so a push trigger alone
+# covers pull requests too, without running each commit twice. Not tags: a release tag points at
+# a commit that has already been through this on its branch (the Release workflow runs for those).
 on:
   push:
+    branches: ['**']
   workflow_dispatch:
 
 concurrency:
