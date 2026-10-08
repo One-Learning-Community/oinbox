@@ -300,4 +300,37 @@ describe('the original\'s parts in a reply and a forward', () => {
     expect(d.inline).toEqual([]);
     expect(d.attachments.map((a) => a.name)).toEqual(['n.txt']);
   });
+
+  describe('a hostile content id', () => {
+    const html = (cids: string[]) => cids.map((c) => `<img alt="a onerror=alert(1) b" src="cid:${c.replace(/&/g, '&amp;')}">`).join('');
+    const reply = (cids: string[]) =>
+      initialDraft('reply', {
+        ...original,
+        htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+        bodyValues: { h: { value: html(cids), isEncodingProblem: false, isTruncated: false } },
+        attachments: cids.map((c, i) => bodyPart({ blobId: `O${i}`, type: 'image/png', name: `i${i}.png`, cid: c, disposition: 'inline' })),
+      }, me);
+
+    it('cannot add attributes to an image in the quote through $ patterns', () => {
+      const cids = ['$`', '$&', "$'"];
+      const d = reply(cids);
+      const imgs = [...new DOMParser().parseFromString(d.quoteHtml, 'text/html').querySelectorAll('img')];
+      expect(imgs).toHaveLength(3);
+      imgs.forEach((img, i) => {
+        expect([...img.attributes].filter((a) => a.name.startsWith('on'))).toEqual([]);
+        expect(img.getAttribute('src')).toBe(`cid:${cids[i]}`);
+      });
+      expect(d.inline.map((x) => x.cid)).toEqual(cids);
+    });
+
+    it('never gives a source back to an image whose part has no content id', () => {
+      const d = initialDraft('reply', {
+        ...original,
+        htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+        bodyValues: { h: { value: '<img src="cid:">', isEncodingProblem: false, isTruncated: false } },
+        attachments: [bodyPart({ blobId: 'O1', type: 'image/png', name: 'x.png', cid: null, disposition: 'inline' })],
+      }, me);
+      expect(d.quoteHtml).not.toContain('src="cid:"');
+    });
+  });
 });

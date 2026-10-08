@@ -168,9 +168,10 @@ function originalHtml(e: EmailRec): string {
   if (html.trim()) {
     // The sanitizer takes the source off cid: images and marks them. In a quote, the ones the
     // original has a part for get their cid: back: the new message carries that part.
-    const known = new Set(originalParts(e).filter((p) => p.blobId && p.type.startsWith('image/')).map((p) => bareCid(p.cid)));
+    const known = new Set(originalParts(e).filter((p) => p.blobId && p.type.startsWith('image/')).map((p) => bareCid(p.cid)).filter(Boolean));
     return sanitizeEmailHtml(html, { allowRemote: false }).html.replace(CID_MARK, (tag, raw: string) =>
-      known.has(unescapeAttr(raw)) ? tag.replace(/\sdata-oinbox-cid="[^"]*"/, ` src="cid:${raw}"`) : tag,
+      // A function, not a string: the content id is the sender's and `$` patterns in it would expand.
+      known.has(unescapeAttr(raw)) ? tag.replace(/\sdata-oinbox-cid="[^"]*"/, () => ` src="cid:${raw}"`) : tag,
     );
   }
   const text = (e.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
