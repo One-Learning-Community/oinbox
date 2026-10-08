@@ -86,9 +86,8 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
 
 /** Screens with an open finding in docs/beta-audit.md. Remove a line when its finding is fixed: the test then has to pass. */
 const KNOWN: Record<string, string> = {
-  'calendar week': 'A4: FullCalendar prev/next icons have role=img and no name',
-  'event card': 'A1: rozie Popover puts aria-modal on a panel with no dialog role; A2: Delete link contrast in dark; A4',
-  'event form': 'A1: rozie Popover puts aria-modal on a panel with no dialog role; A4',
+  'event card': 'A1: rozie Popover puts aria-modal on a panel with no dialog role (docs/rozie-feedback.md)',
+  'event form': 'A1: rozie Popover puts aria-modal on a panel with no dialog role (docs/rozie-feedback.md)',
 };
 
 for (const scheme of ['light', 'dark'] as const) {
@@ -103,6 +102,19 @@ for (const scheme of ['light', 'dark'] as const) {
     }
   });
 }
+
+test('a toast is announced by one live region, not two nested ones', async ({ page }) => {
+  // A label that doesn't exist is the cheapest way to a toast: nothing to clean up.
+  await page.goto('/label/does-not-exist');
+  const toast = page.locator('.toast', { hasText: 'That label no longer exists.' });
+  await expect(toast).toBeVisible();
+  // The region is rozie Toaster's; oinbox's own element inside it must not be a second one.
+  expect(await toast.evaluate((el) => {
+    let regions = 0;
+    for (let n: Element | null = el; n; n = n.parentElement) if (n.matches('[role=status], [role=alert], [aria-live]')) regions++;
+    return regions;
+  })).toBe(1);
+});
 
 test('sign-in has no serious axe violations', async ({ browser }) => {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });

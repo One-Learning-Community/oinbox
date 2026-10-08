@@ -38,7 +38,7 @@ test('offline during archive: the thread comes back and a toast says so', async 
     await context.setOffline(true);
     await page.getByRole('button', { name: /^Archive/ }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Archive' }).click();
-    await expect(page.locator('.toast[role=alert]')).toBeVisible({ timeout: 40_000 });
+    await expect(page.locator('.toast[data-type=error]')).toBeVisible({ timeout: 40_000 });
     await context.setOffline(false);
     await page.goto('/inbox');
     await expect(rows(page).filter({ hasText: subject })).toBeVisible();

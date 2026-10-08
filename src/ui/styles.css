@@ -17,6 +17,7 @@
   --chip: #e1e3e1;
   --warn-bg: #fdefc3;
   --warn-text: #3d2e00;
+  --danger-text: #b3261e;
   --cal-default: #0b57d0;
   --shadow: 0 1px 2px rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%);
   --row-h: 40px;
@@ -42,6 +43,7 @@
   --chip: #44464b;
   --warn-bg: #4a3b12;
   --warn-text: #fde9a8;
+  --danger-text: #f2b8b5;
   --shadow: 0 1px 3px rgb(0 0 0 / 50%);
   color-scheme: dark;
 }
@@ -64,6 +66,7 @@
     --chip: #44464b;
     --warn-bg: #4a3b12;
     --warn-text: #fde9a8;
+    --danger-text: #f2b8b5;
     --shadow: 0 1px 3px rgb(0 0 0 / 50%);
     color-scheme: dark;
   }
@@ -92,7 +95,7 @@ a { color: var(--accent); }
   flex: 1; max-width: 720px; display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 8px;
   border-radius: 24px; background: var(--surface-2);
 }
-.search-box:focus-within { background: var(--surface); box-shadow: var(--shadow); }
+.search-box:focus-within { background: var(--surface); box-shadow: var(--shadow); outline: 2px solid var(--accent); outline-offset: -2px; }
 .search-box input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 16px; color: var(--text); outline: none; min-width: 0; }
 .topbar .spacer { flex: 1; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
@@ -155,7 +158,7 @@ a { color: var(--accent); }
 .row .star.on { color: var(--star); }
 .row .who { width: 200px; flex: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-2); }
 .row .who .u { font-weight: 700; color: var(--text); }
-.row .who .draft { color: var(--danger); }
+.row .who .draft { color: var(--danger-text); }
 .row .who .n { font-size: 12px; color: var(--text-3); margin-left: 4px; font-weight: 400; }
 .row .line { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-3); }
 .row .subject { color: var(--text-2); }
@@ -170,7 +173,7 @@ a { color: var(--accent); }
 .conv-head h1 { margin: 0; font-size: 22px; font-weight: 400; line-height: 28px; flex: 1; overflow-wrap: anywhere; }
 .conv-head .chip { font-size: 12px; padding: 0 6px; border-radius: 4px; background: var(--chip); vertical-align: middle; margin-left: 8px; }
 .conv-head .chip-x { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; line-height: 1; }
-.conv-head .chip-x:hover { color: var(--danger); }
+.conv-head .chip-x:hover { color: var(--danger-text); }
 .msg { border-bottom: 1px solid var(--border); }
 .msg-head { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; cursor: pointer; }
 .msg.collapsed .msg-head { padding-block: 10px; }
@@ -204,7 +207,7 @@ a { color: var(--accent); }
 .card { background: var(--surface); padding: 40px; border-radius: 28px; box-shadow: var(--shadow); max-width: 400px; }
 .btn { border: 0; border-radius: 20px; padding: 10px 24px; background: var(--accent); color: var(--surface); font-weight: 500; cursor: pointer; }
 .btn.tonal { background: var(--accent-soft); color: var(--text); }
-.error { color: var(--danger); }
+.error { color: var(--danger-text); }
 
 /* ---- Mobile ---- */
 .only-mobile { display: none; }
@@ -280,7 +283,7 @@ a { color: var(--accent); }
 .label-form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .label-form input[aria-invalid='true'] { border-color: var(--danger); }
 .rozie-dialog .label-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-3); }
-.rozie-dialog .label-error { margin: 6px 0 16px; min-height: 18px; font-size: 13px; color: var(--danger); }
+.rozie-dialog .label-error { margin: 6px 0 16px; min-height: 18px; font-size: 13px; color: var(--danger-text); }
 
 /* ---- Compose ---- */
 .link-btn { border: 0; background: none; color: var(--text-3); cursor: pointer; padding: 0; font-size: 13px; }
@@ -340,7 +343,7 @@ a { color: var(--accent); }
   .composer.inline { margin: 8px; }
   .reply-bar { padding-left: 16px; flex-wrap: wrap; }
 }
-.draft-tag { color: var(--danger); font-weight: 500; }
+.draft-tag { color: var(--danger-text); font-weight: 500; }
 
 /* ---- rozie theme bridge: map component tokens onto app tokens (so dark mode applies) ---- */
 :root {
@@ -454,12 +457,12 @@ a { color: var(--accent); }
 .event-card .card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .event-card .card-actions button { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
 .event-card .card-actions button:hover { background: var(--hover); }
-.event-card .card-actions .danger-link { color: var(--danger); }
+.event-card .card-actions .danger-link { color: var(--danger-text); }
 .event-card .why-readonly { color: var(--text-3); font-size: 13px; margin-top: 12px; }
 .event-form input[type='text'], .event-form select { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; }
 .event-form input[type='text']:focus, .event-form select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .event-form select { margin: 4px 0; }
-.event-form .form-error { color: var(--danger); font-size: 13px; min-height: 1em; margin: 4px 0; }
+.event-form .form-error { color: var(--danger-text); font-size: 13px; min-height: 1em; margin: 4px 0; }
 
 /* Signature under the composer's text; contain: content keeps a signature's own styles (even position: fixed) inside its box. */
 .compose-signature { display: flex; align-items: flex-start; gap: 4px; margin: 0 12px 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
@@ -488,7 +491,7 @@ a { color: var(--accent); }
 .settings-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
 .settings-form input, .settings-form textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px; }
 .field-static, .rozie-dialog .field-static { margin: 0; color: var(--text); font-size: 14px; }
-.field-error, .rozie-dialog .field-error { margin: 0 0 4px; min-height: 1em; color: var(--danger); font-size: 13px; }
+.field-error, .rozie-dialog .field-error { margin: 0 0 4px; min-height: 1em; color: var(--danger-text); font-size: 13px; }
 .signature-editor { border: 1px solid var(--border); border-radius: 8px; min-height: 120px; }
 .settings-version { margin: 32px 0 0; color: var(--text-3); font-size: 12px; }
 @media (max-width: 600px) {

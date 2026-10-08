@@ -11,6 +11,10 @@ import { createNotifyDialog, type NotifyAnswer, type NotifyAsk } from './NotifyD
 
 /** FullCalendar re-creates every event element on a refetch; the id on the element lets a card find its event again. */
 const CALENDAR_OPTIONS = {
+  // Text arrows, not FullCalendar's icon font: its icons are role="img" with no name. The buttons keep
+  // their own names ("Previous week").
+  buttonIcons: false,
+  buttonText: { prev: '‹', next: '›' },
   eventDidMount: ({ event, el }: { event: { id: string }; el: HTMLElement }) => {
     el.dataset.eventId = event.id;
   },

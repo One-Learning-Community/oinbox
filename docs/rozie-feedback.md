@@ -279,4 +279,20 @@ Two things from the same audit:
 2. The root element gets a `toastslot="({toast:e,dismiss:n})=>…"` attribute: the slot function is
    being spread onto the DOM node as a string. Harmless, but it is the whole function source.
 Not blocking the build; A6 in `docs/beta-audit.md` depends on (1).
+3. An error toast should be assertive (`role="alert"`), the others polite. oinbox used to set that on
+   its own element inside the slot; it no longer sets any role there (one region, not two nested),
+   so until the toaster does this, errors are announced politely.
+**Intent (2026-10-08): these three are to be fixed in rozie before the beta-readiness slice is
+finished; oinbox is already written as though they are.**
+
+## Popover 0.3.0 — the panel can leave the viewport on a narrow screen (2026-10-08)
+On a 390px-wide screen the calendar event card (a `bare` popover with `strategy="fixed"`,
+`placement="right-start"`, anchored to an event near the left of the week grid) is laid out with its
+right edge at 521px: it is neither flipped nor shifted back into view, so text is cut off and the
+Edit and Delete buttons can be out of reach (`docs/beta-audit.md`, P2). oinbox caps the card's own
+width to the viewport; keeping the panel inside the viewport (floating-ui `shift`, with `flip` and a
+`size` limit) is the popover's part. `e2e/phone.spec.ts` "the calendar opens in day view and an event
+opens on tap" is an expected failure until then.
+**Intent (2026-10-08): to be fixed in rozie before the slice is finished, with the `aria-modal` item
+above.**
 

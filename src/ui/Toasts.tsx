@@ -3,6 +3,8 @@ import { Show } from 'solid-js';
 import type { ToastFn } from '../app/actions';
 
 /**
+ * Announcing toasts is rozie Toaster's job (docs/rozie-feedback.md: standing live regions, and
+ * `alert` for errors, are asked for there and assumed here).
  * rozie Toast can't carry an action (docs/rozie-feedback.md), so actions live in a
  * side map keyed by toast id and render through toastSlot.
  */
@@ -29,7 +31,8 @@ export function createToasts() {
       toastSlot={({ toast: t, dismiss }) => {
         const action = () => actions.get(t.id);
         return (
-          <div class="toast" role={t.type === 'error' ? 'alert' : 'status'}>
+          // No role here: the live region is the toaster's. A second one inside it can be read twice.
+          <div class="toast" data-type={t.type}>
             <span class="toast-msg">{t.message}</span>
             <Show when={action()}>
               {(a) => (

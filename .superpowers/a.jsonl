@@ -1,0 +1,4 @@
+{"name":"event card (light)","id":"aria-allowed-attr","impact":"critical","target":"#rozie-popover-panel","summary":"Fix all of the following: ARIA attribute is not allowed: aria-modal=\"false\""}
+{"name":"event form (light)","id":"aria-allowed-attr","impact":"critical","target":"#rozie-popover-panel","summary":"Fix all of the following: ARIA attribute is not allowed: aria-modal=\"false\""}
+{"name":"event card (dark)","id":"aria-allowed-attr","impact":"critical","target":"#rozie-popover-panel","summary":"Fix all of the following: ARIA attribute is not allowed: aria-modal=\"false\""}
+{"name":"event form (dark)","id":"aria-allowed-attr","impact":"critical","target":"#rozie-popover-panel","summary":"Fix all of the following: ARIA attribute is not allowed: aria-modal=\"false\""}
