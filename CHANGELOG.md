@@ -16,6 +16,7 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 ### Known limits
 
 - Pasting or dropping several images at once inserts the first only; the toolbar button takes several.
+- After an image is pasted or dropped into the text, the first key typed replaces it, because the editor leaves it selected; click beside it first. Inserting with the toolbar button is not affected. This is in the editor component (docs/rozie-feedback.md).
 - Images cannot be resized, and are uploaded at their original size. Stalwart's default allows an account 50 MB of uploads an hour.
 
 ## 0.1.0-beta.1

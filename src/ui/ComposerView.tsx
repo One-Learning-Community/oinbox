@@ -1,3 +1,4 @@
+import type { CommandProps } from '@tiptap/core';
 import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
 import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
@@ -33,7 +34,8 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
     for (const file of files) {
       try {
         const src = await c.insertImage(file);
-        editor?.chain().focus().setImage({ src, alt: file.name }).run();
+        // setImage leaves the image selected, and typing would replace it: put the caret after it.
+        editor?.chain().focus().setImage({ src, alt: file.name }).command(({ state, commands }: CommandProps) => commands.setTextSelection(state.selection.to)).run();
       } catch {
         // insertImage has told the user.
       }

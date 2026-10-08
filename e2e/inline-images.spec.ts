@@ -66,6 +66,7 @@ test('an image put between two paragraphs is sent inline and arrives in place', 
 
 test('a pasted image goes into the text, not the attachments', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'building a paste with a file needs Chromium\'s ClipboardEvent');
+  test.fail(true, 'rozie TipTap leaves a pasted image selected, so typing replaces it: docs/rozie-feedback.md, "paste and drop leave the image selected"');
   const subject = newSubject();
   await openInbox(page);
   const c = await composeNew(page, { to: BOB, subject, body: 'Pasted below.' });
@@ -78,6 +79,10 @@ test('a pasted image goes into the text, not the attachments', async ({ page, br
   await expect(editorImages(c)).toHaveCount(1);
   await expect.poll(() => loaded(editorImages(c))).toBe(true);
   await expect(c.locator('.compose-attachments')).toHaveCount(0);
+  await page.keyboard.type(' pmark');
+  await expect(bodyEditor(c)).toContainText('pmark');
+  // Typing straight after the paste must not replace the image.
+  await expect(editorImages(c)).toHaveCount(1);
   await expect(saveStatus(c)).toHaveText('Draft saved');
 });
 
@@ -167,6 +172,7 @@ test('a forward carries the inline image and the attachment', async ({ page }) =
 
 test('an image dropped on the text goes inline; dropped elsewhere on the composer it is attached', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'building a drop with a file needs Chromium\'s DataTransfer');
+  test.fail(true, 'rozie TipTap leaves a dropped image selected, so typing replaces it: docs/rozie-feedback.md, "paste and drop leave the image selected"');
   const subject = newSubject();
   await openInbox(page);
   const c = await composeNew(page, { to: BOB, subject, body: 'Dropped on this.' });
@@ -183,13 +189,17 @@ test('an image dropped on the text goes inline; dropped elsewhere on the compose
       }
     }, [PNG_BASE64, at]);
 
+  await drop(c.locator('.composer-actions'), 'none');
+  await expect(c.locator('.compose-attachments .attachment')).toHaveCount(1);
+  await expect(editorImages(c)).toHaveCount(0);
+
   await drop(bodyEditor(c), 'centre');
   await expect(editorImages(c)).toHaveCount(1);
   await expect.poll(() => loaded(editorImages(c))).toBe(true);
-  await expect(c.locator('.compose-attachments .attachment')).toHaveCount(0);
-
-  await drop(c.locator('.composer-actions'), 'none');
   await expect(c.locator('.compose-attachments .attachment')).toHaveCount(1);
+
+  await page.keyboard.type(' dmark');
+  await expect(bodyEditor(c)).toContainText('dmark');
+  // Typing straight after the drop must not replace the image.
   await expect(editorImages(c)).toHaveCount(1);
 });
-

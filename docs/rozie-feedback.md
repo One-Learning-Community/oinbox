@@ -306,3 +306,17 @@ inserts several, so the gap shows only on paste and drop.
 
 Also noted: the inserted node gets `src` alone. A way to return `{ src, alt }` from `uploadImage`
 would let the image carry its file name as alt text.
+
+## TipTap 0.5.2: paste and drop leave the image selected
+
+Found 2026-10-08 in oinbox's end-to-end tests. With `uploadImage` set, an image pasted into the editor
+(`handlePaste` runs `setImage({ src })`) or dropped on it (`handleDrop` runs `insertContentAt`) is
+inserted as a node selection, so the first key typed afterwards replaces the image.
+
+To reproduce: paste or drop one PNG into a paragraph, then type a few letters. The editor goes from
+`<p>text</p><img …class="ProseMirror-selectednode"><p></p>` to `<p>text</p><p> mark</p><p></p>`: the
+image is gone.
+
+What the wrapper should do: after inserting, put the caret after the image (for `setImage`, follow
+it with `setTextSelection(state.selection.to)`; for `insertContentAt`, select the end of the
+inserted range). oinbox's toolbar button does this itself for the images it inserts.
