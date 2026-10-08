@@ -67,7 +67,13 @@ async function boot() {
         connection.reportFailure('request', e);
         throw e;
       }),
-    onUnauthorized: () => auth.renew(),
+    onUnauthorized: async () => {
+      const renewed = await auth.renew();
+      // A refresh the server refused drops the tokens: the session is over, whoever catches the error
+      // (an autosave swallows it). A refresh that failed on the network keeps them, and is not a sign-out.
+      if (!renewed && !auth.isSignedIn()) sessionLost();
+      return renewed;
+    },
     onOutcome: (e) => (e === null ? connection.reportSuccess('request') : connection.reportFailure('request', e)),
   });
   let push: PushStream | undefined;
@@ -104,6 +110,8 @@ async function boot() {
   let rendered = false;
   const onAuthError = (e: unknown) => {
     if (e instanceof UnauthorizedError || e instanceof NotSignedInError) {
+      // Still holding tokens means the refresh failed on the network, not that the server refused us.
+      if (auth.isSignedIn() && rendered) return true;
       // Before the app is on screen there is nothing to keep: go to the sign-in card.
       if (rendered) sessionLost();
       else signOut();

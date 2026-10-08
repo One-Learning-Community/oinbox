@@ -90,3 +90,30 @@ Seen on the small run: Stalwart threaded the 55 replies into one thread from the
 | # | Severity | Finding | Steps | Fix or reason deferred |
 |---|---|---|---|---|
 | L1 | open | Nothing has been measured at the size this audit is about. | | Needs the corpus: either point me at a copy, say I may download it, or run the three commands in `deploy/README.md` ("Large mailbox"). |
+
+## Network
+
+**Checked:** eight conditions on Chromium, Firefox and WebKit, plus a Stalwart restart and an emulated slow link on Chromium, 2026-10-07.
+**How:** `e2e/network.spec.ts` (7 tests, in CI on every engine) using Playwright's offline mode and routed responses; two throwaway scripts for the restart and the slow link.
+**Exit criteria:** every condition behaves as the spec describes and none loses composer text — **met**, after the two fixes below.
+
+| Condition | Result |
+|---|---|
+| Offline while reading | Banner within a second; loaded threads still open; banner clears and live updates resume without a reload. |
+| Offline during archive | The thread stays in the Inbox (checked on the server) and an error toast shows. |
+| Offline during send | "Couldn't send. Your message is still here."; the composer reopens with recipient, subject and body; sending again after reconnect delivers exactly one copy to Bob. |
+| Offline during draft autosave | "Couldn’t save draft" with Retry; saves by itself after reconnect. |
+| 503 from `/jmap/` | One banner, at most one toast in 10 s, the warm-start mailbox stays on screen, recovery without a reload. |
+| A request that never answers | Covered by unit tests only (`client.test.ts`: a timeout becomes a transport failure; `connection.test.ts`: that raises the banner). Not driven in a browser. |
+| Refresh token rejected | "You've been signed out." in place; the composer and its text stay on screen; after "Sign in again" the draft is restored and the saved copy removed from the browser. |
+| Upload interrupted | "Couldn't attach notes.txt"; the rest of the draft is intact; attaching again after reconnect works. |
+| Stalwart restarted mid-session | Banner, recovery after about 15 s with no reload, an edited draft saved, a new message arrived by push, no duplicate rows, not signed out. |
+| Slow link (400 kbit/s, 400 ms latency) | A cold load took 22 s to first rows before N1 was fixed; opening a loaded thread 0.4 s; the calendar 26 s on first visit (a 278 kB chunk). The page is blank while the script downloads: see N3. |
+
+| # | Severity | Finding | Steps | Fix or reason deferred |
+|---|---|---|---|---|
+| N1 | major | **The app's files were served uncompressed**: the main script is 870 kB on the wire and 265 kB with gzip. On a slow link that is most of the cold-start time. | `curl -H 'accept-encoding: gzip' -D - -o /dev/null http://localhost:8080/assets/index-*.js` | **Fixed here**: `encode zstd gzip` on the static-file block of the Caddyfile (not on the proxied paths, so the event stream is not buffered). The nginx example in the operator guide must do the same. |
+| N2 | major | **A sign-out during a draft autosave went unnoticed.** The autosave swallowed the "not authorised" error, so the app kept looking signed in while every request failed. | Compose, then have the server reject the refresh token. | **Fixed here**: a token refresh the server refuses ends the session at the source, whoever catches the error. A refresh that fails on the network is no longer treated as a sign-out. |
+| N3 | minor | Nothing is shown while the app's script downloads: the page is blank for the whole cold load on a slow link. | Throttle the network and load `/`. | To fix: a few lines of static markup in `index.html` ("oinbox is loading…") that the app replaces. |
+| N4 | minor | The calendar is a 278 kB chunk fetched on first visit; on a slow link the pane is empty for that time with no indicator. | Slow link: click Calendar. | To fix: a "Loading calendar…" fallback around the lazy view. Could also preload the chunk after the inbox is idle. |
+| N5 | note | An idle tab cannot tell that the network has gone until the browser says so or the push stream has been silent for 75 s. Both are now handled (the `offline` event restarts the stream; a watchdog covers a network that drops without closing connections). | | Done in this slice. |
