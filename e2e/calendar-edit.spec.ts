@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { waitLive } from './support/app';
-import { bobMailAbout, calendarIdByName, createEvent, createGuestEvent, createInvitedEvent, destroyBobMailAbout, destroyE2eEvents, eventsByTitle, patchEvent, todayIn } from './support/calendar';
+import { bobMailAbout, calendarIdByName, createEvent, createGuestEvent, createInvitedEvent, destroyBobMailAbout, destroyE2eEvents, eventsByTitle, futureStart, patchEvent, todayIn } from './support/calendar';
 
 const TZ = 'America/New_York';
 test.use({ timezoneId: TZ });
@@ -122,13 +122,15 @@ test('an event can be deleted from its card', async ({ page }) => {
 
 test('a recurring event and an invited event are read-only, with a reason', async ({ page }) => {
   const title = tag();
-  const { cleanup } = await createInvitedEvent(title, `${todayIn(TZ)}T17:00:00`, TZ);
+  const when = futureStart(TZ);
+  const { cleanup } = await createInvitedEvent(title, when.start, TZ);
   try {
     await openWeek(page);
     await event(page, 'Weekly sync').click();
     await expect(page.getByText("Recurring events can't be edited yet.")).toBeVisible();
     await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
     await page.keyboard.press('Escape');
+    if (!when.inThisWeek) await page.locator('.fc-next-button').click();
     await expect(event(page, title)).toBeVisible({ timeout: 15_000 });
     await event(page, title).click();
     await expect(page.getByText(/invited to this event/)).toBeVisible();

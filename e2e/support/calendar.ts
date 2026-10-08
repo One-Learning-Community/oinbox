@@ -20,6 +20,18 @@ export function todayIn(timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 
+/**
+ * A start that is always in the future: `hour`:00 tomorrow in `timeZone`. Stalwart sends no
+ * invitation for an event that has already started, so invited fixtures must not use today.
+ * `inThisWeek` is false when tomorrow is a Sunday, the first day of the next week view.
+ */
+export function futureStart(timeZone: string, hour = 10): { start: string; date: string; inThisWeek: boolean } {
+  const tomorrow = new Date(Date.now() + 24 * 3600_000);
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(tomorrow);
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(tomorrow);
+  return { start: `${date}T${String(hour).padStart(2, '0')}:00:00`, date, inThisWeek: weekday !== 'Sun' };
+}
+
 /** Create a timed event in alice's default calendar; returns its id. */
 export async function createEvent(title: string, start: string, timeZone: string, duration = 'PT1H'): Promise<string> {
   const accountId = await calendarAccount();
