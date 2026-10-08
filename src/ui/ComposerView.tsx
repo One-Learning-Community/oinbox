@@ -1,9 +1,9 @@
 import type { CommandProps } from '@tiptap/core';
 import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
-import { formatAddress, fromEditorHtml, toEditorHtml } from '../mail/compose';
+import { editorTakesDrop, formatAddress, fromEditorHtml, toEditorHtml } from '../mail/compose';
 import { fileSize } from '../mail/format';
 import { FormatToolbar } from './FormatToolbar';
 import { Icon } from './icons';
@@ -21,6 +21,20 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
   onCleanup(() => {
     const lost = !document.activeElement || document.activeElement === document.body || root?.contains(document.activeElement);
     if (opener?.isConnected && lost) queueMicrotask(() => opener.focus());
+  });
+  // The editor takes the first image of any drop and ignores the rest: oinbox decides, before the editor sees it,
+  // that a drop which is not exactly one image is attached whole (docs/rozie-feedback.md, "paste and drop take one image").
+  const attachWhole = (e: DragEvent) => {
+    const files = [...(e.dataTransfer?.files ?? [])];
+    if (!files.length || editorTakesDrop(files)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    void c.attach(files);
+  };
+  onMount(() => {
+    root?.addEventListener('drop', attachWhole, true);
+    onCleanup(() => root?.removeEventListener('drop', attachWhole, true));
   });
   let fileInput: HTMLInputElement | undefined;
   const d = () => c.draft();

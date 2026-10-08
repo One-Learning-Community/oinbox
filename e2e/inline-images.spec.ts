@@ -32,18 +32,19 @@ const pasteImage = (target: Locator) =>
     data.items.add(new File([bytes], 'image.png', { type: 'image/png' }));
     el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
   }, PNG_BASE64);
-/** Both events on `target`, with a file made in the page; a drop on the text lands at the middle of its box. */
-const dropImage = (target: Locator, at: 'centre' | 'none') =>
-  target.evaluate((el, [b64, where]) => {
-    const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+/** Both events on `target`, with files made in the page; a drop on the text lands at the middle of its box. */
+const dropFiles = (target: Locator, at: 'centre' | 'none', files: { name: string; type: string }[]) =>
+  target.evaluate((el, [b64, where, list]) => {
+    const bytes = Uint8Array.from(atob(b64 as string), (ch) => ch.charCodeAt(0));
     const data = new DataTransfer();
-    data.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }));
+    for (const f of list as { name: string; type: string }[]) data.items.add(new File([bytes], f.name, { type: f.type }));
     const box = el.getBoundingClientRect();
     const pos = where === 'centre' ? { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 } : {};
     for (const type of ['dragover', 'drop']) {
       el.dispatchEvent(new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true, ...pos }));
     }
-  }, [PNG_BASE64, at]);
+  }, [PNG_BASE64, at, files] as const);
+const dropImage = (target: Locator, at: 'centre' | 'none') => dropFiles(target, at, [{ name: 'dropped.png', type: 'image/png' }]);
 
 test('an image put between two paragraphs is sent inline and arrives in place', async ({ page }) => {
   const subject = newSubject();
@@ -229,6 +230,28 @@ test('an image dropped on the text goes inline; dropped elsewhere on the compose
   await dropImage(c.locator('.composer-actions'), 'none');
   await expect(c.locator('.compose-attachments .attachment')).toHaveCount(1);
   await expect(editorImages(c)).toHaveCount(1);
+});
+
+test('files dropped on the text together are all attached, and none goes inline', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'building a drop with a file needs Chromium\'s DataTransfer');
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Dropped on this.' });
+
+  await dropFiles(bodyEditor(c), 'centre', [{ name: 'dropped.png', type: 'image/png' }, { name: 'notes.txt', type: 'text/plain' }]);
+  await expect(c.locator('.compose-attachments .attachment')).toHaveCount(2);
+  await expect(editorImages(c)).toHaveCount(0);
+});
+
+test('a lone file that is not an image, dropped on the text, is attached', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'building a drop with a file needs Chromium\'s DataTransfer');
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Dropped on this.' });
+
+  await dropFiles(bodyEditor(c), 'centre', [{ name: 'notes.txt', type: 'text/plain' }]);
+  await expect(c.locator('.compose-attachments .attachment')).toHaveCount(1);
+  await expect(editorImages(c)).toHaveCount(0);
 });
 
 // Expected to fail until rozie's TipTap is fixed; it fails loudly when it starts to pass.

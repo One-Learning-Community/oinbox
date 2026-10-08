@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EmailRec } from '../sync/engine';
 import type { EmailBodyPart, EmailBodyStructure } from '../jmap/types';
-import { blobIdChanges, buildEmailCreate, fromEditorHtml, initialDraft, parseAddressList, formatAddress, referencedCids, splitDraftHtml, splitParts, toEditorHtml, withBlobIds, type Draft } from './compose';
+import { blobIdChanges, buildEmailCreate, editorTakesDrop, fromEditorHtml, initialDraft, parseAddressList, formatAddress, referencedCids, splitDraftHtml, splitParts, toEditorHtml, withBlobIds, type Draft } from './compose';
 
 const me = new Set(['alice@example.test']);
 const original: EmailRec = {
@@ -332,5 +332,18 @@ describe('the original\'s parts in a reply and a forward', () => {
       }, me);
       expect(d.quoteHtml).not.toContain('src="cid:"');
     });
+  });
+});
+
+describe('editorTakesDrop', () => {
+  const image = (name = 'a.png') => new File(['x'], name, { type: 'image/png' });
+  const pdf = new File(['x'], 'a.pdf', { type: 'application/pdf' });
+
+  it('is true only for a drop of exactly one image', () => {
+    expect(editorTakesDrop([image()])).toBe(true);
+    expect(editorTakesDrop([pdf])).toBe(false);
+    expect(editorTakesDrop([image(), pdf])).toBe(false);
+    expect(editorTakesDrop([image('a.png'), image('b.png')])).toBe(false);
+    expect(editorTakesDrop([])).toBe(false);
   });
 });

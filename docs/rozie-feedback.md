@@ -304,6 +304,11 @@ Found 2026-10-08 while adding inline images. With `uploadImage` set, the wrapper
 several images inserts only the first; the others are dropped silently. oinbox's toolbar button
 inserts several, so the gap shows only on paste and drop.
 
+oinbox therefore sends any drop of several files, or of one file that is not an image, to the
+attachments before the editor sees it (`attachWhole` in `src/ui/ComposerView.tsx`, a capture
+listener on the composer). That rule can go once the wrapper handles several files. Paste is not
+covered: several images pasted at once still insert the first only.
+
 Also noted: the inserted node gets `src` alone. A way to return `{ src, alt }` from `uploadImage`
 would let the image carry its file name as alt text.
 
