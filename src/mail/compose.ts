@@ -62,7 +62,9 @@ export function formatAddress(a: EmailAddress): string {
 }
 
 // Only the src attribute is rewritten, never the document: the editor must get back exactly what it gave.
-const IMG_SRC = /(<img\b[^>]*?\ssrc=)(["'])(.*?)\2/gi;
+// Quoted values are stepped over whole, so a > or a src= inside an earlier attribute is not taken for the tag's end or its src.
+const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')`;
+const IMG_SRC = new RegExp(`(<img\\b${ATTRS}*?\\ssrc=)(["'])(.*?)\\2`, 'gi');
 
 const unescapeAttr = (s: string) => s.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
@@ -158,7 +160,7 @@ export function parseAddressList(input: string): EmailAddress[] {
   return out;
 }
 
-const CID_MARK = /<img\b[^>]*?\sdata-oinbox-cid="([^"]*)"[^>]*>/gi;
+const CID_MARK = new RegExp(`<img\\b${ATTRS}*?\\sdata-oinbox-cid="([^"]*)"${ATTRS}*>`, 'gi');
 
 /** The original's parts a quote can refer to or carry along. */
 function originalParts(e: EmailRec): EmailBodyPart[] {

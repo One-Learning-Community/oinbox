@@ -165,6 +165,18 @@ describe('inline images in the HTML', () => {
     expect(toEditorHtml(stored, urls)).toBe(editor);
   });
 
+  it('steps over a > inside an earlier attribute', () => {
+    const editor = '<p>a</p><img alt="a>b" src="blob:http://x/1"><img title=\'x>y\' alt="" src="blob:http://x/2">';
+    const stored = fromEditorHtml(editor, urls);
+    expect(stored).toBe('<p>a</p><img alt="a>b" src="cid:c1@oinbox"><img title=\'x>y\' alt="" src="cid:a&amp;b@x">');
+    expect(toEditorHtml(stored, urls)).toBe(editor);
+  });
+
+  it('does not read a src that sits inside another attribute\'s value', () => {
+    const html = '<img alt=" src=\'cid:in@alt\'" src="cid:real@x">';
+    expect([...referencedCids(html)]).toEqual(['real@x']);
+  });
+
   it('leaves an image it has no URL for, and HTML without images, untouched', () => {
     expect(toEditorHtml('<img src="cid:other@x">', urls)).toBe('<img src="cid:other@x">');
     expect(toEditorHtml('<p>data-src="cid:c1@oinbox"</p>', urls)).toBe('<p>data-src="cid:c1@oinbox"</p>');
@@ -172,6 +184,7 @@ describe('inline images in the HTML', () => {
 
   it('finds the content ids referred to, with or without angle brackets', () => {
     expect([...referencedCids('<img src="cid:c1@oinbox"><img alt="" src=\'cid:&lt;c2@x&gt;\'><img src="cid:a&amp;b@x"><img src="x.png">')]).toEqual(['c1@oinbox', 'c2@x', 'a&b@x']);
+    expect([...referencedCids('<img alt="a>b" src="cid:c3@x">')]).toEqual(['c3@x']);
   });
 });
 
@@ -352,6 +365,16 @@ describe('the original\'s parts in a reply and a forward', () => {
         expect(img.getAttribute('src')).toBe(`cid:${cids[i]}`);
       });
       expect(d.inline.map((x) => x.cid)).toEqual(cids);
+    });
+
+    it('gives the source back to an image whose earlier attribute holds a >', () => {
+      const d = initialDraft('reply', {
+        ...original,
+        htmlBody: [{ partId: 'h', type: 'text/html' } as never],
+        bodyValues: { h: { value: '<img alt="a>b" src="cid:c1@x">', isEncodingProblem: false, isTruncated: false } },
+        attachments: [bodyPart({ blobId: 'O1', type: 'image/png', name: 'x.png', cid: 'c1@x', disposition: 'inline' })],
+      }, me);
+      expect([...referencedCids(d.quoteHtml)]).toEqual(['c1@x']);
     });
 
     it('never gives a source back to an image whose part has no content id', () => {
