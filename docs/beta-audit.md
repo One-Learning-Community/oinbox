@@ -67,3 +67,26 @@ What passed: every icon button has a name; every other control showed a visible 
 | P6 | minor | A message's date wraps onto three lines at 360px ("Sep 25, 2026 at 5:28 PM (12 days ago)"). | 360px: open a thread. | Deferred, cosmetic; a shorter date on narrow screens would do. |
 
 What passed: no screen scrolls sideways; the drawer opens, switches mailbox and closes; a thread opens and reads, including an HTML message; a new message fills the screen, sends and arrives; archive, label and search work by touch; settings fit, the vacation switch toggles and the identity dialog fits; the calendar opens in day view below 700px (this was already in place).
+
+## Large mailbox
+
+**Checked:** the tooling only, on a 375-message mailbox with one 55-message thread, 2026-10-07. **The 50,000-message run has not been done**: it needs the Enron corpus (about 1.7 GB), which is not on this machine and was not downloaded without asking.
+**How:** `deploy/seed/seed_bulk.py` imports a corpus `maildir/` into `carol@example.test` with `Email/import` (50 per request, skipping Message-IDs already present; a re-run over 375 messages takes half a second). `e2e/perf.spec.ts` (`pnpm e2e:perf`, tagged `@perf`, never in CI) signs in as carol and measures the table below.
+**Exit criteria:** thresholds at 50,000 messages — **not checked**.
+
+| Measure | Threshold | At 375 messages (not the test) | At 50,000 |
+|---|---|---|---|
+| Cold start to first rows | 3 s | under 0.5 s | not run |
+| Warm start to first rows | 1 s | under 0.5 s | not run |
+| Scroll: longest time with no rows | 500 ms | 0 ms (62 rows) | not run |
+| Scroll: 95th percentile frame | 32 ms | 16.7 ms | not run |
+| Search to first results | 2 s | 0.2 s | not run |
+| Open a 55-message thread | 1.5 s | 0.1 s | not run |
+| Heap growth while a push arrives every 10 s | +20% over 9 min | +8% over 1 min | not run |
+| Browser storage used | 20 MB | 0.1 MB | not run |
+
+Seen on the small run: Stalwart threaded the 55 replies into one thread from their `References` headers; folders mapped to the Inbox, Sent Items and two labels; no import failures.
+
+| # | Severity | Finding | Steps | Fix or reason deferred |
+|---|---|---|---|---|
+| L1 | open | Nothing has been measured at the size this audit is about. | | Needs the corpus: either point me at a copy, say I may download it, or run the three commands in `deploy/README.md` ("Large mailbox"). |

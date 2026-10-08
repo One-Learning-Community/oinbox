@@ -52,7 +52,7 @@ Caddy serves `/srv/oinbox/dist` and falls back to `index.html` for unknown paths
 | Token | http://localhost:8080/auth/token |
 | SMTP for tests | `localhost:2525` (plain MTA, no auth, local delivery to `@example.test`) |
 | Stalwart WebUI | http://localhost:8080/admin/ |
-| Users | `alice@example.test`, `bob@example.test`, password `oinbox-dev-pass` |
+| Users | `alice@example.test`, `bob@example.test`, and `carol@example.test` (empty; see "Large mailbox"), password `oinbox-dev-pass` |
 | Admin | `admin` / `oinbox-admin-pass` (`STALWART_RECOVERY_ADMIN`, for dev only) |
 | OAuth client | `client_id=oinbox`, public (no secret), PKCE S256 required. Redirect URIs: `http://localhost:8080/auth/callback` and `http://localhost:5173/auth/callback` |
 
@@ -71,6 +71,23 @@ Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwa
 * `STALWART_PUBLIC_URL=http://localhost:8080` controls the base of every URL in the JMAP session and in the OAuth/OIDC discovery documents.
 * `stalwart/config.json` names only the datastore (RocksDB). In Stalwart 0.16, every other setting lives in the database and is applied from `plan.ndjson`. There is no TOML and no `/api` REST management API any more.
 * `OidcProvider.requireClientRegistration=true`: unregistered `client_id`s and unregistered `redirect_uri`s are rejected. The WebUI's `stalwart-webui` client is registered too.
+
+## Large mailbox (carol)
+
+`carol@example.test` (same password) is an empty third account for the large-mailbox measurements in `e2e/perf.spec.ts`. `seed/seed_bulk.py` fills it with real mail from the CMU Enron corpus through `Email/import`:
+
+1. Download and extract the corpus from https://www.cs.cmu.edu/~enron/ (about 1.7 GB extracted). Keep it outside this repository.
+2. Import, from `deploy/`:
+
+   ```sh
+   docker run --rm --network oinbox_default -v "$PWD/seed:/seed:ro" -v "/path/to/enron/maildir:/corpus:ro" \
+     python:3.13.15-alpine python3 -u /seed/seed_bulk.py --source /corpus --count 50000
+   ```
+
+   `--count` is the target size of the mailbox and `--spread-days` (default 730) the span the messages are re-dated across. The script skips Message-IDs carol already has, so it can be stopped and run again. Try `--count 2000` first.
+3. Measure: `pnpm build && pnpm e2e:perf` (about 15 minutes; `PERF_QUICK=1` shortens the heap test). Results are printed and written to `test-results/perf.json`.
+
+Corpus folders become the Inbox, Sent Items and up to 20 labels. `docker compose down -v` removes the mailbox with everything else.
 
 ## Useful commands
 
