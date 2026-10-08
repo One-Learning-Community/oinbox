@@ -114,10 +114,14 @@ The message is described with `bodyStructure` and `bodyValues`:
 
 `saveDraft` changes in two ways.
 
-1. **Create first, destroy after.** The new version is created in one request; the previous version is destroyed in a second request, and only once the create has succeeded. A failed save now leaves the last saved version on the server. A failed destroy is logged and not reported: the draft is saved, and a stale copy in Drafts is the lesser harm. For a moment both versions exist; the Drafts list may show both until the second request lands.
-2. **Return the new blob ids.** The create request also reads the new message's `attachments` (a back-reference to the created id), and `saveDraft` returns them.
+1. **Create first, destroy after.** The new version is created in one request; the previous version is destroyed in a second request, and only once the create has succeeded. A failed save now leaves the last saved version on the server. For a moment both versions exist; the Drafts list may show both until the second request lands.
+2. **Return the new blob ids.** The second request also reads the new message's `attachments`, and `saveDraft` returns them. (A back-reference from the create to its own new id would save nothing and is refused by Stalwart: `invalidResultReference`.)
 
-After a save the composer replaces the blob ids in its draft with the new message's: inline images are matched by content id, attachments by their position among the remaining parts (the order they were sent in). Only the entries that were in the saved snapshot are updated, so an attachment added while the save was in flight keeps its uploaded blob id until the next save.
+If the second request fails, the draft is still saved. The composer remembers the versions it could not confirm as removed and passes them with its next save, so no stale copy stays in Drafts.
+
+After a save the composer replaces the blob ids in its draft with the new message's: inline images are matched by content id, attachments by name and type, in the order they were sent. Only the entries that were in the saved snapshot are updated, so an attachment added while the save was in flight keeps its uploaded blob id until the next save.
+
+If a save is refused with `blobNotFound` (the answer to an earlier save was lost, or an image was out of the text when the last version was stored and has come back with undo), the composer recovers once: it reads the stored version's blob ids, uploads again any image that version does not hold (it keeps each image's bytes while it is open), and saves again.
 
 This fixes both faults described above, for attachments as well as images.
 
