@@ -261,3 +261,22 @@ package to dogfood. Not blocking.
 `FullCalendarEventRef` is `{ id, title, start, end }`. A drop onto the all-day row (or off it) can't
 be told apart from a plain move, so oinbox reads `ref.getApi().getEventById(id).allDay` through the
 handle. An `allDay` field on the payload would remove that lookup. Not blocking.
+
+## Popover 0.3.0 — panel has `aria-modal="false"` without a dialog role (2026-10-07)
+Found by axe in the beta audit (`aria-allowed-attr`, critical): `#rozie-popover-panel` carries
+`aria-modal="false"` while it has no `role="dialog"`/`alertdialog` (oinbox uses the popover `bare`,
+with its own `role="dialog"` on the card inside). `aria-modal` is only allowed on dialog roles, so the
+attribute should be left off unless the panel has one. This is the one axe failure oinbox cannot fix
+on its side: `e2e/a11y.spec.ts` keeps "event card" and "event form" as expected failures until then.
+
+## Toast 0.2.2 — no standing live region; `toastSlot` leaks into the DOM (2026-10-07)
+Two things from the same audit:
+1. The toaster renders `role="status"` on each `.rozie-toast` as it is inserted. A live region that
+   arrives together with its content is often not announced (VoiceOver especially). A polite and an
+   assertive region that stay mounted, with the text written into them, is the reliable pattern.
+   With `toastSlot`, oinbox's own element also has a role, so the two nest; a way to tell the toaster
+   "the slot supplies the role" would avoid that.
+2. The root element gets a `toastslot="({toast:e,dismiss:n})=>…"` attribute: the slot function is
+   being spread onto the DOM node as a string. Harmless, but it is the whole function source.
+Not blocking the build; A6 in `docs/beta-audit.md` depends on (1).
+
