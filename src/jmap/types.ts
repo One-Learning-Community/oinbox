@@ -54,6 +54,17 @@ export interface EmailBodyPart {
   charset?: string | null;
 }
 
+/** A part as given to Email/set create in `bodyStructure` (RFC 8621 §4.1.4). */
+export interface EmailBodyStructure {
+  type: string;
+  partId?: string;
+  blobId?: Id;
+  name?: string | null;
+  cid?: string | null;
+  disposition?: string | null;
+  subParts?: EmailBodyStructure[];
+}
+
 export interface EmailBodyValue {
   value: string;
   isEncodingProblem: boolean;
@@ -83,6 +94,7 @@ export interface Email {
   textBody: EmailBodyPart[];
   htmlBody: EmailBodyPart[];
   attachments: EmailBodyPart[];
+  bodyStructure?: EmailBodyStructure;
   bodyValues: Record<string, EmailBodyValue>;
 }
 

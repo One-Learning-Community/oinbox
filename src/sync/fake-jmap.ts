@@ -2,7 +2,7 @@
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import { CALENDARS_PARSE, VACATION, type Calendar, type CalendarEvent, type Email, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
+import { CALENDARS_PARSE, VACATION, type Calendar, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
@@ -79,6 +79,40 @@ export class FakeJmap {
   }
 
   private createdEmails = 0;
+
+  /** Blob ids of uploads (tests add them). Stalwart keeps an upload usable after a message has used it. */
+  uploads = new Set<string>();
+
+  /** A blob a new message may refer to: an upload, or a part of a message that still exists. */
+  private blobExists(id: string): boolean {
+    if (this.uploads.has(id)) return true;
+    for (const e of this.emails.values()) if ((e.attachments ?? []).some((p) => p.blobId === id)) return true;
+    return false;
+  }
+
+  /** A created email's parts as Stalwart stores them: every part gets a blob id of this message's own. Null: a blob is missing. */
+  private storeParts(id: string, email: Partial<Rec>): Partial<Rec> | null {
+    const textBody: EmailBodyPart[] = [];
+    const htmlBody: EmailBodyPart[] = [];
+    const attachments: EmailBodyPart[] = [];
+    let n = 0;
+    let missing = false;
+    const leaf = (p: EmailBodyStructure) => {
+      const part: EmailBodyPart = { partId: p.partId ?? String(n + 1), blobId: `${id}.p${++n}`, size: 0, type: p.type, name: p.name ?? null, cid: p.cid ?? null, disposition: p.disposition ?? null };
+      if (p.partId) (p.type === 'text/html' ? htmlBody : textBody).push(part);
+      else {
+        if (!p.blobId || !this.blobExists(p.blobId)) missing = true;
+        attachments.push(part);
+      }
+    };
+    const walk = (p: EmailBodyStructure): void => (p.subParts ? p.subParts.forEach(walk) : leaf(p));
+    if (email.bodyStructure) walk(email.bodyStructure);
+    else for (const p of [...(email.textBody ?? []), ...(email.htmlBody ?? []), ...(email.attachments ?? [])]) leaf(p as EmailBodyStructure);
+    if (missing) return null;
+    const rest = { ...email };
+    delete rest.bodyStructure;
+    return { ...rest, textBody, htmlBody, attachments };
+  }
 
   bump(c: Partial<{ created: string[]; updated: string[]; destroyed: string[] }>) {
     this.emailState++;
@@ -410,16 +444,28 @@ export class FakeJmap {
           updated[id] = null;
         }
         if (Object.keys(updated).length) this.bump({ updated: Object.keys(updated) });
-        // Drafts: the composer saves by creating a new email and destroying the one it replaces.
+        // Drafts: the composer saves by creating a new email, then destroying the ones it replaces.
         const created: Record<string, { id: string; threadId: string }> = {};
+        const notCreated: Record<string, { type: string; description: string }> = {};
         for (const [cid, email] of Object.entries((args.create ?? {}) as Record<string, Partial<Rec>>)) {
-          const id = `n${++this.createdEmails}`;
-          this.addEmail({ receivedAt: new Date().toISOString(), ...email, id, threadId: `t-${id}` } as Rec);
+          const id = `n${this.createdEmails + 1}`;
+          const stored = this.storeParts(id, email);
+          if (!stored) {
+            notCreated[cid] = { type: 'blobNotFound', description: 'blobId does not exist on this server.' };
+            continue;
+          }
+          this.createdEmails++;
+          this.addEmail({ receivedAt: new Date().toISOString(), ...stored, id, threadId: `t-${id}` } as Rec);
           created[cid] = { id, threadId: `t-${id}` };
         }
+        // As Stalwart: a failed create does not stop the destroy.
         const destroyed = ((args.destroy ?? []) as string[]).filter((id) => this.emails.delete(id));
         if (destroyed.length) this.bump({ destroyed });
-        return [name, { accountId: 'a1', oldState: null, newState: `e${this.emailState}`, created, destroyed, updated, notUpdated: Object.keys(notUpdated).length ? notUpdated : null }];
+        return [name, {
+          accountId: 'a1', oldState: null, newState: `e${this.emailState}`, created, destroyed, updated,
+          notCreated: Object.keys(notCreated).length ? notCreated : null,
+          notUpdated: Object.keys(notUpdated).length ? notUpdated : null,
+        }];
       }
     }
     return ['error', { type: 'unknownMethod' }];

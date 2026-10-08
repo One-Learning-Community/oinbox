@@ -100,3 +100,78 @@ describe('FakeJmap vacation response (as Stalwart 0.16.23)', () => {
     expect(vset(s, { textBody: null, htmlBody: 'x'.repeat(1752) }).updated).toEqual({ singleton: null });
   });
 });
+
+describe('FakeJmap message parts (as Stalwart 0.16.23)', () => {
+  const eset = (s: FakeJmap, args: Record<string, unknown>) => s.handle('Email/set', { accountId: 'a1', ...args }, ALL)[1] as Record<string, any>;
+  const message = (blobId: string) => ({
+    subject: 'x',
+    bodyValues: { text: { value: 't' }, html: { value: '<img src="cid:c1@oinbox">' } },
+    bodyStructure: {
+      type: 'multipart/mixed',
+      subParts: [
+        { type: 'multipart/alternative', subParts: [
+          { partId: 'text', type: 'text/plain' },
+          { type: 'multipart/related', subParts: [
+            { partId: 'html', type: 'text/html' },
+            { blobId, type: 'image/png', name: 'a.png', cid: 'c1@oinbox', disposition: 'inline' },
+          ] },
+        ] },
+        { blobId, type: 'application/pdf', name: 'a.pdf', disposition: 'attachment' },
+      ],
+    },
+  });
+  const server = () => {
+    const s = new FakeJmap();
+    s.uploads.add('up1');
+    return s;
+  };
+
+  it('stores a bodyStructure as body parts and attachments, each with a blob id of its own', () => {
+    const s = server();
+    const id = eset(s, { create: { c: message('up1') } }).created.c.id as string;
+    const e = s.emails.get(id)!;
+    expect(e.htmlBody!.map((p) => [p.partId, p.type])).toEqual([['html', 'text/html']]);
+    expect(e.textBody!.map((p) => [p.partId, p.type])).toEqual([['text', 'text/plain']]);
+    expect(e.attachments!.map((p) => [p.name, p.cid, p.disposition])).toEqual([['a.png', 'c1@oinbox', 'inline'], ['a.pdf', null, 'attachment']]);
+    const blobs = e.attachments!.map((p) => p.blobId);
+    expect(new Set(blobs).size).toBe(2);
+    expect(blobs).not.toContain('up1');
+    expect('bodyStructure' in e).toBe(false);
+  });
+
+  it('accepts the blob of an upload again, and the part blob of a message that still exists', () => {
+    const s = server();
+    const first = eset(s, { create: { c: message('up1') } }).created.c.id as string;
+    expect(eset(s, { create: { c: message('up1') } }).created.c).toBeTruthy();
+    const part = s.emails.get(first)!.attachments![0]!.blobId!;
+    expect(eset(s, { create: { c: message(part) } }).created.c).toBeTruthy();
+  });
+
+  it('refuses the part blob of a destroyed message, and an unknown blob', () => {
+    const s = server();
+    const first = eset(s, { create: { c: message('up1') } }).created.c.id as string;
+    const part = s.emails.get(first)!.attachments![0]!.blobId!;
+    eset(s, { destroy: [first] });
+    const r = eset(s, { create: { c: message(part) } });
+    expect(r.created.c).toBeUndefined();
+    expect(r.notCreated.c.type).toBe('blobNotFound');
+    expect(eset(s, { create: { c: message('nope') } }).notCreated.c.type).toBe('blobNotFound');
+  });
+
+  it('accepts a part blob in the request that destroys its message', () => {
+    const s = server();
+    const first = eset(s, { create: { c: message('up1') } }).created.c.id as string;
+    const part = s.emails.get(first)!.attachments![0]!.blobId!;
+    const r = eset(s, { create: { c: message(part) }, destroy: [first] });
+    expect(r.created.c).toBeTruthy();
+    expect(r.destroyed).toEqual([first]);
+  });
+
+  it('still destroys when the create in the same request fails', () => {
+    const s = server();
+    const first = eset(s, { create: { c: message('up1') } }).created.c.id as string;
+    const r = eset(s, { create: { c: message('nope') }, destroy: [first] });
+    expect(r.notCreated.c.type).toBe('blobNotFound');
+    expect(s.emails.has(first)).toBe(false);
+  });
+});
