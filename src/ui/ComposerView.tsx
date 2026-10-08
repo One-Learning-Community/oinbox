@@ -170,7 +170,14 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
         <button type="button" class="icon-btn" title="Attach files" onClick={() => fileInput?.click()}>
           <Icon name="clip" />
         </button>
-        <span class="compose-status" aria-live="polite">{statusText()}</span>
+        <span class="compose-status" aria-live="polite">
+          {statusText()}
+          <Show when={c.status() === 'error'}>
+            <button type="button" class="compose-retry" onClick={() => composers.retrySave(c)}>
+              Retry
+            </button>
+          </Show>
+        </span>
         <button type="button" class="icon-btn" title="Discard draft" onClick={() => void composers.discard(c)}>
           <Icon name="trash" />
         </button>

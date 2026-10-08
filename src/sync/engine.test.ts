@@ -658,3 +658,15 @@ describe('MailEngine settings', () => {
     expect(JSON.stringify(snap)).not.toContain('singleton');
   });
 });
+
+describe('draftState', () => {
+  it('tells a draft from a sent message from a deleted one', async () => {
+    const { server, engine } = setup();
+    server.addEmail({ id: 'd1', threadId: 't9', receivedAt: '2026-09-02T10:00:00Z', mailboxIds: { I: true }, keywords: { $draft: true } }, false);
+    server.addEmail({ id: 's1', threadId: 't10', receivedAt: '2026-09-02T11:00:00Z', mailboxIds: { S: true }, keywords: { $seen: true } }, false);
+    await engine.start();
+    expect(await engine.draftState('d1')).toBe('draft');
+    expect(await engine.draftState('s1')).toBe('sent');
+    expect(await engine.draftState('nope')).toBe('gone');
+  });
+});

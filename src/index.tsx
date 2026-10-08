@@ -131,7 +131,7 @@ async function boot() {
     labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session) : DEFAULT_LIMITS)),
     settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
     nav: createNav(),
-    composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm, recipients.recordSent),
+    composers: createComposers(engine, client, toasts.toast, confirmDialog.confirm, recipients.recordSent, (fn) => connection.onRecovered(fn)),
     recipients,
     images: await createImagePrefs(),
     ...theme,

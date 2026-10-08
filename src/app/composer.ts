@@ -16,6 +16,20 @@ export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 /** auto: follows From. removed / inline: the user took it out, or into the text; From no longer touches it. */
 export type SignatureMode = 'auto' | 'removed' | 'inline';
 
+/** A composer's content, enough to open it again: after a failed send, or after signing in again. */
+export interface RescuedComposer {
+  mode: ComposeMode;
+  draft: Draft;
+  draftId: Id | null;
+  identityId: Id | null;
+  threadId: Id | null;
+  replyTo: Id | null;
+  signatureMode: SignatureMode;
+}
+
+/** The draft this composer was about to save has been sent already: there is nothing left to save or send. */
+class AlreadySentError extends Error {}
+
 export interface Composer {
   id: number;
   mode: ComposeMode;
@@ -45,6 +59,8 @@ export function createComposers(
   confirm: ConfirmFn,
   /** Called once a message has been submitted, with everyone it went to. */
   onSent: (emailId: Id, recipients: EmailAddress[]) => void,
+  /** Registers a callback for when the server can be reached again. */
+  onRecovered?: (fn: () => void) => void,
 ) {
   const [list, setList] = createSignal<Composer[]>([]);
   let seq = 0;
@@ -66,6 +82,14 @@ export function createComposers(
     return identity ? signatureForCompose(identity) : '';
   };
 
+  type Internal = Composer & {
+    save: () => Promise<void>;
+    cancelAutosave: () => void;
+    signatureMode: () => SignatureMode;
+    markDirty: () => void;
+    snapshot: () => RescuedComposer;
+  };
+
   interface Restore {
     draft: Draft;
     draftId: Id | null;
@@ -73,6 +97,8 @@ export function createComposers(
     threadId?: Id | null;
     replyTo?: Id | null;
     signatureMode?: SignatureMode;
+    /** A send of `draftId` failed and we could not find out whether it reached the server. */
+    unconfirmedSend?: boolean;
   }
 
   const create = (mode: ComposeMode, original: EmailRec | null, restore?: Restore): Composer => {
@@ -88,6 +114,7 @@ export function createComposers(
     const [draftId, setDraftId] = createSignal<Id | null>(restore?.draftId ?? null);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let saving: Promise<void> = Promise.resolve();
+    let unconfirmedSend = restore?.unconfirmedSend ?? false;
 
     const doSave = async () => {
       const identity = identities().find((i) => i.id === identityId());
@@ -95,6 +122,13 @@ export function createComposers(
       if (!identity || !drafts) return;
       setStatus('saving');
       try {
+        if (unconfirmedSend && draftId()) {
+          // The last send may have gone through, and saving replaces the draft: that would destroy the sent copy.
+          const state = await engine.draftState(draftId()!);
+          if (state === 'sent') throw new AlreadySentError();
+          if (state === 'gone') setDraftId(null);
+          unconfirmedSend = false;
+        }
         const saved = await engine.saveDraft(buildEmailCreate(draft(), { name: identity.name || null, email: identity.email }, drafts), draftId());
         setDraftId(saved.id);
         if (status() === 'saving') setStatus('saved');
@@ -117,7 +151,7 @@ export function createComposers(
       timer = setTimeout(() => void save().catch(() => undefined), AUTOSAVE_MS);
     };
 
-    const composer: Composer & { save: () => Promise<void>; cancelAutosave: () => void; signatureMode: () => SignatureMode } = {
+    const composer: Internal = {
       id,
       mode,
       threadId: restore?.threadId ?? original?.threadId ?? null,
@@ -168,11 +202,13 @@ export function createComposers(
       save,
       cancelAutosave: () => clearTimeout(timer),
       signatureMode,
+      markDirty: scheduleSave,
+      snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode() }),
     };
     return composer;
   };
 
-  const internals = (c: Composer) => c as Composer & { save: () => Promise<void>; cancelAutosave: () => void; signatureMode: () => SignatureMode };
+  const internals = (c: Composer) => c as Internal;
 
   const remove = (c: Composer) => {
     internals(c).cancelAutosave();
@@ -190,15 +226,38 @@ export function createComposers(
 
   /** Close, keeping the saved draft (Gmail's "Save & close"). */
   const close = async (c: Composer) => {
-    remove(c);
-    if (c.status() === 'dirty') {
+    if (c.status() === 'dirty' || c.status() === 'error') {
       try {
         await internals(c).save();
-        toast('Draft saved.');
       } catch (e) {
-        toast(`Couldn't save draft: ${(e as Error).message}`, 'error');
+        if (!(e instanceof AlreadySentError)) {
+          // Closing now would throw the unsaved text away: that is the user's call, not ours.
+          const ok = await confirm({ title: 'Close without saving?', message: "The draft couldn't be saved, so your latest changes will be lost.", confirmLabel: 'Close anyway' });
+          if (!ok) return;
+        }
+        remove(c);
+        return;
       }
+      toast('Draft saved.');
     }
+    remove(c);
+  };
+
+  /** Try a failed save again (the Retry button, and by itself when the connection returns). */
+  const retrySave = (c: Composer) => void internals(c).save().catch(() => undefined);
+  onRecovered?.(() => {
+    for (const c of list()) if (c.status() === 'error') retrySave(c);
+  });
+
+  /** Composers holding text the server doesn't have yet. */
+  const snapshot = (): RescuedComposer[] =>
+    list().filter((c) => c.status() !== 'idle' && c.status() !== 'saved').map((c) => internals(c).snapshot());
+
+  /** Reopen rescued composers; each saves as soon as it can. */
+  const restore = (items: RescuedComposer[]) => {
+    const reopened = items.map((r) => create(r.mode, null, r));
+    setList([...list(), ...reopened]);
+    for (const c of reopened) internals(c).markDirty();
   };
 
   const discard = async (c: Composer) => {
@@ -229,7 +288,12 @@ export function createComposers(
     try {
       await internals(c).save();
     } catch (e) {
-      toast(`Couldn't send: ${(e as Error).message}`, 'error');
+      if (e instanceof AlreadySentError) {
+        remove(c);
+        toast('Message sent.', 'success');
+        return;
+      }
+      toast("Couldn't send. Your message is still here.", 'error', { label: 'Retry', run: () => void send(c) });
       return;
     }
     const draftId = c.draftId()!;
@@ -245,8 +309,17 @@ export function createComposers(
         await engine.sendDraft(draftId, identityId);
         onSent(draftId, [...d.to, ...d.cc, ...d.bcc]);
         toast('Message sent.', 'success');
-      } catch (e) {
-        toast(`Sending failed: ${(e as Error).message}. The message is in Drafts.`, 'error');
+      } catch {
+        // The request may have reached the server even though we saw it fail.
+        const state = await engine.draftState(draftId).catch(() => null);
+        if (state === 'sent') {
+          onSent(draftId, [...d.to, ...d.cc, ...d.bcc]);
+          toast('Message sent.', 'success');
+          return;
+        }
+        const reopened = create(c.mode, null, { ...snapshot, draftId: state === 'gone' ? null : draftId, unconfirmedSend: state === null });
+        setList([...list(), reopened]);
+        toast("Couldn't send. Your message is still here.", 'error', { label: 'Retry', run: () => void send(reopened) });
       }
     }, UNDO_SEND_MS);
 
@@ -293,7 +366,7 @@ export function createComposers(
     if (pendingSends.size || list().some((c) => c.status() === 'dirty' || c.status() === 'saving')) e.preventDefault();
   });
 
-  return { list, open, close, discard, send, openDraft, identities };
+  return { list, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
 }
 
 export type Composers = ReturnType<typeof createComposers>;

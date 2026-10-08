@@ -322,6 +322,8 @@ a { color: var(--accent); }
 .compose-attachments { padding: 0 16px 8px; margin-top: 0; }
 .composer-actions { display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px 16px; }
 .compose-status { flex: 1; font-size: 12px; color: var(--text-3); }
+.compose-retry { margin-left: 8px; border: 0; background: none; padding: 4px; color: var(--accent); font: inherit; font-weight: 500; cursor: pointer; }
+@media (pointer: coarse) { .compose-retry { min-height: 44px; min-width: 44px; } }
 .reply-bar { display: flex; gap: 12px; padding: 16px 16px 24px 68px; }
 .reply-bar .btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--text-2); border: 1px solid var(--border); }
 .reply-bar .btn:hover { background: var(--hover); }

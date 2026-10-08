@@ -75,6 +75,8 @@ export class FakeJmap {
     if (record) this.bump({ created: [e.id] });
   }
 
+  private createdEmails = 0;
+
   bump(c: Partial<{ created: string[]; updated: string[]; destroyed: string[] }>) {
     this.emailState++;
     this.log.push({ state: this.emailState, created: c.created ?? [], updated: c.updated ?? [], destroyed: c.destroyed ?? [] });
@@ -405,7 +407,16 @@ export class FakeJmap {
           updated[id] = null;
         }
         if (Object.keys(updated).length) this.bump({ updated: Object.keys(updated) });
-        return [name, { accountId: 'a1', oldState: null, newState: `e${this.emailState}`, updated, notUpdated: Object.keys(notUpdated).length ? notUpdated : null }];
+        // Drafts: the composer saves by creating a new email and destroying the one it replaces.
+        const created: Record<string, { id: string; threadId: string }> = {};
+        for (const [cid, email] of Object.entries((args.create ?? {}) as Record<string, Partial<Rec>>)) {
+          const id = `n${++this.createdEmails}`;
+          this.addEmail({ receivedAt: new Date().toISOString(), ...email, id, threadId: `t-${id}` } as Rec);
+          created[cid] = { id, threadId: `t-${id}` };
+        }
+        const destroyed = ((args.destroy ?? []) as string[]).filter((id) => this.emails.delete(id));
+        if (destroyed.length) this.bump({ destroyed });
+        return [name, { accountId: 'a1', oldState: null, newState: `e${this.emailState}`, created, destroyed, updated, notUpdated: Object.keys(notUpdated).length ? notUpdated : null }];
       }
     }
     return ['error', { type: 'unknownMethod' }];

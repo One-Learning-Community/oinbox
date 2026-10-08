@@ -495,6 +495,15 @@ export class MailEngine {
     }
   }
 
+  /** Whether a message we tried to send is still a draft. A send can reach the server and still look failed here. */
+  async draftState(id: Id): Promise<'draft' | 'sent' | 'gone'> {
+    const b = this.client.batch();
+    const call = b.call('Email/get', { accountId: this.accountId, ids: [id], properties: ['keywords'] });
+    const email = (await this.client.send(b)).get(call).list[0];
+    if (!email) return 'gone';
+    return email.keywords?.$draft ? 'draft' : 'sent';
+  }
+
   /** To, Cc and Bcc of the newest `limit` messages in Sent, for the recipient index. */
   async sentRecipients(limit: number): Promise<Partial<Email>[]> {
     const sent = this.mailboxByRole('sent')?.id;
