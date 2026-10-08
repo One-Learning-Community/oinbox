@@ -1,4 +1,4 @@
-import { A, useLocation, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
+import { A, useNavigate, useParams, type RouteSectionProps } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, Show, type JSX } from 'solid-js';
 import { branding } from '../app/branding';
 import { useApp } from '../app/context';
@@ -17,6 +17,7 @@ import { LabelDialog } from './LabelDialog';
 import { LabelMenu } from './LabelMenu';
 import { missingViewText } from './nav';
 import { PaneBoundary } from './PaneBoundary';
+import { useAccountPath } from './path';
 import { HelpDialog, MailboxPicker } from './Overlays';
 import { latestReplyable } from './Conversation';
 import { ThreadList } from './ThreadList';
@@ -32,7 +33,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
   const app = useApp();
   const vacationBanner = createMemo(() => bannerText(vacationStatus(app.engine.state.vacation, now())));
   const [navOpen, setNavOpen] = createSignal(false);
-  const location = useLocation();
+  const path = useAccountPath();
   const navigate = useNavigate();
   createEffect(() => (document.title = tabTitle(app.spaces.totalUnread(), branding().name)));
   for (const space of app.spaces.list()) {
@@ -107,7 +108,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
           <Icon name="edit" /> Compose
         </button>
         <PaneBoundary name="sidebar">
-          <Sidebar current={location.pathname} />
+          <Sidebar current={path()} />
         </PaneBoundary>
       </nav>
       <main class="main">
@@ -133,10 +134,10 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
 
 function SearchBox() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const path = useAccountPath();
   // Mirror the current search route into the box (back/forward, deep links).
   const routeQuery = () => {
-    const m = /^\/search\/([^/]+)/.exec(location.pathname);
+    const m = /^\/search\/([^/]+)/.exec(path());
     return m ? decodeURIComponent(m[1]!) : '';
   };
   const [text, setText] = createSignal(routeQuery());

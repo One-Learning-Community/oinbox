@@ -81,6 +81,19 @@ describe('AccountSwitcher', () => {
     fireEvent.focusOut(getByRole('menu'), { relatedTarget: document.body });
     expect(queryByRole('menu')).toBeNull();
   });
+  it('takes the focus when it is mounted again after a switch made from it', () => {
+    const first = setup([you, support], {});
+    fireEvent.click(first.getByRole('button', { name: /^You/ }));
+    fireEvent.click(first.getAllByRole('menuitemradio')[1]!);
+    first.unmount();
+    // The shell is re-mounted for the other mailbox.
+    const second = setup([you, support], {}, 's');
+    expect(second.getByRole('button', { name: /^Support/ })).toHaveFocus();
+  });
+  it('does not take the focus on an ordinary mount', () => {
+    const { getByRole } = setup([you, support], {});
+    expect(getByRole('button', { name: /^You/ })).not.toHaveFocus();
+  });
   it('closes on Escape and gives the focus back to the button', () => {
     const { getByRole, queryByRole } = setup([you, support], {});
     const button = getByRole('button', { name: /^You/ });

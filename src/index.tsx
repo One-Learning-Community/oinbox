@@ -2,7 +2,7 @@
 import { Navigate, Route, Router } from '@solidjs/router';
 import { ErrorBoundary, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { accountForPath, createSpaces, homePath, mailAccounts, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
+import { accountForPath, createSpaces, homePath, lostAccounts, mailAccounts, startAll, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createErrorReporter } from './app/errors';
@@ -14,7 +14,7 @@ import { clearRescue, saveRescue, takeRescue } from './app/rescue';
 import { createSettings } from './app/settings';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
-import { clearCache, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
+import { clearCache, clearSnapshots, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream, type PushStream } from './jmap/sse';
 import { CALENDARS, type Session } from './jmap/types';
@@ -201,8 +201,9 @@ async function boot() {
       const snap = await loadSnapshot(key(s.info));
       if (snap) s.engine.hydrate(snap);
     }
-    // The snapshot from before shared mailboxes, under the user's name alone.
-    void clearCache(cachedSession.username);
+    // The snapshot from before shared mailboxes, under the user's name alone. (Not clearCache: that
+    // forgets the session too, and the next load could not warm-start.)
+    void clearSnapshots(cachedSession.username);
   }
 
   const cur = all.current;
@@ -252,6 +253,8 @@ async function boot() {
     // Another user, or other mailboxes (a shared one joined or left): what was built no longer fits.
     const ids = mailAccounts(session).map((a) => a.id);
     if (cachedSession && (cachedSession.username !== session.username || ids.join() !== accounts.map((a) => a.id).join())) {
+      // What was remembered of a mailbox that is no longer the user's goes with it.
+      await Promise.all(lostAccounts(accounts, session).map((a) => clearSnapshots(storageKey(cachedSession.username, a))));
       location.reload();
       return;
     }
@@ -259,7 +262,12 @@ async function boot() {
       s.engine.onPersist = (snap) => void saveSnapshot(key(s.info), snap);
       void s.recipients.start(key(s.info));
     }
-    await Promise.all(all.list().map((s) => s.engine.start()));
+    await startAll(all.list(), (s, e) => {
+      // The network, not this mailbox: fail the whole start, which is tried again.
+      if (isTransportFailure(e)) throw e;
+      console.error(`Couldn't open ${s.info.address}`, e);
+      app.toast(`Couldn't open ${s.info.label} (${s.info.address}).`, 'error');
+    });
     let restored = 0;
     for (const s of all.list()) {
       const rescued = takeRescue(localStorage, s.info.id);

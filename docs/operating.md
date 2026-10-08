@@ -171,7 +171,7 @@ A shared mailbox is a Stalwart **group** account. In Stalwart's WebUI, create a 
 - Each member's own account also gains the group's address as an identity, for sending as the group from their own mailbox.
 - Nothing stops two people answering the same message; each sees the other's reply arrive in the conversation.
 
-With the command line, membership is `update Account <user id> --json '{"memberGroupIds":{"<group id>":true}}'`. Unlike setting a password, this does not sign the user out.
+With the command line, add a member with `update Account <user id> --field 'memberGroupIds/<group id>=true'`. (Passing `--json '{"memberGroupIds":{…}}'` instead replaces the user's whole list of groups.) Unlike setting a password, changing membership does not sign the user out.
 
 ## Limits worth knowing
 

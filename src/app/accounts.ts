@@ -95,3 +95,22 @@ export function createSpaces(accounts: AccountInfo[], build: (info: AccountInfo)
 
 /** The key one account's snapshot and recipient cache are stored under in the browser. */
 export const storageKey = (username: string, account: AccountInfo): string => `${username}:${account.id}`;
+
+/**
+ * Start every account's engine. The user's own must start; a shared mailbox that cannot (rights
+ * taken away, a membership ended a moment ago) is reported and left behind, not allowed to stop the rest.
+ */
+export async function startAll(spaces: AccountSpace[], onFailed: (space: AccountSpace, error: unknown) => void): Promise<void> {
+  const results = await Promise.allSettled(spaces.map((s) => s.engine.start()));
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') return;
+    if (spaces[i]!.info.personal) throw r.reason;
+    onFailed(spaces[i]!, r.reason);
+  });
+}
+
+/** Accounts the app was built with (from the remembered session) that the server no longer offers. */
+export function lostAccounts(before: AccountInfo[], now: Session): AccountInfo[] {
+  const ids = new Set(mailAccounts(now).map((a) => a.id));
+  return before.filter((a) => !ids.has(a.id));
+}

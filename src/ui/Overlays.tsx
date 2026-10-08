@@ -1,7 +1,7 @@
 import { CommandPalette } from '@rozie-ui/command-palette-solid';
+import { useAccountPath } from './path';
 import '@rozie-ui/command-palette-solid/themes/base.css';
 import { Dialog } from '@rozie-ui/dialog-solid';
-import { useLocation } from '@solidjs/router';
 import { createMemo, createSignal, For } from 'solid-js';
 import { useApp } from '../app/context';
 import type { Id } from '../jmap/types';
@@ -23,11 +23,11 @@ interface PickerItem {
 /** "Move to" (v) and "Label" (l) pickers, Gmail-style type-to-filter lists. */
 export function MailboxPicker() {
   const { engine, nav, actions, labels, toast } = useApp();
-  const location = useLocation();
+  const path = useAccountPath();
   const [query, setQuery] = createSignal('');
 
   const current = () => {
-    const m = /^\/(label\/[^/]+|[^/]+)/.exec(location.pathname);
+    const m = /^\/(label\/[^/]+|[^/]+)/.exec(path());
     return m ? resolveView(decodeURIComponent(m[1]!), engine.state.mailboxes) : null;
   };
 

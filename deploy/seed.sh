@@ -66,7 +66,8 @@ accounts_json=$(cli query Account --json)
 id_of() { printf '%s\n' "$accounts_json" | grep "\"emailAddress\":\"$1\"" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'; }
 group_id=$(id_of support@example.test)
 for member in alice bob; do
-  cli update Account "$(id_of "$member@example.test")" --json "{\"memberGroupIds\":{\"$group_id\":true}}" >/dev/null
+  # --field adds this group; --json with memberGroupIds would replace the member's other groups.
+  cli update Account "$(id_of "$member@example.test")" --field "memberGroupIds/$group_id=true" >/dev/null
 done
 echo "seed: support@example.test is shared with alice and bob"
 

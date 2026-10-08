@@ -1,5 +1,8 @@
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import type { AccountSpace, Spaces } from '../app/accounts';
+
+/** Set when a switch is made from here: the shell is re-mounted, and the new switcher takes the focus the old one had. */
+let switched = false;
 
 /** Which mailbox is open, and the way to another: the user's own and the shared ones they belong to. */
 export function AccountSwitcher(props: { spaces: Spaces; onSwitch: (space: AccountSpace) => void }) {
@@ -21,6 +24,12 @@ export function AccountSwitcher(props: { spaces: Spaces; onSwitch: (space: Accou
   };
   document.addEventListener('pointerdown', outside);
   onCleanup(() => document.removeEventListener('pointerdown', outside));
+  onMount(() => {
+    // Without this a keyboard or screen-reader user is dropped at the top of the page after every
+    // switch. The button's name says which mailbox is now open.
+    if (switched) button?.focus();
+    switched = false;
+  });
   const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])];
   const move = (by: number) => {
     const all = items();
@@ -85,7 +94,9 @@ export function AccountSwitcher(props: { spaces: Spaces; onSwitch: (space: Accou
                   aria-label={name(s)}
                   onClick={() => {
                     setOpen(false);
-                    if (s !== current()) props.onSwitch(s);
+                    if (s === current()) return;
+                    switched = true;
+                    props.onSwitch(s);
                   }}
                 >
                   <span class="account-item-main">

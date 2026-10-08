@@ -44,6 +44,14 @@ describe('MailEngine', () => {
     expect(engine.state.threads.t1?.emailIds).toEqual(['e1', 'e2', 'e3']);
   });
 
+  it('reports arrivals in an account whose lists were never opened', async () => {
+    const arrived: string[][] = [];
+    engine.onArrived = (emails) => arrived.push(emails.map((e) => e.id));
+    server.addEmail({ id: 'e5', threadId: 't3', receivedAt: '2026-09-02T00:00:00Z', mailboxIds: { I: true } });
+    await engine.catchUp();
+    expect(arrived).toEqual([['e5']]);
+  });
+
   it('reports mail that arrived since the last catch-up, once', async () => {
     const arrived: string[][] = [];
     engine.onArrived = (emails) => arrived.push(emails.map((e) => e.id));

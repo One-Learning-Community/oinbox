@@ -1,7 +1,7 @@
 import { createRoot } from 'solid-js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Session } from '../jmap/types';
-import { accountForPath, createSpaces, homePath, mailAccounts, storageKey, withinAccount } from './accounts';
+import { accountForPath, createSpaces, homePath, lostAccounts, mailAccounts, startAll, storageKey, withinAccount, type AccountSpace } from './accounts';
 
 const MAIL = 'urn:ietf:params:jmap:mail';
 const session = (accounts: Record<string, { name: string; isPersonal: boolean; mail?: boolean }>, primary = 'b') =>
@@ -108,5 +108,44 @@ describe('homePath', () => {
     expect(homePath('/shared/gone/inbox/t/t1', list)).toBe('/inbox');
     expect(homePath('/shared/sx', list)).toBe('/inbox');
     expect(homePath('/shared', list)).toBe('/inbox');
+  });
+});
+
+describe('startAll', () => {
+  const [own, shared] = aliceAndSupport();
+  const space = (info: (typeof own & object), start: () => Promise<void>) => ({ info, engine: { start } }) as unknown as AccountSpace;
+
+  it('starts every engine', async () => {
+    const a = vi.fn(async () => {});
+    const b = vi.fn(async () => {});
+    await startAll([space(own!, a), space(shared!, b)], vi.fn());
+    expect(a).toHaveBeenCalledOnce();
+    expect(b).toHaveBeenCalledOnce();
+  });
+  it("carries on when a shared mailbox cannot be started, and reports it", async () => {
+    const failed = vi.fn();
+    const boom = new Error('forbidden');
+    await expect(startAll([space(own!, async () => {}), space(shared!, async () => Promise.reject(boom))], failed)).resolves.toBeUndefined();
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ info: shared }), boom);
+  });
+  it('fails when the caller will not accept a shared mailbox failing (the network is down)', async () => {
+    const boom = new Error('offline');
+    const refuse = (_s: AccountSpace, e: unknown) => {
+      throw e;
+    };
+    await expect(startAll([space(own!, async () => {}), space(shared!, async () => Promise.reject(boom))], refuse)).rejects.toBe(boom);
+  });
+  it("fails when the user's own mailbox cannot be started", async () => {
+    const boom = new Error('down');
+    await expect(startAll([space(own!, async () => Promise.reject(boom)), space(shared!, async () => {})], vi.fn())).rejects.toBe(boom);
+  });
+});
+
+describe('lostAccounts', () => {
+  it('names the accounts built from the remembered session that the server no longer lists', () => {
+    const before = aliceAndSupport();
+    const now = session({ b: { name: 'alice@example.test', isPersonal: true } });
+    expect(lostAccounts(before, now).map((a: { id: string }) => a.id)).toEqual(['s']);
+    expect(lostAccounts(before, session({ b: { name: 'alice@example.test', isPersonal: true }, s: { name: 'support@example.test', isPersonal: false } }))).toEqual([]);
   });
 });

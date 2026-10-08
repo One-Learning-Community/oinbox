@@ -54,12 +54,22 @@ export async function saveSnapshot(username: string, snap: Snapshot): Promise<vo
   }
 }
 
-export async function clearCache(username: string): Promise<void> {
+/** Sign-out: forget the session and what was stored under `key`. */
+export async function clearCache(key: string): Promise<void> {
   localStorage.removeItem(SESSION_KEY);
+  await clearSnapshots(key);
+}
+
+/** Drop one mailbox's snapshot and recipient cache, and nothing else: the session stays. */
+export async function clearSnapshots(key: string): Promise<void> {
   const s = idb();
   if (!s) return;
-  await del(`snap:${username}`, s).catch(() => undefined);
-  await del(`recipients:${username}`, s).catch(() => undefined);
+  try {
+    await del(`snap:${key}`, s);
+    await del(`recipients:${key}`, s);
+  } catch {
+    // Ignore: best effort.
+  }
 }
 
 export async function loadRecipients(username: string): Promise<RecipientCache | undefined> {

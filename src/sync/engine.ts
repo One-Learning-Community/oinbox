@@ -222,9 +222,15 @@ export class MailEngine {
     const b = this.client.batch();
     const mb = b.call('Mailbox/get', { accountId: this.accountId, ids: null });
     const id = b.call('Identity/get', { accountId: this.accountId, ids: null });
+    // Nothing is fetched: these are asked for their state, so that mail arriving before any list
+    // has been opened (a shared mailbox the user is not looking at) is still seen as arriving.
+    const em = b.call('Email/get', { accountId: this.accountId, ids: [], properties: ['id'] });
+    const th = b.call('Thread/get', { accountId: this.accountId, ids: [] });
     const res = await this.client.send(b);
     const mailboxes = res.get(mb);
     this.states.Mailbox = mailboxes.state;
+    if (!res.error(em)) this.states.Email ??= res.get(em).state;
+    if (!res.error(th)) this.states.Thread ??= res.get(th).state;
     const identities = res.error(id) ? [] : res.get(id).list;
     if (!res.error(id)) this.identityState = res.get(id).state;
     this.set({ mailboxes: byId(mailboxes.list), identities, ready: true, synced: true });
