@@ -274,7 +274,9 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
 
   return (
     <article class="msg" classList={{ collapsed: !props.expanded }} data-email-id={props.email.id}>
-      <div class="msg-head" onClick={() => props.onToggle()} role="button" tabindex="0" onKeyDown={(e) => e.key === 'Enter' && props.onToggle()} aria-expanded={props.expanded}>
+      {/* A click anywhere on the header toggles, for the pointer. The control itself is the sender's name:
+          a header that was one big button swallowed the buttons inside it for screen readers. */}
+      <div class="msg-head" onClick={() => props.onToggle()}>
         <div class="avatar" style={{ background: avatarColor(from()?.email ?? '') }} aria-hidden="true">
           {(from()?.name || from()?.email || '?').trim()[0]?.toUpperCase()}
         </div>
@@ -283,7 +285,18 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
             <Show when={isDraft()}>
               <span class="draft-tag">Draft</span>{' '}
             </Show>
-            <span class="from">{name()}</span>
+            <button
+              type="button"
+              class="from msg-toggle"
+              aria-expanded={props.expanded}
+              title={props.expanded ? 'Collapse message' : 'Expand message'}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onToggle();
+              }}
+            >
+              {name()}
+            </button>
             <Show when={props.expanded && from()}>
               <span class="addr">&lt;{from()!.email}&gt;</span>
             </Show>

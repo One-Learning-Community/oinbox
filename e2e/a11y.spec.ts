@@ -86,8 +86,6 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
 
 /** Screens with an open finding in docs/beta-audit.md. Remove a line when its finding is fixed: the test then has to pass. */
 const KNOWN: Record<string, string> = {
-  conversation: 'A3: the message header is a button that contains buttons',
-  'inline reply': 'A3: the message header is a button that contains buttons',
   'calendar week': 'A4: FullCalendar prev/next icons have role=img and no name',
   'event card': 'A1: rozie Popover puts aria-modal on a panel with no dialog role; A2: Delete link contrast in dark; A4',
   'event form': 'A1: rozie Popover puts aria-modal on a panel with no dialog role; A4',
