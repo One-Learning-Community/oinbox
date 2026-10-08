@@ -102,6 +102,8 @@ export function createComposers(
     /** Older versions of the draft that a save could not confirm as removed. */
     staleIds: () => Id[];
     releaseImages: () => void;
+    /** After this, edits no longer schedule a save: a late one would bring the draft back. */
+    retire: () => void;
   };
 
   interface Restore {
@@ -239,7 +241,10 @@ export function createComposers(
       return saving;
     };
 
+    let retired = false;
     const scheduleSave = () => {
+      // An image fetch or upload that was pending when the composer went can still edit it.
+      if (retired) return;
       setStatus('dirty');
       clearTimeout(timer);
       timer = setTimeout(() => void save().catch((e) => e instanceof AlreadySentError && sentMeanwhile(composer)), AUTOSAVE_MS);
@@ -323,6 +328,9 @@ export function createComposers(
       cancelAutosave: () => clearTimeout(timer),
       signatureMode,
       markDirty: scheduleSave,
+      retire: () => {
+        retired = true;
+      },
       staleIds: () => stale.filter((x) => x !== draftId()),
       wasSent: async () => unconfirmedSend && !!draftId() && (await engine.draftState(draftId()!)) === 'sent',
       snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode() }),
@@ -333,6 +341,7 @@ export function createComposers(
   const internals = (c: Composer) => c as Internal;
 
   const remove = (c: Composer) => {
+    internals(c).retire();
     internals(c).cancelAutosave();
     internals(c).releaseImages();
     setList(list().filter((x) => x.id !== c.id));

@@ -357,6 +357,31 @@ describe('older draft versions a save could not remove', () => {
   });
 });
 
+describe('a composer that has been removed', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each(['discard', 'close', 'send'] as const)('does not save an edit made after %s', async (how) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const server = new FakeJmap();
+    server.addMailbox('D', 'Drafts', 'drafts');
+    server.addMailbox('S', 'Sent', 'sent');
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    const composers = createRoot(() => createComposers(engine, vi.fn(), vi.fn(async () => true), vi.fn()));
+    const c = composers.open('new');
+    c.update({ to: [{ name: null, email: 'bob@example.test' }], subject: 'gone' });
+    await vi.advanceTimersByTimeAsync(2000);
+    await composers[how](c);
+    const save = vi.spyOn(engine, 'saveDraft');
+    // An image fetch that was still pending when the composer went comes back and edits it.
+    c.update({ bodyHtml: '<p>late</p>' });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(save).not.toHaveBeenCalled();
+    expect([...server.emails.values()].filter((e) => e.subject === 'gone').length).toBeLessThanOrEqual(1);
+    if (how === 'discard') expect(server.emails.size).toBe(0);
+  });
+});
+
 describe('a draft\'s blob ids', () => {
   const start = async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
