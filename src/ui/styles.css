@@ -538,3 +538,28 @@ a { color: var(--accent); }
 .invite-actions { display: flex; gap: 8px; margin-top: 12px; }
 .invite-actions .btn { padding: 6px 16px; }
 .invite-actions .btn.on { background: var(--accent); color: var(--surface); }
+
+/* ---- Touch: nothing to press is smaller than 44px (docs/beta-audit.md, P3) ---- */
+@media (pointer: coarse) {
+  .icon-btn, .row .star { min-width: 44px; min-height: 44px; }
+  .btn, .dialog-actions button, .fc .fc-button { min-height: 44px; min-width: 44px; }
+  .link-btn, .images-banner button, .msg-toggle, .toast-action, .toast-close, .compose-retry { min-height: 44px; min-width: 44px; }
+  .images-banner button { text-align: left; }
+  .compose-format button { min-width: 44px; height: 44px; }
+  .search-box input, .compose-subject, .rozie-combobox-input, .settings input, .settings textarea, .settings select, .event-form input[type='text'], .event-form select { min-height: 44px; }
+  .row .row-check, .toolbar label:has(input[type='checkbox']) { min-width: 44px; min-height: 44px; }
+  /* The whole calendar row is the target; the checkbox itself is 12px and invisible. */
+  .cal-toggle { min-height: 44px; display: flex; align-items: center; }
+  .cal-toggle input { inset: 0; width: 100%; height: 100%; margin: 0; }
+}
+
+/* ---- Phone: the search field takes the top bar while it is in use (P4) ---- */
+@media (max-width: 800px) {
+  /* The spacer would take half the row from the search field. */
+  .topbar .spacer { display: none; }
+  .topbar:has(.search-box:focus-within) > :not(.search-box) { display: none; }
+  .topbar:has(.search-box:focus-within) { padding-left: 8px; }
+  /* The event card is never wider than the screen; keeping it on the screen is the popover's job (P2). */
+  .event-card { max-width: calc(100vw - 16px); box-sizing: border-box; }
+}
+

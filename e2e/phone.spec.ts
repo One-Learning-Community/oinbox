@@ -14,7 +14,8 @@ const smallTargets = (page: Page) =>
   page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('button, a[href], [role=button], [role=switch], [role=menuitem], input:not([type=hidden]), select, textarea')]
       .filter((el) => el.checkVisibility() && !el.closest('.fc-timegrid-slots, .fc-daygrid-body'))
-      .map((el) => ({ el, r: el.getBoundingClientRect() }))
+      // A checkbox or radio inside a label is pressed through the label.
+      .map((el) => ({ el, r: ((el instanceof HTMLInputElement && el.closest('label')) || el).getBoundingClientRect() }))
       .filter(({ r }) => r.width > 0 && r.bottom > 0 && r.top < innerHeight && (r.width < 43.5 || r.height < 43.5))
       .map(({ el, r }) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 28)}" ${Math.round(r.width)}×${Math.round(r.height)}`),
   );
@@ -145,7 +146,7 @@ test('@phone settings fit the screen and the vacation switch works', async ({ pa
 });
 
 test('@phone the calendar opens in day view and an event opens on tap', async ({ page }) => {
-  test.fail(true, 'docs/beta-audit.md P2: the event card runs off the right edge in week view');
+  test.fail(true, 'docs/beta-audit.md P2: rozie Popover lets the panel leave the viewport (docs/rozie-feedback.md)');
   await page.goto('/calendar');
   await expect(page.locator('.fc-timeGridDay-view')).toBeVisible();
   await noSidewaysScroll(page, 'calendar');
@@ -161,7 +162,6 @@ test('@phone the calendar opens in day view and an event opens on tap', async ({
 
 for (const path of ['/inbox', '/settings', '/calendar']) {
   test(`@phone touch targets on ${path} are at least 44px`, async ({ page }) => {
-    test.fail(true, 'docs/beta-audit.md P3: many controls are smaller than 44px');
     await page.goto(path);
     await page.waitForTimeout(1000);
     expect(await smallTargets(page)).toEqual([]);
@@ -169,7 +169,6 @@ for (const path of ['/inbox', '/settings', '/calendar']) {
 }
 
 test('@phone touch targets in an open thread and in the composer are at least 44px', async ({ page }) => {
-  test.fail(true, 'docs/beta-audit.md P3: many controls are smaller than 44px');
   await openSeeded(page, 'Homepage redesign feedback');
   await page.locator('article.msg .msg-body iframe').first().waitFor();
   const thread = await smallTargets(page);
