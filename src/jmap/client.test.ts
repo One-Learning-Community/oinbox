@@ -241,3 +241,40 @@ describe('JmapClient outcomes', () => {
     expect(signal?.aborted ?? false).toBe(false);
   });
 });
+
+describe('JmapClient and the concurrent request limit', () => {
+  const limit = () =>
+    new Response(JSON.stringify({ type: 'urn:ietf:params:jmap:error:limit', status: 400, limit: 'maxConcurrentRequests', detail: 'too many' }), {
+      status: 400,
+      headers: { 'content-type': 'application/problem+json' },
+    });
+  const ok = () => Response.json({ methodResponses: [], sessionState: 's' });
+  const client = (fetchImpl: typeof fetch) => {
+    const c = new JmapClient({ sessionUrl: 'http://x/session', getToken: async () => 't', fetch: fetchImpl, retryDelayMs: 1 });
+    c.useSession({ ...session, apiUrl: 'http://x/api', state: 's' });
+    return c;
+  };
+
+  it('waits and sends again when Stalwart says too many requests are in flight', async () => {
+    const answers = [limit(), limit(), ok()];
+    const fetchImpl = vi.fn(async () => answers.shift()!);
+    const c = client(fetchImpl as unknown as typeof fetch);
+    await expect(c.send(c.batch())).resolves.toBeDefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up after a few tries', async () => {
+    const fetchImpl = vi.fn(async () => limit());
+    const c = client(fetchImpl as unknown as typeof fetch);
+    await expect(c.send(c.batch())).rejects.toMatchObject({ status: 400 });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not retry any other 400', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ type: 'urn:ietf:params:jmap:error:notRequest', status: 400 }), { status: 400 }));
+    const c = client(fetchImpl as unknown as typeof fetch);
+    await expect(c.send(c.batch())).rejects.toMatchObject({ status: 400 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+

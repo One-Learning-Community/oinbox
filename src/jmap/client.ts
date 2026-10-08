@@ -57,6 +57,19 @@ export class BatchResult {
   }
 }
 
+const MAX_BUSY_RETRIES = 3;
+
+/** RFC 8620 §3.6.1 `limit` error for `maxConcurrentRequests`: the request was refused, not run. */
+function isBusy(status: number, detail: string): boolean {
+  if (status !== 400) return false;
+  try {
+    const problem = JSON.parse(detail) as { type?: string; limit?: string };
+    return problem.type === 'urn:ietf:params:jmap:error:limit' && problem.limit === 'maxConcurrentRequests';
+  } catch {
+    return false;
+  }
+}
+
 export interface JmapClientOptions {
   sessionUrl: string;
   getToken: () => Promise<string>;
@@ -65,6 +78,8 @@ export interface JmapClientOptions {
   timeoutMs?: number;
   /** Once per attempt: null when Stalwart answered, else the transport failure (network, timeout, 502-504). */
   onOutcome?: (error: unknown | null) => void;
+  /** Base wait before re-sending a request Stalwart refused for concurrency (default 250 ms). */
+  retryDelayMs?: number;
   /** Called on 401; resolve true if credentials were renewed and the request should be retried once. */
   onUnauthorized?: () => Promise<boolean>;
 }
@@ -147,14 +162,24 @@ export class JmapClient {
   }
 
   async send(builder: RequestBuilder, using: string[] = [CORE, MAIL, SUBMISSION]): Promise<BatchResult> {
-    const res = await this.authFetch(this.session.apiUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(builder.build(using)),
-    });
-    if (!res.ok) throw new RequestError(res.status, await res.text());
-    const body = (await res.json()) as { methodResponses: Invocation[]; sessionState: string };
-    return new BatchResult(body.methodResponses, body.sessionState !== this.session.state);
+    const body = JSON.stringify(builder.build(using));
+    let res: Response;
+    let detail = '';
+    for (let attempt = 0; ; attempt++) {
+      res = await this.authFetch(this.session.apiUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body,
+      });
+      if (res.ok) break;
+      detail = await res.text();
+      // Stalwart runs four requests per account at a time and refuses the fifth outright. Two tabs
+      // starting together, or one busy moment, is enough: nothing was processed, so send it again.
+      if (attempt >= MAX_BUSY_RETRIES || !isBusy(res.status, detail)) throw new RequestError(res.status, detail);
+      await new Promise((r) => setTimeout(r, (this.opts.retryDelayMs ?? 250) * 2 ** attempt * (0.5 + Math.random())));
+    }
+    const answer = (await res.json()) as { methodResponses: Invocation[]; sessionState: string };
+    return new BatchResult(answer.methodResponses, answer.sessionState !== this.session.state);
   }
 
   async upload(blob: Blob): Promise<UploadResult> {

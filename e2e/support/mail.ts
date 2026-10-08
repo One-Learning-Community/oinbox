@@ -29,12 +29,22 @@ export async function accountId(user = ALICE): Promise<string> {
 
 /** Run method calls; returns responses keyed by call tag. Throws on method-level errors. */
 export async function jmap(calls: Invocation[], user = ALICE, using: string[] = USING): Promise<Record<string, any>> {
-  const res = await fetch(`${BASE}/jmap/`, {
-    method: 'POST',
-    headers: { authorization: auth(user), 'content-type': 'application/json' },
-    body: JSON.stringify({ using, methodCalls: calls }),
-  });
-  if (!res.ok) throw new Error(`JMAP HTTP ${res.status}: ${await res.text()}`);
+  let res: Response;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${BASE}/jmap/`, {
+      method: 'POST',
+      headers: { authorization: auth(user), 'content-type': 'application/json' },
+      body: JSON.stringify({ using, methodCalls: calls }),
+    });
+    if (res.ok) break;
+    const detail = await res.text();
+    // Stalwart runs four requests per account at once; the page under test shares that allowance.
+    if (attempt < 5 && detail.includes('maxConcurrentRequests')) {
+      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+      continue;
+    }
+    throw new Error(`JMAP HTTP ${res.status}: ${detail}`);
+  }
   const body = (await res.json()) as { methodResponses: Invocation[] };
   const out: Record<string, any> = {};
   for (const [name, args, tag] of body.methodResponses) {

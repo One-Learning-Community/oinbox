@@ -82,6 +82,7 @@ async function boot() {
     onOutcome: (e) => (e === null ? connection.reportSuccess('request') : connection.reportFailure('request', e)),
   });
   let push: PushStream | undefined;
+  let assumedOpen = false;
   const engine = new MailEngine(client);
   // Before the warm-start snapshot is applied, so it sees every email.
   const recipients = createRecipients(engine);
@@ -181,12 +182,17 @@ async function boot() {
       onConnected: (confirmed) => {
         // Only an answer from the server is evidence for the banner; an open request is not.
         if (confirmed) connection.reportSuccess('push');
+        // Confirmation of a stream already taken as open: the catch-up below has been done.
+        const again = confirmed && assumedOpen;
+        assumedOpen = !confirmed;
+        if (again) return;
         engine.setOnline(true);
         void engine.catchUp().catch(logUnexpected);
         void engine.refreshSettings().catch(logUnexpected);
         calendar.onConnected();
       },
       onDisconnected: (e) => {
+        assumedOpen = false;
         engine.setOnline(false);
         connection.reportFailure('push', e);
       },
