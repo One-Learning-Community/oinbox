@@ -66,7 +66,7 @@
 	# Only the two APIs the app uses. OpenCloud's web UI and its public-link pages serve what users
 	# upload; on this origin, where the mail token is kept, they must not be reachable at all.
 	@drive {
-		path /drive/graph/* /drive/dav/spaces/*
+		path /drive/graph/* /drive/dav/spaces/* /drive/ocs/*
 		expression `"{$OINBOX_DRIVE_UPSTREAM:}" != ""`
 	}
 	handle @drive {

@@ -5,7 +5,10 @@ services:
   caddy:
     environment:
       # OpenCloud shares this container's network (below), so it is on localhost.
-      OINBOX_DRIVE_UPSTREAM: "localhost:9200"
+      OINBOX_DRIVE_UPSTREAM: "localhost:9201"
+    ports:
+      # OpenCloud's own address, for opening a mailed Drive link as its recipient would. (9200 is often taken.)
+      - "9201:9201"
 
   opencloud:
     # It shares Caddy's network namespace so that Stalwart's public URL (http://localhost:8080,
@@ -17,10 +20,10 @@ services:
     network_mode: "service:caddy"
     entrypoint: ["/bin/sh", "-c", "opencloud init --insecure true >/dev/null 2>&1 || true; exec opencloud server"]
     environment:
-      OC_URL: "http://localhost:9200"
+      OC_URL: "http://localhost:9201"
       OC_INSECURE: "true"          # dev only: plain HTTP
       PROXY_TLS: "false"           # dev only
-      PROXY_HTTP_ADDR: "0.0.0.0:9200"
+      PROXY_HTTP_ADDR: "0.0.0.0:9201"
       IDM_CREATE_DEMO_USERS: "false"
       # Stalwart signs users in; OpenCloud's own identity provider stays off.
       OC_EXCLUDE_RUN_SERVICES: "idp"

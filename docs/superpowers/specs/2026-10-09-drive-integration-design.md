@@ -34,6 +34,11 @@ Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud 8.1.0 (rolling) and 7.2
 
 - **A public link needs a password by default.** Without one: `400 password protection is enforced`. With one that breaks the policy: 400 with the rules in the message. The default policy is 8 to 72 characters with a lower-case letter, an upper-case letter, a digit and a special character.
 - **OpenCloud never gives a link's password back**, only `hasPassword`.
+- **With the requirement switched off** (`OC_SHARING_PUBLIC_SHARE_MUST_HAVE_PASSWORD=false`), `enforced_for.read_only` is `false` and a link is made without a password. A password that is given is still held to the policy.
+- **A copy inside a drive**: `COPY` with `Destination: /dav/spaces/{drive}/{path}` (a path, no host, no `/drive` prefix) answers 201; with `Overwrite: F` onto an existing file, 412.
+- **Deleting a folder** (`DELETE`, 204) ends its link: the link then answers 404.
+- **A 1 GB `PUT` through Caddy** took six seconds on the dev stack and arrived whole. No resumable uploads are needed.
+- **The sharing rules answer without a token.** They are configuration, not user data.
 - **An expiry is rounded to the end of its day.** None is required by default.
 - **Behind a prefix it all works**, given one thing: OpenCloud answers 308 to `https://` when the proxy says the request came by `http` (`X-Forwarded-Proto: http`), as Caddy does in the dev stack. The route drops that header.
 - **URLs in answers are of no use to us.** `webDavUrl` is absolute on OpenCloud's own host and `PROPFIND` hrefs are absolute paths. Only a link's `webUrl` is used, and that one is meant for the recipient.
@@ -89,7 +94,7 @@ Caddy writes the file from two variables and proxies `/drive/*` to OpenCloud wit
 | `OINBOX_DRIVE_UPSTREAM` | none | Where OpenCloud's HTTP listener is. Unset: no Drive. |
 | `OINBOX_DRIVE_LINK_OVER_MB` | `20` | The link threshold. |
 
-Only OpenCloud's two APIs are proxied, `/drive/graph/*` and `/drive/dav/spaces/*`, and their answers are given `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`. OpenCloud's web UI and public-link pages serve what users upload; on the origin that holds the mail token they must not be reachable (found in review, 2026-10-09: all of OpenCloud was at `/drive/`). Slice 3 adds `/drive/ocs/*` for the sharing rules.
+Only OpenCloud's two APIs are proxied, `/drive/graph/*` and `/drive/dav/spaces/*`, and their answers are given `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`. OpenCloud's web UI and public-link pages serve what users upload; on the origin that holds the mail token they must not be reachable (found in review, 2026-10-09: all of OpenCloud was at `/drive/`). Slice 3 added `/drive/ocs/*` for the sharing rules.
 
 `deploy/routes.caddy` holds the route, so the dev stack and the production template share it. `deploy/examples/nginx.conf` gets the same route. `/drive` joins the list of prefixes the app's own routes must avoid.
 
@@ -153,7 +158,7 @@ The composer's paperclip becomes a menu when Drive is on: "From this computer" a
 
 Adding files that would take the message's attachments past `linkOverMb`, or any one file larger than Stalwart's `maxSizeUpload`, opens the link dialog in place of attaching. It names the files and their size and offers "Send as a link" and, unless a file is beyond `maxSizeUpload`, "Attach anyway". Files already attached stay attached.
 
-Files from Drive (slice 2) get the same offer; they are copied inside OpenCloud into the message's folder, not downloaded and uploaded.
+Files from Drive (slice 2) get the same offer; they are copied inside OpenCloud into the message's folder, not downloaded and uploaded. A megabyte here is 1024 × 1024 bytes, as sizes are shown.
 
 ### The link dialog (`src/ui/LinkDialog.tsx`)
 
@@ -164,11 +169,11 @@ Files from Drive (slice 2) get the same offer; they are copied inside OpenCloud 
 ### Making it
 
 1. Create `Mail attachments/<date> <subject>` in the user's drive, the date as `2026-10-09`, the subject as it stands (or "No subject") with `/` and control characters removed, cut to 80 characters. If it exists, add ` (2)`, ` (3)`.
-2. Upload the files into it, straight from the browser to OpenCloud. They never pass through Stalwart, which is what frees them from its upload quota. The composer shows progress per file and "Cancel".
+2. Upload the files into it, straight from the browser to OpenCloud. They never pass through Stalwart, which is what frees them from its upload quota. The dialog stays up, showing progress per file and "Cancel"; cancelling removes a folder made in that run. A file chosen from Drive is copied there by OpenCloud itself.
 3. Create the folder's link with the password and expiry.
 4. Write the link block at the end of what the user has written, above the signature and the quote.
 
-The composer remembers the folder and the link while it is open. More large files added later go into the same folder with no second dialog: the link already covers them.
+The composer remembers the folder and the link while it is open. More large files added later go into the same folder with no second password step: the link already covers them. The dialog shows their progress and can be cancelled.
 
 ### The link block
 
@@ -224,11 +229,8 @@ It is `sessionStorage` on purpose: it ends with the tab, is not shared between t
 
 ## Not yet known
 
-Each is the first task of the slice that needs it; an answer that breaks a decision above comes back to this document.
-
-1. **Large uploads** (slice 3): a 1 GB `PUT` through Caddy. If it fails, slice 3 uses OpenCloud's resumable uploads (TUS, 10 MB chunks by its own account) from the start.
-2. **Copy inside OpenCloud** (slice 3): WebDAV `COPY` between two folders of one drive.
-3. **A password that is not required** (slice 3): the same calls with OpenCloud's requirement switched off, and what the capabilities then say.
+- **An expiry OpenCloud enforces.** The sharing rules were only seen with `expire_date: { enabled: false }`. The client reads `enforced` and `days` if they are there, as ownCloud's API has them, and otherwise offers every choice; a refusal from `createLink` is shown as OpenCloud words it.
+- **HTTPS, and oinbox behind a load balancer**, for all three slices: tested on plain HTTP on one machine.
 
 ## Not in this version
 
