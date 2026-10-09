@@ -203,6 +203,9 @@ It is `sessionStorage` on purpose: it ends with the tab, is not shared between t
 
 - The two variables above.
 - What OpenCloud needs: `OC_OIDC_ISSUER` set to Stalwart's public URL, `OC_EXCLUDE_RUN_SERVICES=idp`, `PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD=none`, `PROXY_USER_OIDC_CLAIM=preferred_username`, `PROXY_USER_CS3_CLAIM=username`, `PROXY_AUTOPROVISION_ACCOUNTS=true`, `GRAPH_USERNAME_MATCH=none`, `PROXY_ROLE_ASSIGNMENT_DRIVER=default`.
+- An account with no description in Stalwart has no `name` in its user info, and OpenCloud then refuses to create the user (HTTP 500, "missing claim 'name'"). `PROXY_AUTOPROVISION_CLAIM_DISPLAYNAME=preferred_username` avoids it, at the price of the address as display name.
+- The choice of key. With the settings above the OpenCloud user is the e-mail address, and a renamed mailbox gets a new, empty drive. `PROXY_USER_OIDC_CLAIM=sub` with `PROXY_AUTOPROVISION_CLAIM_USERNAME=sub` keeps the drive across a rename; the user is then Stalwart's account number. Choose before the first user signs in: changing it later makes new users. oinbox works with either.
+- Checked with OpenCloud 7.2.4 (stable) and 8.1.0 (rolling).
 - OpenCloud must reach Stalwart at exactly the public URL the browser uses.
 - Links in mail point at OpenCloud's own address (`OC_URL`), which therefore has to be public.
 - The trust note: OpenCloud receives the user's mail token on every Drive call.
