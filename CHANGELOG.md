@@ -2,7 +2,9 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.0-beta.2
+
+Tested against Stalwart 0.16.23 with Meilisearch 1.54.
 
 ### Added
 
@@ -17,7 +19,6 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 ### Changed
 
 - The image passes Stalwart the client's address, taken from `X-Forwarded-For` when the request comes from a trusted proxy (`OINBOX_TRUSTED_PROXIES`, by default private addresses). Before, behind a load balancer, Stalwart saw the load balancer's address for everyone. Stalwart needs `Http.useXForwarded` on to read it.
-
 - Toasts are announced by screen readers through standing live regions, errors at once and the rest politely.
 - On a phone, an event's details card stays on the screen.
 - The calendar's event card and form pass the automated accessibility check they failed (`aria-modal`).
