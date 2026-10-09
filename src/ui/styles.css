@@ -607,3 +607,4 @@ a { color: var(--accent); }
 .drive-actions .drive-add { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; }
 .drive-actions .drive-add svg { width: 16px; height: 16px; }
 .drive-new { display: flex; flex-direction: column; gap: 8px; }
+.attachment-all { color: var(--accent); }

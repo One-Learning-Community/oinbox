@@ -4,6 +4,7 @@ import { useApp } from '../app/context';
 import type { Mailbox } from '../jmap/types';
 import { labelPath, subLabelCount } from '../sync/selectors';
 import { Icon } from './icons';
+import { menuKeys } from './menu';
 
 /** The "⋯" menu of a label row: Rename and Delete. */
 export function LabelMenu(props: { mailbox: Mailbox }) {
@@ -25,17 +26,7 @@ export function LabelMenu(props: { mailbox: Mailbox }) {
     button?.focus();
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    // Tab is not prevented: the browser carries it on from the button.
-    if (e.key === 'Escape' || e.key === 'Tab') return close();
-    const list = items();
-    const at = list.indexOf(document.activeElement as HTMLElement);
-    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: list.length - 1 };
-    const to = moves[e.key];
-    if (to === undefined) return;
-    e.preventDefault();
-    list[(to + list.length) % list.length]?.focus();
-  };
+  const onKeyDown = menuKeys(items, close);
 
   const choose = (run: () => void) => {
     close();

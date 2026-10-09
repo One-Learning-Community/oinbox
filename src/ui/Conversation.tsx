@@ -1,10 +1,11 @@
 import { useNavigate } from '@solidjs/router';
 import { createEffect, createMemo, createResource, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack } from 'solid-js';
 import { useApp, type App } from '../app/context';
-import type { EmailAddress, EmailBodyPart, Id, Mailbox } from '../jmap/types';
-import { avatarColor, fileSize, fullDate, listDate } from '../mail/format';
+import type { EmailAddress, Id, Mailbox } from '../jmap/types';
+import { avatarColor, fullDate, listDate } from '../mail/format';
 import { displayName } from '../mail/participants';
 import type { EmailRec } from '../sync/engine';
+import { Attachments } from './Attachments';
 import { hiddenMailboxIds, isHidden, isLabel, type View } from '../sync/selectors';
 import { Icon } from './icons';
 import { InviteCard } from './InviteCard';
@@ -357,41 +358,5 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
         </div>
       </Show>
     </article>
-  );
-}
-
-function Attachments(props: { email: EmailRec }) {
-  const { engine, toast } = useApp();
-  // Inline images referenced by the HTML body aren't listed as attachments.
-  const list = () => (props.email.attachments ?? []).filter((a) => !(a.disposition === 'inline' && a.cid && a.type.startsWith('image/')));
-
-  const download = async (a: EmailBodyPart) => {
-    try {
-      const blob = await engine.fetchBlob(a.blobId!, a.name ?? 'attachment', a.type);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = a.name ?? 'attachment';
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    } catch (e) {
-      toast(`Download failed: ${String(e)}`, 'error');
-    }
-  };
-
-  return (
-    <Show when={list().length}>
-      <div class="attachments">
-        <For each={list()}>
-          {(a) => (
-            <button type="button" class="attachment" onClick={() => void download(a)} title={a.name ?? ''}>
-              <Icon name="file" style={{ width: '20px', height: '20px', flex: 'none' }} />
-              <span>{a.name ?? 'attachment'}</span>
-              <small>{fileSize(a.size)}</small>
-            </button>
-          )}
-        </For>
-      </div>
-    </Show>
   );
 }
