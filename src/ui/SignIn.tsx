@@ -2,7 +2,7 @@ import { createSignal, Show } from 'solid-js';
 import type { OAuth } from '../auth/oauth';
 import { BrandMark } from './Brand';
 
-export function SignIn(props: { auth: OAuth; error?: string }) {
+export function SignIn(props: { auth: OAuth; error?: string; notice?: string }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal(props.error ?? '');
 
@@ -24,6 +24,9 @@ export function SignIn(props: { auth: OAuth; error?: string }) {
           <BrandMark />
         </h1>
         <p style={{ color: 'var(--text-2)', margin: '0 0 24px' }}>Sign in with your mail account.</p>
+        <Show when={props.notice}>
+          <p class="notice" role="status">{props.notice}</p>
+        </Show>
         <Show when={error()}>
           <p class="error" role="alert">{error()}</p>
         </Show>

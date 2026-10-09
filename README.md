@@ -15,7 +15,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Triage**: archive, delete, spam, read/unread, star, move, label; optimistic, with rollback and Undo.
 - **Labels**: create, rename, nest and delete; label from the list or an open thread.
 - **Keyboard**: Gmail's shortcuts (`j k o u x e # ! s I U v l c r a f / g+i ?`).
-- **Settings**: identities and signatures, vacation responder, notifications.
+- **Settings**: identities and signatures, vacation responder, notifications, changing your password.
 - **Shared mailboxes**: a Stalwart group you belong to (`support@`, say) appears in a switcher above Compose. Work its inbox and send from it; unread counts for every mailbox are always in view.
 - **Notifications**: the unread count in the tab title, and desktop notifications for new Inbox mail while oinbox is open in a tab you're not looking at (switched on in Settings).
 - **Branding**: your own name and logo in place of "oinbox", set by the operator.

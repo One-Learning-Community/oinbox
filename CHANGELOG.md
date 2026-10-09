@@ -8,6 +8,7 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 - Images in the text of a message: paste one, drop it on the text, or use the toolbar's Insert image. It is sent as a real inline part, so other mail clients show it in place.
 - A reply or a forward keeps the inline images of the message it quotes, and a forward carries the original's attachments.
+- Change your password in Settings. It asks for the current one, and signs you out everywhere, this browser included. A forgotten password is still reset by an administrator.
 
 ### Fixed
 

@@ -211,6 +211,7 @@ a { color: var(--accent); }
 .btn { border: 0; border-radius: 20px; padding: 10px 24px; background: var(--accent); color: var(--surface); font-weight: 500; cursor: pointer; }
 .btn.tonal { background: var(--accent-soft); color: var(--text); }
 .error { color: var(--danger-text); }
+.notice { color: var(--text-2); margin: 0 0 16px; }
 
 /* ---- Mobile ---- */
 .only-mobile { display: none; }
@@ -509,6 +510,7 @@ a { color: var(--accent); }
 .identity-actions { display: flex; gap: 8px; flex: none; }
 .btn[aria-disabled='true'] { opacity: 0.6; cursor: default; }
 .settings-form { display: flex; flex-direction: column; gap: 4px; width: min(560px, 86vw); }
+.password-form #password-next-hint { margin-bottom: 10px; }
 .settings-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
 .settings-form input, .settings-form textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px; }
 .field-static, .rozie-dialog .field-static { margin: 0; color: var(--text); font-size: 14px; }

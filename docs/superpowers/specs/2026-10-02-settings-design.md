@@ -373,6 +373,39 @@ Every test passes on a fresh stack (CI): it relies only on Alice's default ident
 - `README.md` lists settings among the features.
 - `docs/rozie-feedback.md` gets the gaps found.
 
+## Password (added 2026-10-08)
+
+A signed-in user changes their own password in a fourth section of the page, after Notifications. Recovering a forgotten password is not part of it: someone who can't sign in asks an administrator, and Stalwart offers no recovery endpoint.
+
+**Stalwart facts** (probed on 0.16.23 with a throwaway account on 2026-10-08; the fake must match these)
+
+- The password is the object `x:AccountPassword`, a `singleton` of the user's own account, under the capability `urn:stalwart:jmap`. That capability is in the account's capabilities, not the session's, and must be in `using`.
+- `x:AccountPassword/set` updates it with `currentSecret` and `secret`, and answers `updated: {singleton: null}`. oinbox's OAuth token is enough; no extra scope is needed.
+- Refusals, in the server's order: no `currentSecret` is `forbidden` ("Current secret must be provided to change the password or OTP auth."); a wrong one is `forbidden` ("Current secret is incorrect."); under 8 characters, over 128, or a password its strength check finds too common is `invalidProperties` on `secret`, with a description fit to show.
+- A password equal to the current one is accepted.
+- Once it is set, the access token answers 401 and the refresh token `invalid_grant`, at once and for every session of the account, because token keys derive from the password hash.
+- A shared mailbox (a group) has no such object: `/set` answers `notFound`. A member can't change it.
+
+**Code**
+
+| File | What |
+|---|---|
+| `src/app/password.ts` | `createPassword(client, onChanged)`: `supported()`, and `change({current, next, confirm})`, which checks, sends and throws a `FieldError`. Also the one-time notice for the sign-in card. |
+| `src/ui/PasswordSection.tsx` | The form: current, new, confirm. |
+| `src/ui/SignIn.tsx` | An optional `notice`, shown as a status. |
+| `src/index.tsx` | Builds it for the user's own account; on success rescues open drafts, leaves the notice and goes to the sign-in card. |
+| `src/sync/fake-jmap.ts` | `x:AccountPassword/set` as probed; requests are refused with 401 once the password is set. |
+
+**Rules**
+
+- The call always names the user's own account, whichever mailbox is on screen.
+- Checked before asking the server: a current password is given; the new one has 8 to 128 characters, differs from the current one (Stalwart would accept it and sign every device out for nothing), and matches its confirmation. Passwords are sent as typed, spaces included.
+- The server's refusals go next to the field they concern. "Current secret is incorrect." is reworded to "Current password is incorrect."; the reasons for a weak password are shown in Stalwart's words.
+- On success the form stays locked, oinbox drops its tokens and caches and loads the sign-in card with "Password changed. Sign in with your new password." Drafts the server doesn't have yet are rescued as for any lost session. Other tabs and devices find their session ended in the usual way.
+- Where the account doesn't advertise `urn:stalwart:jmap`, the section says the password can't be changed here.
+
+**Tests**: `src/app/password.test.ts`, `src/ui/PasswordSection.test.tsx`, `src/ui/SignIn.test.tsx`, and `e2e/password.spec.ts`, which creates and deletes a user of its own (`e2e/support/accounts.ts`) so that alice's stored sign-in survives.
+
 ## Out of scope
 
 - Editing an identity's `replyTo` and `bcc`, and applying them when sending.
@@ -382,3 +415,4 @@ Every test passes on a fresh stack (CI): it relies only on Alice's default ident
 - Sieve filters in general, and preserving another active Sieve script when the responder is turned on.
 - A keyboard shortcut for Settings, and settings other than these three (the theme stays in the top bar).
 - Sending as addresses the account doesn't own; adding aliases is an administrator's job in Stalwart.
+- Recovering a forgotten password, two-factor settings (`otpAuth`) and app passwords.

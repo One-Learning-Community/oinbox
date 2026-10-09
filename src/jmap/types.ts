@@ -9,6 +9,8 @@ export const SUBMISSION = 'urn:ietf:params:jmap:submission';
 export const CALENDARS = 'urn:ietf:params:jmap:calendars';
 export const CALENDARS_PARSE = 'urn:ietf:params:jmap:calendars:parse';
 export const VACATION = 'urn:ietf:params:jmap:vacationresponse';
+/** Stalwart's own objects, the account's password among them. */
+export const STALWART = 'urn:stalwart:jmap';
 
 export interface Session {
   capabilities: Record<string, unknown>;
@@ -115,6 +117,13 @@ export interface Identity {
 }
 
 /** RFC 8621 §8. Stalwart keeps exactly one, with id "singleton". */
+/** Stalwart's password object: a singleton of the user's own account. Both are write-only in effect (`secret` reads back masked). */
+export interface AccountPassword {
+  id: 'singleton';
+  currentSecret: string;
+  secret: string;
+}
+
 export interface VacationResponse {
   id: Id;
   isEnabled: boolean;
@@ -392,6 +401,7 @@ export interface Methods {
   'Identity/set': { args: SetArgs<Identity>; result: SetResult<Identity> };
   'VacationResponse/get': { args: GetArgs; result: GetResult<VacationResponse> };
   'VacationResponse/set': { args: SetArgs<VacationResponse>; result: SetResult<VacationResponse> };
+  'x:AccountPassword/set': { args: SetArgs<AccountPassword>; result: SetResult<AccountPassword> };
   'SearchSnippet/get': {
     args: { accountId: Id; filter: EmailFilter | null; emailIds: Id[] };
     result: { accountId: Id; list: SearchSnippet[]; notFound: Id[] | null };

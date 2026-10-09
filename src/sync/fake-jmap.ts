@@ -2,7 +2,7 @@
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import { CALENDARS_PARSE, VACATION, type Calendar, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
+import { CALENDARS_PARSE, STALWART, VACATION, type Calendar, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
@@ -58,6 +58,13 @@ export class FakeJmap {
   vacationSupported = true;
   /** Each request's `using`. */
   usings: string[][] = [];
+  password = 'oinbox-dev-pass';
+  /** Whether the account advertises urn:stalwart:jmap. */
+  passwordSupported = true;
+  /** False for a shared account (a Stalwart group): it has no password object. */
+  personal = true;
+  /** Set once the password is: Stalwart derives token keys from its hash, so every token dies. */
+  revoked = false;
 
   addMailbox(id: string, name: string, role: Mailbox['role'] = null, parentId: string | null = null) {
     this.mailboxes.set(id, {
@@ -154,6 +161,9 @@ export class FakeJmap {
     if (name.startsWith('VacationResponse/') && !using.includes(VACATION)) {
       return ['error', { type: 'unknownMethod', description: `Method ${name} requires capability ${VACATION}.` }];
     }
+    if (name.startsWith('x:') && !using.includes(STALWART)) {
+      return ['error', { type: 'unknownMethod', description: `Method ${name} requires capability ${STALWART}.` }];
+    }
     const ids = args.ids as string[] | null | undefined;
     const pick = (e: Rec) => {
       const props = args.properties as string[] | undefined;
@@ -186,6 +196,8 @@ export class FakeJmap {
         return [name, { accountId: 'a1', state: `v${this.vacationState}`, list: ids && !ids.includes('singleton') ? [] : [structuredClone(this.vacation)], notFound: (ids ?? []).filter((id) => id !== 'singleton') }];
       case 'VacationResponse/set':
         return [name, this.vacationSet(args)];
+      case 'x:AccountPassword/set':
+        return [name, this.passwordSet(args)];
       case 'Email/query': {
         const all = this.queryIds(args);
         const qs = `q${this.emailState}`;
@@ -579,6 +591,29 @@ export class FakeJmap {
     };
   }
 
+  /** As probed on Stalwart 0.16.23: the checks in its order, and its wording. */
+  private passwordSet(args: Record<string, unknown>) {
+    const updated: Record<string, null> = {};
+    const notUpdated: Record<string, unknown> = {};
+    const weak = (description: string) => ({ type: 'invalidProperties', description, properties: ['secret'] });
+    for (const [id, p] of Object.entries((args.update ?? {}) as Record<string, { currentSecret?: string; secret?: string }>)) {
+      const length = [...(p.secret ?? '')].length;
+      if (id !== 'singleton' || !this.personal) notUpdated[id] = { type: 'notFound' };
+      else if (p.currentSecret === undefined) notUpdated[id] = { type: 'forbidden', description: 'Current secret must be provided to change the password or OTP auth.' };
+      else if (p.currentSecret !== this.password) notUpdated[id] = { type: 'forbidden', description: 'Current secret is incorrect.' };
+      else if (length < 8) notUpdated[id] = weak('Password must be at least 8 characters long.');
+      else if (length > 128) notUpdated[id] = weak('Password must be at most 128 characters long.');
+      else if (['password', '12345678'].includes(p.secret!)) notUpdated[id] = weak('Password is too weak. This is a top-10 common password. Add another word or two. Uncommon words are better.');
+      else {
+        this.password = p.secret!;
+        this.revoked = true;
+        updated[id] = null;
+      }
+    }
+    const orNull = <T extends object>(o: T) => (Object.keys(o).length ? o : undefined);
+    return { accountId: this.accountId, updated: orNull(updated), notUpdated: orNull(notUpdated) };
+  }
+
   /** Resolve back-references (RFC 8620 §3.7) including `*` path segments. */
   /** Resolve a call's back-references against earlier answers, then handle it. */
   dispatch(name: string, args: Record<string, unknown>, done: Map<string, Invocation>, using: string[]): [string, unknown] {
@@ -609,11 +644,12 @@ export class FakeJmap {
       get capabilities() {
         return fake.parseSupported ? { [CALENDARS_PARSE]: {} } : {};
       },
-      accounts: { a1: { name: 'alice@example.test', isPersonal: true, isReadOnly: false, accountCapabilities: this.vacationSupported ? { [VACATION]: {} } : {} } },
+      accounts: { a1: { name: 'alice@example.test', isPersonal: true, isReadOnly: false, accountCapabilities: { ...(this.vacationSupported ? { [VACATION]: {} } : {}), ...(this.passwordSupported ? { [STALWART]: {} } : {}) } } },
       primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
     };
     const fetchImpl = async (_url: string, init?: RequestInit) => {
+      if (this.revoked) return new Response('{"type":"about:blank","status":401,"title":"Unauthorized"}', { status: 401 });
       const body = JSON.parse(init!.body as string) as { using: string[]; methodCalls: Invocation[] };
       this.usings.push(body.using);
       const done = new Map<string, Invocation>();
@@ -642,7 +678,7 @@ function identityRec(id: string, name: string, email: string): Identity {
 /** One session over several fakes: the first is the user's own account, the rest are shared ones. */
 export function fakeClient(fakes: FakeJmap[]): JmapClient {
   const first = fakes[0]!;
-  const caps = (f: FakeJmap) => ({ 'urn:ietf:params:jmap:mail': {}, ...(f.vacationSupported ? { [VACATION]: {} } : {}) });
+  const caps = (f: FakeJmap) => ({ 'urn:ietf:params:jmap:mail': {}, ...(f.vacationSupported ? { [VACATION]: {} } : {}), ...(f.passwordSupported ? { [STALWART]: {} } : {}) });
   const session: Session = {
     capabilities: {},
     accounts: Object.fromEntries(fakes.map((f, i) => [f.accountId, { name: f.accountName, isPersonal: i === 0, isReadOnly: false, accountCapabilities: caps(f) }])),

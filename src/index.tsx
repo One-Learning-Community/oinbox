@@ -11,6 +11,7 @@ import { AppContext, createImagePrefs, createTheme, type App } from './app/conte
 import { createLabels } from './app/labels';
 import { createRecipients } from './app/recipients';
 import { clearRescue, saveRescue, takeRescue } from './app/rescue';
+import { createPassword, notePasswordChanged, takePasswordNotice } from './app/password';
 import { createSettings } from './app/settings';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
@@ -62,7 +63,8 @@ async function boot() {
   }
 
   if (!auth.isSignedIn()) {
-    mount(() => <SignIn auth={auth} />);
+    const notice = takePasswordNotice(sessionStorage);
+    mount(() => <SignIn auth={auth} notice={notice} />);
     return;
   }
 
@@ -120,6 +122,13 @@ async function boot() {
   };
   const rescueDrafts = () => {
     each((s) => saveRescue(localStorage, s.info.id, s.composers.snapshot()));
+  };
+  /** The server has just dropped every token of the account: go to the sign-in card, and say why. */
+  const passwordChanged = () => {
+    // The same person signs in again in a moment: what they were writing waits for them.
+    rescueDrafts();
+    notePasswordChanged(sessionStorage);
+    leave();
   };
   /** The server no longer accepts our tokens. Stay on the page, so nothing the user was writing is lost. */
   const sessionLost = () => {
@@ -233,6 +242,7 @@ async function boot() {
     get recipients() {
       return cur().recipients;
     },
+    password: createPassword(client, passwordChanged),
     calendar,
     // Calendars are the user's own: a shared mailbox has no Calendar link.
     hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS] && cur().info.personal,

@@ -51,6 +51,7 @@ The `setup` project signs Alice in once through the real OAuth flow and saves `e
 | Spec | What it checks |
 |---|---|
 | `login.spec.ts` | "Sign in" card → Stalwart `/login` (client_id `oinbox`, PKCE S256, redirect `/auth/callback`) → token exchange with refresh token → `/inbox` with the seeded threads. |
+| `password.spec.ts` | A user of the spec's own (created and deleted with Stalwart's CLI, so alice stays signed in) changes their password in Settings: a wrong current password and a common new one are refused in place; a good one lands on the sign-in card with a notice shown once, drops the tokens, and only the new password signs in. |
 | `conversation.spec.ts` | The "Q3 planning offsite" thread shows all 5 messages, including Alice's Sent copy (shown as "me"), oldest → newest. The latest is expanded and the older read ones are collapsed; the "older messages" pill is expanded first. |
 | `html-message.spec.ts` | Erin's HTML reply: `.images-banner` shown and no `img[src=http…]`. The quote is folded behind `button.oinbox-quote-toggle` inside the iframe and toggles open and closed. No request reaches `picsum.photos` or `tracker.design.test`. |
 | `push.spec.ts` | SMTP delivery while the inbox is open → a new unread row appears live (about 50 ms), with no navigation or reload. A reply delivered while its conversation is open appears as the newest message, expanded. |

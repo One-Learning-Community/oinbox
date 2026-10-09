@@ -6,8 +6,9 @@ import {
 import { SetFailure, type MailEngine } from '../sync/engine';
 import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { ToastFn } from './actions';
+import type { PasswordField } from './password';
 
-export type Field = IdentityField | VacationField | 'form';
+export type Field = IdentityField | VacationField | PasswordField | 'form';
 
 /** A message for one field of a settings form ('form' for the whole form). */
 export class FieldError extends Error {

@@ -4,6 +4,7 @@ import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
 import type { ErrorReporter } from './errors';
 import type { Labels } from './labels';
+import type { Password } from './password';
 import type { Recipients } from './recipients';
 import type { Settings } from './settings';
 import type { OAuth } from '../auth/oauth';
@@ -34,6 +35,8 @@ export interface App {
   actions: Actions;
   labels: Labels;
   settings: Settings;
+  /** The user's own password, whichever account is on screen. */
+  password: Password;
   nav: Nav;
   composers: Composers;
   recipients: Recipients;

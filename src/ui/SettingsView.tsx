@@ -6,15 +6,19 @@ import type { Id } from '../jmap/types';
 import { signatureForCompose } from '../mail/settings';
 import { IdentityDialog } from './IdentityDialog';
 import { NotificationsSection } from './NotificationsSection';
+import { PasswordSection } from './PasswordSection';
 import { VacationForm } from './VacationForm';
 
 export function SettingsView() {
+  // Read here, inside the context: a prop is evaluated where it is used, which may be an event handler.
+  const { password } = useApp();
   return (
     <div class="settings">
       <h1>Settings</h1>
       <IdentitiesSection />
       <VacationForm />
       <NotificationsSection />
+      <PasswordSection password={password} />
       <p class="settings-version">{versionLabel()}</p>
     </div>
   );

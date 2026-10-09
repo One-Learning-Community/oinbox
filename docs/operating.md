@@ -187,6 +187,7 @@ These are Stalwart defaults that users of a web client run into:
 ## What signs people out
 
 - **Setting an account's password.** Stalwart derives its token keys from the password hash, so every session of that account ends. This includes re-applying an account definition that carries a password.
+- **A user changing their own password** in oinbox's Settings, for the same reason. oinbox sends them to the sign-in page; their other devices and mail apps need the new password.
 - **Replacing Stalwart's data** (a new volume): it generates a new signing key.
 
 Restarting Stalwart, reloading its settings, and upgrading oinbox do not sign anyone out. When a session does end, oinbox says so in place and keeps what was being written.
@@ -195,6 +196,7 @@ Restarting Stalwart, reloading its settings, and upgrading oinbox do not sign an
 
 - **A separate origin or a CDN.** Stalwart's CORS setting is all or nothing (`Http.usePermissiveCors` allows every origin), oinbox finds its server at its own origin, and the OAuth redirect and Content-Security-Policy assume one origin. It could be made to work; it has not been tested.
 - **More than one Stalwart behind one oinbox**, and accounts on more than one server at once.
+- **Recovering a forgotten password.** A signed-in user can change their password in Settings; someone who can't sign in needs an administrator to set a new one in Stalwart's WebUI.
 - **Anything but Stalwart.** oinbox speaks standard JMAP but leans on Stalwart's behaviour in places.
 
 ## Development stack
