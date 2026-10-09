@@ -1,11 +1,10 @@
-import { Popover } from '@rozie-ui/popover-solid';
-import { createEffect, createSignal, For, on, Show, type JSX } from 'solid-js';
+import { For, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import type { EmailBodyPart } from '../jmap/types';
 import { fileSize } from '../mail/format';
 import type { EmailRec } from '../sync/engine';
 import { Icon } from './icons';
-import { menuKeys } from './menu';
+import { MenuButton } from './MenuButton';
 
 /** A message's attachments as chips. With a Drive, a chip offers a choice; without, it downloads. */
 export function Attachments(props: { email: EmailRec }) {
@@ -51,9 +50,17 @@ export function Attachments(props: { email: EmailRec }) {
                 </button>
               }
             >
-              <AttachmentMenu name={nameOf(a)} onDownload={() => void download(a)} onSave={() => toDrive([a])}>
+              <MenuButton
+                class="attachment"
+                title={nameOf(a)}
+                menuLabel={`Options for ${nameOf(a)}`}
+                items={[
+                  { label: 'Download', run: () => void download(a) },
+                  { label: 'Save to Drive', run: () => toDrive([a]) },
+                ]}
+              >
                 {face(a)}
-              </AttachmentMenu>
+              </MenuButton>
             </Show>
           )}
         </For>
@@ -64,50 +71,5 @@ export function Attachments(props: { email: EmailRec }) {
         </Show>
       </div>
     </Show>
-  );
-}
-
-/** A chip that opens a menu: Download, Save to Drive. */
-function AttachmentMenu(props: { name: string; onDownload: () => void; onSave: () => void; children: JSX.Element }) {
-  const [open, setOpen] = createSignal(false);
-  let button: HTMLButtonElement | undefined;
-  let menu: HTMLDivElement | undefined;
-  const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
-
-  createEffect(on(open, (isOpen) => {
-    if (isOpen) queueMicrotask(() => items()[0]?.focus({ preventScroll: true }));
-  }, { defer: true }));
-
-  /** Close with the focus back on the chip. */
-  const close = () => {
-    setOpen(false);
-    button?.focus();
-  };
-  const choose = (run: () => void) => {
-    close();
-    run();
-  };
-
-  return (
-    <span class="attachment-menu">
-    <Popover
-      open={open()}
-      onOpenChange={setOpen}
-      trigger="manual"
-      placement="bottom-start"
-      strategy="fixed"
-      offset={4}
-      anchorSlot={() => (
-        <button ref={button} type="button" class="attachment" title={props.name} aria-haspopup="menu" aria-expanded={open()} onClick={() => setOpen(!open())}>
-          {props.children}
-        </button>
-      )}
-    >
-      <div class="menu" role="menu" aria-label={`Options for ${props.name}`} ref={menu} onKeyDown={menuKeys(items, close)}>
-        <button type="button" role="menuitem" onClick={() => choose(props.onDownload)}>Download</button>
-        <button type="button" role="menuitem" onClick={() => choose(props.onSave)}>Save to Drive</button>
-      </div>
-    </Popover>
-    </span>
   );
 }
