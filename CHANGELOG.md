@@ -2,6 +2,12 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Drive: where an OpenCloud runs beside Stalwart, an attachment can be saved into one of its folders from the message, with no second sign-in. Operators turn it on with `OINBOX_DRIVE_UPSTREAM` (docs/operating.md, "Drive"). Tested against OpenCloud 7.2.4 and 8.1.0.
+
 ## 0.1.0-beta.2
 
 Tested against Stalwart 0.16.23 with Meilisearch 1.54.

@@ -588,7 +588,7 @@ a { color: var(--accent); }
 
 
 /* Drive folder picker */
-.drive-picker { display: flex; flex-direction: column; gap: 12px; width: min(480px, 86vw); }
+.drive-picker { display: flex; flex-direction: column; gap: 12px; min-width: min(480px, 80vw); }
 .drive-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--text-3); }
 .drive-crumbs button { border: 0; background: none; padding: 2px 4px; border-radius: 4px; color: var(--accent); cursor: pointer; font: inherit; }
 .drive-crumbs button:hover, .drive-crumbs button:focus-visible { background: var(--hover); outline: none; }

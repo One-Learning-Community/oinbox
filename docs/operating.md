@@ -106,6 +106,8 @@ The release image is configured by environment variables. All are optional.
 | `OINBOX_TRUSTED_PROXIES` | `private_ranges` | The proxies in front of the image whose `X-Forwarded-For` Caddy believes, as addresses or ranges separated by spaces. Only the image's own configuration reads it; in the production template Caddy faces the internet and trusts no one. |
 | `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
 | `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
+| `OINBOX_DRIVE_UPSTREAM` | none | Where an OpenCloud's HTTP listener is, as `host:port`. Set, the app offers Drive; unset, it shows none. See "Drive". |
+| `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Reserved for sending large files as Drive links, which this version does not yet do. A whole number. |
 
 ### Branding
 
@@ -114,6 +116,43 @@ The release image is configured by environment variables. All are optional.
 Caddy hands the two values to the app as `/branding.json`. Behind your own proxy, edit the `branding.json` that ships with the static files instead (`{ "name": "Example Mail", "logo": "/my-logo.svg" }`) and serve it uncached, as `deploy/examples/nginx.conf` does for everything outside `/assets/`.
 
 The browser remembers the branding it last saw, so a change shows on the second load after it is made, not the first. Error messages and the version line in Settings still say "oinbox".
+
+### Drive
+
+oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as the user's Drive. In this version that means one thing: an attachment can be saved into a Drive folder from the message it came in. Users sign in once; OpenCloud accepts the sign-in Stalwart gave oinbox.
+
+**What you need**
+
+- OpenCloud 7.2.4 or later, set up to take its users from Stalwart:
+
+  | OpenCloud setting | Value |
+  |---|---|
+  | `OC_OIDC_ISSUER` | Stalwart's public URL, exactly as the browser uses it |
+  | `OC_EXCLUDE_RUN_SERVICES` | `idp` |
+  | `PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD` | `none` (Stalwart's tokens are opaque; OpenCloud checks one by asking Stalwart) |
+  | `PROXY_USER_OIDC_CLAIM` | `preferred_username` |
+  | `PROXY_USER_CS3_CLAIM` | `username` |
+  | `PROXY_AUTOPROVISION_ACCOUNTS` | `true` |
+  | `PROXY_ROLE_ASSIGNMENT_DRIVER` | `default` |
+  | `GRAPH_USERNAME_MATCH` | `none` (user names are e-mail addresses) |
+
+- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends `/drive/*` to it with the prefix removed, and tells the app Drive is on in `/drive.json`.
+- OpenCloud able to reach Stalwart at that public URL from where it runs.
+
+OpenCloud need not run beside oinbox. Any `host:port` the oinbox container reaches over plain HTTP on a private network will do: a separate service in the same VPC, for example. (Reaching it through its own public HTTPS address has not been tested.)
+
+Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy `/drive/` to OpenCloud with the prefix removed, send it `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files.
+
+**Things to know before the first user signs in**
+
+- *Accounts need a name.* An account with no description in Stalwart has no `name` to give OpenCloud, which then refuses to create the user (the Drive actions answer "Drive isn't available right now", and OpenCloud logs `missing claim 'name'`). Either give every account a description, or set `PROXY_AUTOPROVISION_CLAIM_DISPLAYNAME=preferred_username` and accept the address as the display name.
+- *What a user is known by.* With the settings above the OpenCloud user is the e-mail address, so a renamed mailbox gets a new, empty drive. Setting `PROXY_USER_OIDC_CLAIM=sub` and `PROXY_AUTOPROVISION_CLAIM_USERNAME=sub` keeps the drive across a rename; the user is then known by Stalwart's account number. Choose before anyone signs in: changing it afterwards makes new users. oinbox works with either.
+- *Trust.* Every Drive request carries the user's mail token to OpenCloud. Run only an OpenCloud you would trust with the mail.
+- *Signing out.* A token Stalwart has revoked (a changed password, say) stops working in OpenCloud within a second.
+
+**If Drive is set but not working**, the app still shows the Drive actions and answers "Drive isn't available right now" when one is used; mail is unaffected. Check that `https://<your host>/drive/graph/v1.0/me/drive` answers 401 (not 404, and not the app's page), then OpenCloud's log for `failed to get userinfo`, which means it cannot reach Stalwart at `OC_OIDC_ISSUER`.
+
+Tested with Stalwart 0.16.23 and OpenCloud 7.2.4 and 8.1.0.
 
 ### Behind a load balancer (for example AWS ECS)
 

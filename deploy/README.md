@@ -69,12 +69,30 @@ EventSource streams unbuffered (`flush_interval -1`, no read timeout).
 
 Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwart's `Basic` challenge on a 401 makes Chrome hold a `fetch()` open behind a native login prompt.
 
+### Paths proxied to OpenCloud
+
+`/drive/*` goes to OpenCloud with the prefix removed, and `/drive.json` tells the app whether there is one. Both exist only when `OINBOX_DRIVE_UPSTREAM` is set; without it `/drive.json` says `enabled: false` and `/drive/*` answers 404. Keep SPA routes clear of `/drive` too.
+
 ### Settings that matter
 
 * `STALWART_PUBLIC_URL=http://localhost:8080` controls the base of every URL in the JMAP session and in the OAuth/OIDC discovery documents.
 * `stalwart/config.json` names only the datastore (RocksDB). In Stalwart 0.16, every other setting lives in the database and is applied from `plan.ndjson`. There is no TOML and no `/api` REST management API any more.
 * `Http.rateLimitAuthenticated` is raised to 10,000 requests a minute (Stalwart's default is 1,000). The e2e suite loads the app hundreds of times in a few minutes as one user, and with an engine per mailbox it reached the default. Real use stays far below it; the production template keeps the default.
 * `OidcProvider.requireClientRegistration=true`: unregistered `client_id`s and unregistered `redirect_uri`s are rejected. The WebUI's `stalwart-webui` client is registered too.
+
+## Drive (optional)
+
+OpenCloud 7.2.4 joins the stack with one more override. The default stack, and CI, run without it.
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.local-dist.yml -f docker-compose.drive.yml up -d
+```
+
+* Users are created in OpenCloud on their first Drive action, from their Stalwart sign-in. Nothing is seeded.
+* OpenCloud shares Caddy's network namespace, which is how it reaches Stalwart at `http://localhost:8080`. It publishes no port, and its own web UI is not reachable.
+* After `docker compose restart caddy`, run `docker compose -f docker-compose.yml -f docker-compose.drive.yml restart opencloud` as well: it loses its network with Caddy's.
+* To switch Drive off again, bring the stack up without the override and with `--remove-orphans`.
+* The end-to-end tests that need a real OpenCloud (`e2e/drive.spec.ts`, `e2e/drive-stack.spec.ts`) skip themselves without it. Run them with the override up before changing anything under `src/drive/`.
 
 ## Proxy routing
 
