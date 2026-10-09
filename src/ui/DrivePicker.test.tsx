@@ -184,6 +184,32 @@ describe('DrivePicker', () => {
     await folderRow('Archive');
   });
 
+  it('keeps the keyboard in the list after opening a folder and after going up', async () => {
+    const { open } = setup((s) => {
+      s.mkdir(['Archive']);
+      s.mkdir(['Reports', '2026']);
+    });
+    open();
+    fireEvent.click(await folderRow('Reports'));
+    const inner = await folderRow('2026');
+    await waitFor(() => expect(inner).toHaveFocus());
+    fireEvent.keyDown(document.activeElement!, { key: 'Backspace' });
+    const archive = await folderRow('Archive');
+    await waitFor(() => expect(archive).toHaveFocus());
+  });
+
+  it('goes up with Backspace from a folder with nothing to focus in it', async () => {
+    const { open } = setup((s) => {
+      s.mkdir(['Empty']);
+    });
+    open();
+    fireEvent.click(await folderRow('Empty'));
+    await screen.findByText('This folder is empty.');
+    await waitFor(() => expect(document.activeElement).toHaveClass('drive-list'));
+    fireEvent.keyDown(document.activeElement!, { key: 'Backspace' });
+    await folderRow('Empty');
+  });
+
   it('closes on Cancel without saving', async () => {
     const { server, drive, open } = setup();
     open();

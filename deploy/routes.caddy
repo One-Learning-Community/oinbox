@@ -5,7 +5,7 @@
 #   3. stream the push connection unbuffered, with no read timeout;
 #   4. serve the app with its security headers, falling back to index.html;
 #   5. compress the app's files, and only those;
-#   6. if there is an OpenCloud, send /drive/* to it with the prefix removed, and say so in /drive.json.
+#   6. if there is an OpenCloud, send its two APIs under /drive/ to it with the prefix removed, and say so in /drive.json.
 (oinbox_routes) {
 	# --- Paths owned by Stalwart (same origin as the SPA) --------------------
 	# /auth/callback is the SPA's OAuth redirect_uri, so it must NOT go to Stalwart,
@@ -63,8 +63,10 @@
 		respond @drive_on `{"enabled":true,"linkOverMb":{$OINBOX_DRIVE_LINK_OVER_MB:20}}`
 		respond `{"enabled":false,"linkOverMb":{$OINBOX_DRIVE_LINK_OVER_MB:20}}`
 	}
+	# Only the two APIs the app uses. OpenCloud's web UI and its public-link pages serve what users
+	# upload; on this origin, where the mail token is kept, they must not be reachable at all.
 	@drive {
-		path /drive/*
+		path /drive/graph/* /drive/dav/spaces/*
 		expression `"{$OINBOX_DRIVE_UPSTREAM:}" != ""`
 	}
 	handle @drive {
@@ -74,13 +76,17 @@
 		reverse_proxy {$OINBOX_DRIVE_UPSTREAM:localhost:9} {
 			# OpenCloud redirects to https:// when told the request came by http, as it does in the dev stack.
 			header_up -X-Forwarded-Proto
+			# A file fetched from Drive is data: whatever it is, the browser must not run it as a
+			# page of this origin or guess its type.
+			header_down Content-Security-Policy "sandbox; default-src 'none'"
+			header_down X-Content-Type-Options "nosniff"
 			# As for Stalwart: a Basic challenge would put a browser login prompt over the app.
 			header_down -Www-Authenticate
 			# Uploads and downloads are streamed, not buffered.
 			flush_interval -1
 		}
 	}
-	# No OpenCloud: a Drive request must not be answered with index.html.
+	# No OpenCloud, or a path that is not one of the two: never answered with index.html.
 	handle /drive/* {
 		respond 404
 	}

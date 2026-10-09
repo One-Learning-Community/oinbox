@@ -31,6 +31,20 @@ test("OpenCloud answers under /drive with the mail token and creates the user's 
   expect(await res.json()).toMatchObject({ driveType: 'personal', driveAlias: 'personal/alice@example.test' });
 });
 
+test('only the two APIs the app uses are reachable, and their answers can run nothing on this origin', async () => {
+  test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
+  // OpenCloud's web UI, its public-link pages and everything else stay off the mail origin.
+  for (const path of ['/drive/', '/drive/index.html', '/drive/s/anything', '/drive/dav/public-files/anything', '/drive/config.json', '/drive/ocs/v1.php/cloud/capabilities']) {
+    expect((await fetch(`${BASE}${path}`, { redirect: 'manual' })).status, path).toBe(404);
+  }
+  for (const path of ['/drive/graph/v1.0/me/drive', '/drive/dav/spaces/x/y']) {
+    const res = await fetch(`${BASE}${path}`, { redirect: 'manual' });
+    expect(res.status, path).toBe(401);
+    expect(res.headers.get('content-security-policy'), path).toBe("sandbox; default-src 'none'");
+    expect(res.headers.get('x-content-type-options'), path).toBe('nosniff');
+  }
+});
+
 test('without a token OpenCloud answers 401 and no browser login prompt', async () => {
   test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
   const res = await fetch(`${BASE}/drive/graph/v1.0/me/drive`, { redirect: 'manual' });

@@ -594,6 +594,7 @@ a { color: var(--accent); }
 .drive-crumbs button:hover, .drive-crumbs button:focus-visible { background: var(--hover); outline: none; }
 .drive-crumbs [aria-current] { color: var(--text); font-weight: 600; padding: 2px 4px; }
 .drive-list { height: min(320px, 45vh); overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.drive-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .drive-list ul { list-style: none; margin: 0; padding: 4px; }
 .drive-list li > button, .drive-file { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; text-align: left; }
 .drive-list li > button { cursor: pointer; }

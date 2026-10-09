@@ -17,6 +17,8 @@ export interface SaveFile {
 }
 export interface SaveRequest {
   files: SaveFile[];
+  /** Those already in Drive, after a save that stopped part-way: a second try leaves them alone. */
+  saved: Set<SaveFile>;
 }
 
 /** A name a folder can hold: no slashes or control characters, and never empty or a dot name. */
@@ -60,15 +62,15 @@ export function createDrive(deps: { client: DriveClient; toast: ToastFn }) {
     const req = request();
     if (!req) return false;
     const path = trail.slice(1).map((c) => c.name);
-    let saved = 0;
     try {
       // OpenCloud replaces a file of the same name without a word, so look first.
       const taken = new Set((await client.children(trail.at(-1)!.id)).map((i) => i.name.toLowerCase()));
       for (const f of req.files) {
+        if (req.saved.has(f)) continue;
         const name = freeName(safeName(f.name), taken);
         await client.upload([...path, name], await f.fetch());
         taken.add(name.toLowerCase());
-        saved++;
+        req.saved.add(f);
       }
       const where = path.at(-1) ?? (await client.drive()).name;
       toast(req.files.length === 1 ? `Saved to Drive: ${where}` : `${req.files.length} files saved to Drive: ${where}`, 'success');
@@ -76,7 +78,7 @@ export function createDrive(deps: { client: DriveClient; toast: ToastFn }) {
       setRequest(null);
       return true;
     } catch (e) {
-      toast(`${driveMessage(e)}${saved ? ` ${saved} of ${req.files.length} saved.` : ''}`, 'error');
+      toast(`${driveMessage(e)}${req.saved.size ? ` ${req.saved.size} of ${req.files.length} saved.` : ''}`, 'error');
       return false;
     }
   };
@@ -90,7 +92,7 @@ export function createDrive(deps: { client: DriveClient; toast: ToastFn }) {
     request,
     /** Open the folder picker for these files. */
     saveToDrive: (files: SaveFile[]) => {
-      if (files.length) setRequest({ files });
+      if (files.length) setRequest({ files, saved: new Set() });
     },
     cancel: () => setRequest(null),
     /** Where the picker opens: the folder last saved to in this tab, or the top. */

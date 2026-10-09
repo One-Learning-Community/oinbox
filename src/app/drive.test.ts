@@ -142,6 +142,24 @@ describe('createDrive', () => {
     expect(toast).toHaveBeenCalledWith("Couldn't save to Drive: blob gone 1 of 3 saved.", 'error');
   });
 
+  it('a second try saves only what the first did not', async () => {
+    const { server, toast, drive } = setup();
+    let failing = true;
+    const flaky: SaveFile = {
+      name: 'b.txt',
+      fetch: async () => {
+        if (failing) throw new Error('blob gone');
+        return blob('b');
+      },
+    };
+    drive.saveToDrive([file('a.txt'), flaky, file('c.txt')]);
+    expect(await drive.confirm(TOP)).toBe(false);
+    failing = false;
+    expect(await drive.confirm(TOP)).toBe(true);
+    expect(server.names([])).toEqual(['a.txt', 'b.txt', 'c.txt']);
+    expect(toast).toHaveBeenLastCalledWith('3 files saved to Drive: Alice Example', 'success');
+  });
+
   it('does nothing on confirm when nothing is waiting', async () => {
     const { server, drive } = setup();
     expect(await drive.confirm(TOP)).toBe(false);

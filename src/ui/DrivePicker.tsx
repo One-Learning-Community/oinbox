@@ -26,7 +26,7 @@ function Picker(props: { count: number }) {
   const [naming, setNaming] = createSignal(false);
   const [nameError, setNameError] = createSignal('');
   const [rootName, setRootName] = createSignal(trail()[0]!.name);
-  let list: HTMLUListElement | undefined;
+  let box: HTMLDivElement | undefined;
   let nameField: HTMLInputElement | undefined;
   /** Only the latest listing counts: a slow answer for a folder already left is dropped. */
   let asked = 0;
@@ -43,6 +43,9 @@ function Picker(props: { count: number }) {
       const found = await drive.client.children(here().id);
       if (mine !== asked) return;
       setItems([...found].sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name)));
+      // The row that was opened is gone with its folder: put the focus in the new listing, on its first
+      // folder or, with none, on the list itself, so the arrows and Backspace keep working.
+      queueMicrotask(() => (box?.querySelector<HTMLElement>('button[data-folder]') ?? box)?.focus({ preventScroll: true }));
     } catch (e) {
       if (mine !== asked) return;
       // The folder remembered from last time has gone: start again from the top.
@@ -58,7 +61,7 @@ function Picker(props: { count: number }) {
   const ready = () => items() !== null && !busy();
 
   const onListKey = (e: KeyboardEvent) => {
-    const rows = [...(list?.querySelectorAll<HTMLElement>('button[data-folder]') ?? [])];
+    const rows = [...(box?.querySelectorAll<HTMLElement>('button[data-folder]') ?? [])];
     const at = rows.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'Backspace') {
       e.preventDefault();
@@ -125,7 +128,7 @@ function Picker(props: { count: number }) {
             )}
           </For>
         </nav>
-        <div class="drive-list">
+        <div class="drive-list" ref={box} tabindex={-1} onKeyDown={onListKey}>
           <Show when={!error()} fallback={
             <div class="drive-note" role="alert">
               <span>{error()}</span>
@@ -135,7 +138,7 @@ function Picker(props: { count: number }) {
             <Show when={items()} fallback={<div class="drive-note" role="status">Loading…</div>}>
               {(found) => (
                 <Show when={found().length} fallback={<div class="drive-note">This folder is empty.</div>}>
-                  <ul ref={list} aria-label={label(trail().length - 1)} onKeyDown={onListKey}>
+                  <ul aria-label={label(trail().length - 1)}>
                     <For each={found()}>
                       {(item) => (
                         <li>
