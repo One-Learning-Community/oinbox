@@ -1,23 +1,27 @@
 import { Dialog } from '@rozie-ui/dialog-solid';
-import { createEffect, createSignal, For, on, Show } from 'solid-js';
+import { createEffect, createSignal, For, on, Show, type JSX } from 'solid-js';
 import { useApp } from '../app/context';
 import { driveMessage, type Trail } from '../app/drive';
 import { DriveError, type DriveItem } from '../drive/client';
 import { fileSize } from '../mail/format';
 import { Icon } from './icons';
 
-/** Choose the Drive folder to save into. Open while the app has a save waiting. */
+/**
+ * The Drive picker. Open while the app has a request waiting: a folder to save files into, or
+ * files to attach.
+ */
 export function DrivePicker() {
   const { drive } = useApp();
   return (
     <Show when={drive.request()} keyed>
-      {(req) => <Picker count={req.kind === 'save' ? req.files.length : 1} />}
+      {(req) => <Picker mode={req.kind} count={req.kind === 'save' ? req.files.length : 0} />}
     </Show>
   );
 }
 
-function Picker(props: { count: number }) {
+function Picker(props: { mode: 'save' | 'pick'; count: number }) {
   const { drive } = useApp();
+  const picking = props.mode === 'pick';
   const [trail, setTrail] = createSignal<Trail>(drive.lastTrail());
   /** null while the folder is being listed. */
   const [items, setItems] = createSignal<DriveItem[] | null>(null);
@@ -26,6 +30,8 @@ function Picker(props: { count: number }) {
   const [naming, setNaming] = createSignal(false);
   const [nameError, setNameError] = createSignal('');
   const [rootName, setRootName] = createSignal(trail()[0]!.name);
+  /** Ids of the files ticked in the folder on screen. */
+  const [ticked, setTicked] = createSignal<ReadonlySet<string>>(new Set());
   let box: HTMLDivElement | undefined;
   let nameField: HTMLInputElement | undefined;
   /** Only the latest listing counts: a slow answer for a folder already left is dropped. */
@@ -39,18 +45,20 @@ function Picker(props: { count: number }) {
     const mine = ++asked;
     setItems(null);
     setError('');
+    // Ticks belong to the folder they were made in.
+    setTicked(new Set<string>());
     try {
       const found = await drive.client.children(here().id);
       if (mine !== asked) return;
       setItems([...found].sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name)));
       // The row that was opened is gone with its folder: put the focus in the new listing, on its first
-      // folder or, with none, on the list itself, so the arrows and Backspace keep working.
-      queueMicrotask(() => (box?.querySelector<HTMLElement>('button[data-folder]') ?? box)?.focus({ preventScroll: true }));
+      // row or, with none, on the list itself, so the arrows and Backspace keep working.
+      queueMicrotask(() => (box?.querySelector<HTMLElement>('[data-row]') ?? box)?.focus({ preventScroll: true }));
     } catch (e) {
       if (mine !== asked) return;
       // The folder remembered from last time has gone: start again from the top.
       if (e instanceof DriveError && e.kind === 'missing' && trail().length > 1) return void setTrail([trail()[0]!]);
-      setError(driveMessage(e));
+      setError(driveMessage(e, picking ? 'attach' : 'save'));
     }
   };
   createEffect(on(trail, () => void load()));
@@ -59,9 +67,15 @@ function Picker(props: { count: number }) {
   const enter = (item: DriveItem) => setTrail([...trail(), { id: item.id, name: item.name }]);
   const up = () => trail().length > 1 && setTrail(trail().slice(0, -1));
   const ready = () => items() !== null && !busy();
+  const chosen = () => (items() ?? []).filter((i) => ticked().has(i.id));
+  const toggle = (id: string) => {
+    const next = new Set(ticked());
+    if (!next.delete(id)) next.add(id);
+    setTicked(next);
+  };
 
   const onListKey = (e: KeyboardEvent) => {
-    const rows = [...(box?.querySelectorAll<HTMLElement>('button[data-folder]') ?? [])];
+    const rows = [...(box?.querySelectorAll<HTMLElement>('[data-row]') ?? [])];
     const at = rows.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'Backspace') {
       e.preventDefault();
@@ -74,16 +88,18 @@ function Picker(props: { count: number }) {
     rows[(to + rows.length) % rows.length]?.focus();
   };
 
-  const save = async () => {
+  /** Run the request's own action; on success the app drops the request and this dialog goes with it. */
+  const act = async (run: () => Promise<boolean>) => {
     if (!ready()) return;
     setBusy(true);
     try {
-      // On success the app drops the request and this dialog goes with it.
-      await drive.confirm(trail());
+      await run();
     } finally {
       setBusy(false);
     }
   };
+  const save = () => act(() => drive.confirm(trail()));
+  const attach = () => (chosen().length ? act(() => drive.choose(trail(), chosen())) : undefined);
 
   const checkName = (raw: string): string => {
     const name = raw.trim();
@@ -114,10 +130,38 @@ function Picker(props: { count: number }) {
     }
   };
 
+  const title = () => (picking ? 'Attach from Drive' : props.count === 1 ? 'Save to Drive' : `Save ${props.count} files to Drive`);
+
+  const row = (item: DriveItem): JSX.Element => {
+    if (item.folder) {
+      return (
+        <button type="button" data-row data-folder aria-label={`Open ${item.name}`} onClick={() => enter(item)}>
+          <Icon name="label" />
+          <span>{item.name}</span>
+        </button>
+      );
+    }
+    const face = (
+      <>
+        <Icon name="file" />
+        <span>{item.name}</span>
+        <small>{fileSize(item.size)}</small>
+      </>
+    );
+    // Saving, a file only shows what the folder holds. Attaching, it is what is chosen.
+    if (!picking) return <span class="drive-file">{face}</span>;
+    return (
+      <label class="drive-file drive-pick">
+        <input type="checkbox" data-row checked={ticked().has(item.id)} onChange={() => toggle(item.id)} />
+        {face}
+      </label>
+    );
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && !busy() && drive.cancel()} ariaLabelledby="drive-picker-title">
       <div class="drive-picker">
-        <h2 id="drive-picker-title">{props.count === 1 ? 'Save to Drive' : `Save ${props.count} files to Drive`}</h2>
+        <h2 id="drive-picker-title">{title()}</h2>
         <nav class="drive-crumbs" aria-label="Folder path">
           <For each={trail()}>
             {(_, i) => (
@@ -139,24 +183,7 @@ function Picker(props: { count: number }) {
               {(found) => (
                 <Show when={found().length} fallback={<div class="drive-note">This folder is empty.</div>}>
                   <ul aria-label={label(trail().length - 1)}>
-                    <For each={found()}>
-                      {(item) => (
-                        <li>
-                          <Show when={item.folder} fallback={
-                            <span class="drive-file">
-                              <Icon name="file" />
-                              <span>{item.name}</span>
-                              <small>{fileSize(item.size)}</small>
-                            </span>
-                          }>
-                            <button type="button" data-folder aria-label={`Open ${item.name}`} onClick={() => enter(item)}>
-                              <Icon name="label" />
-                              <span>{item.name}</span>
-                            </button>
-                          </Show>
-                        </li>
-                      )}
-                    </For>
+                    <For each={found()}>{(item) => <li>{row(item)}</li>}</For>
                   </ul>
                 </Show>
               )}
@@ -187,13 +214,21 @@ function Picker(props: { count: number }) {
         </Show>
         <Show when={!naming()}>
           <div class="dialog-actions drive-actions">
-            <button type="button" class="drive-add" disabled={!ready()} onClick={() => setNaming(true)}>
-              <Icon name="add" /> New folder
-            </button>
+            <Show when={!picking}>
+              <button type="button" class="drive-add" disabled={!ready()} onClick={() => setNaming(true)}>
+                <Icon name="add" /> New folder
+              </button>
+            </Show>
             <button type="button" disabled={busy()} onClick={() => drive.cancel()}>Cancel</button>
-            <button type="button" class="primary" disabled={!ready()} onClick={() => void save()}>
-              {busy() ? 'Saving…' : 'Save here'}
-            </button>
+            <Show when={picking} fallback={
+              <button type="button" class="primary" disabled={!ready()} onClick={() => void save()}>
+                {busy() ? 'Saving…' : 'Save here'}
+              </button>
+            }>
+              <button type="button" class="primary" disabled={!ready() || !chosen().length} onClick={() => void attach()}>
+                {busy() ? 'Attaching…' : chosen().length > 1 ? `Attach ${chosen().length} files` : 'Attach'}
+              </button>
+            </Show>
           </div>
         </Show>
       </div>

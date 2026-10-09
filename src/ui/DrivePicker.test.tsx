@@ -19,7 +19,9 @@ function setup(arrange: (server: FakeDrive) => void = () => {}, files = 1) {
     </AppContext.Provider>
   ));
   const open = () => drive.saveToDrive(Array.from({ length: files }, (_, i) => ({ name: `file-${i + 1}.txt`, fetch: async () => blob('data') })));
-  return { server, drive, toast, open };
+  const deliver = vi.fn<(files: File[]) => void>();
+  const pick = () => drive.attachFromDrive(deliver);
+  return { server, drive, toast, open, pick, deliver };
 }
 
 const folderRow = (name: string) => screen.findByRole('button', { name: `Open ${name}` });
@@ -217,5 +219,108 @@ describe('DrivePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(drive.request()).toBeNull();
     expect(server.names([])).toEqual([]);
+  });
+});
+
+describe('DrivePicker, choosing files', () => {
+  const arrange = (s: FakeDrive) => {
+    s.mkdir(['Reports']);
+    s.put(['Reports', 'q3.pdf'], blob('pdf!'));
+    s.put(['budget.csv'], blob('1,2'));
+    s.put(['notes.txt'], blob('hello'));
+  };
+  const box = (name: RegExp) => screen.findByRole('checkbox', { name });
+
+  it('offers files as checkboxes, with Attach and no New folder', async () => {
+    const { pick } = setup(arrange);
+    pick();
+    expect(await screen.findByRole('heading', { name: 'Attach from Drive' })).toBeInTheDocument();
+    expect(await box(/budget\.csv/)).not.toBeChecked();
+    expect(await folderRow('Reports')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New folder' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save here' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeDisabled();
+  });
+
+  it('counts the ticked files on its button', async () => {
+    const { pick } = setup(arrange);
+    pick();
+    fireEvent.click(await box(/budget\.csv/));
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeEnabled();
+    fireEvent.click(await box(/notes\.txt/));
+    expect(screen.getByRole('button', { name: 'Attach 2 files' })).toBeEnabled();
+    fireEvent.click(await box(/notes\.txt/));
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeEnabled();
+  });
+
+  it('hands over the ticked files and closes', async () => {
+    const { pick, deliver } = setup(arrange);
+    pick();
+    fireEvent.click(await box(/budget\.csv/));
+    fireEvent.click(await box(/notes\.txt/));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach 2 files' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(deliver.mock.calls[0]![0].map((f) => f.name)).toEqual(['budget.csv', 'notes.txt']);
+  });
+
+  it('attaches a file from inside a folder', async () => {
+    const { pick, deliver } = setup(arrange);
+    pick();
+    fireEvent.click(await folderRow('Reports'));
+    fireEvent.click(await box(/q3\.pdf/));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+    await waitFor(() => expect(deliver).toHaveBeenCalledOnce());
+    expect(deliver.mock.calls[0]![0].map((f) => `${f.name}:${f.size}`)).toEqual(['q3.pdf:4']);
+  });
+
+  it('forgets the ticks when another folder is opened', async () => {
+    const { pick, deliver } = setup(arrange);
+    pick();
+    fireEvent.click(await box(/budget\.csv/));
+    fireEvent.click(await folderRow('Reports'));
+    await box(/q3\.pdf/);
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeDisabled();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Folder path' })).getByRole('button'));
+    expect(await box(/budget\.csv/)).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeDisabled();
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it('hands the files over once however often Attach is pressed', async () => {
+    const { pick, deliver } = setup(arrange);
+    pick();
+    fireEvent.click(await box(/notes\.txt/));
+    const attach = screen.getByRole('button', { name: 'Attach' });
+    fireEvent.click(attach);
+    fireEvent.click(attach);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it('stays open with a message when a ticked file has gone', async () => {
+    const { server, toast, pick, deliver } = setup(arrange);
+    pick();
+    fireEvent.click(await box(/notes\.txt/));
+    server.remove(['notes.txt']);
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('That file is no longer in Drive.', 'error'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(deliver).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeEnabled();
+  });
+
+  it('moves through folders and files with the arrow keys', async () => {
+    const { pick } = setup(arrange);
+    pick();
+    const reports = await folderRow('Reports');
+    const budget = await box(/budget\.csv/);
+    const notes = await box(/notes\.txt/);
+    await waitFor(() => expect(reports).toHaveFocus());
+    fireEvent.keyDown(reports, { key: 'ArrowDown' });
+    expect(budget).toHaveFocus();
+    fireEvent.keyDown(budget, { key: 'End' });
+    expect(notes).toHaveFocus();
+    fireEvent.keyDown(notes, { key: 'ArrowDown' });
+    expect(reports).toHaveFocus();
   });
 });
