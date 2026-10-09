@@ -45,9 +45,6 @@ From the beta audit ([docs/beta-audit.md](docs/beta-audit.md) has the detail and
 
 - **Large mailboxes are slow to page.** With 50,000 messages, each page of a list, and each search, takes one to three seconds: Stalwart needs about 1.4 s for every sorted query at that size (L2).
 - **Safari: keyboard shortcuts stop working after you click inside a message** until you click outside it again (E5).
-- **Toasts may not be read out by screen readers**, and errors are announced politely rather than at once. This waits on a change in the toast component (A6).
-- **On a phone, an event's details card can run off the edge of the screen** in week view. This waits on a change in the popover component (P2).
-- **The calendar's event card and form fail one automated accessibility check** (`aria-modal` on a non-dialog), also in the popover component, with no effect seen in use (A1).
 - **Events cannot be moved or resized from the keyboard.** They can be created with "New event" and renamed, re-filed and deleted from their card (A9).
 - An event's card can cover a neighbouring event in Firefox and Safari until it is closed (E2). In Safari the label name is not pre-selected in the Rename dialog (E3). Closing the label picker with Escape leaves focus on the page (A10). In a long thread on a phone, Send can be below the fold while you type a reply (P1). At 360px the calendar toolbar wraps unevenly and message dates wrap onto three lines (P5, P6).
 - Attachments are bounded by Stalwart's upload quota: 50 MB per account per hour by default.

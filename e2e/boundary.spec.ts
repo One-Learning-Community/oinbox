@@ -6,7 +6,8 @@ test('a calendar chunk that fails to load leaves mail usable', async ({ page }) 
   await openInbox(page);
   await page.getByRole('link', { name: 'Calendar' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'This part of oinbox hit a problem.' })).toBeVisible();
-  await expect(page.getByText('oinbox was updated. Reload to continue.')).toBeVisible();
+  // By its row: since rozie Toast 0.3.0 the text is also in the toaster's live region.
+  await expect(page.locator('.toast', { hasText: 'oinbox was updated. Reload to continue.' })).toBeVisible();
   // The shell and the mail still work.
   await page.getByRole('link', { name: /^Inbox/ }).click();
   await expect(rows(page).first()).toBeVisible();

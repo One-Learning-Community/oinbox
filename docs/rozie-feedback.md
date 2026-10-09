@@ -257,19 +257,19 @@ Resolved: 0.5.2 leaves an unhandled Escape alone; the workaround in `IdentityDia
 The calendar event form's calendar picker is a native `<select>`: there is no `@rozie-ui/select-*`
 package to dogfood. Not blocking.
 
-## FullCalendar 0.2.0 — `eventDrop`/`eventResize` payload has no `allDay` (2026-10-07)
+## FIXED in 0.2.2 (2026-10-08): FullCalendar 0.2.0 — `eventDrop`/`eventResize` payload has no `allDay` (2026-10-07)
 `FullCalendarEventRef` is `{ id, title, start, end }`. A drop onto the all-day row (or off it) can't
 be told apart from a plain move, so oinbox reads `ref.getApi().getEventById(id).allDay` through the
 handle. An `allDay` field on the payload would remove that lookup. Not blocking.
 
-## Popover 0.3.0 — panel has `aria-modal="false"` without a dialog role (2026-10-07)
+## FIXED in 0.3.2 (2026-10-08): Popover 0.3.0 — panel has `aria-modal="false"` without a dialog role (2026-10-07)
 Found by axe in the beta audit (`aria-allowed-attr`, critical): `#rozie-popover-panel` carries
 `aria-modal="false"` while it has no `role="dialog"`/`alertdialog` (oinbox uses the popover `bare`,
 with its own `role="dialog"` on the card inside). `aria-modal` is only allowed on dialog roles, so the
 attribute should be left off unless the panel has one. This is the one axe failure oinbox cannot fix
 on its side: `e2e/a11y.spec.ts` keeps "event card" and "event form" as expected failures until then.
 
-## Toast 0.2.2 — no standing live region; `toastSlot` leaks into the DOM (2026-10-07)
+## FIXED in 0.3.0 (2026-10-08): Toast 0.2.2 — no standing live region; `toastSlot` leaks into the DOM (2026-10-07)
 Two things from the same audit:
 1. The toaster renders `role="status"` on each `.rozie-toast` as it is inserted. A live region that
    arrives together with its content is often not announced (VoiceOver especially). A polite and an
@@ -285,7 +285,7 @@ Not blocking the build; A6 in `docs/beta-audit.md` depends on (1).
 **Intent (2026-10-08): these three are to be fixed in rozie before the beta-readiness slice is
 finished; oinbox is already written as though they are.**
 
-## Popover 0.3.0 — the panel can leave the viewport on a narrow screen (2026-10-08)
+## FIXED in 0.3.2 (2026-10-08): Popover 0.3.0 — the panel can leave the viewport on a narrow screen (2026-10-08)
 On a 390px-wide screen the calendar event card (a `bare` popover with `strategy="fixed"`,
 `placement="right-start"`, anchored to an event near the left of the week grid) is laid out with its
 right edge at 521px: it is neither flipped nor shifted back into view, so text is cut off and the
@@ -297,7 +297,7 @@ opens on tap" is an expected failure until then.
 above.**
 
 
-## TipTap 0.5.2: paste and drop take one image
+## FIXED in 0.5.3 (2026-10-08): TipTap 0.5.2: paste and drop take one image
 
 Found 2026-10-08 while adding inline images. With `uploadImage` set, the wrapper's `handlePaste` and
 `handleDrop` look for the first image file (`findImageFile`) and upload that one. Pasting or dropping
@@ -312,7 +312,7 @@ covered: several images pasted at once still insert the first only.
 Also noted: the inserted node gets `src` alone. A way to return `{ src, alt }` from `uploadImage`
 would let the image carry its file name as alt text.
 
-## TipTap 0.5.2: paste and drop leave the image selected
+## FIXED in 0.5.3 (2026-10-08): TipTap 0.5.2: paste and drop leave the image selected
 
 Found 2026-10-08 in oinbox's end-to-end tests. With `uploadImage` set, an image pasted into the editor
 (`handlePaste` runs `setImage({ src })`) or dropped on it (`handleDrop` runs `insertContentAt`) is
@@ -325,3 +325,18 @@ image is gone.
 What the wrapper should do: after inserting, put the caret after the image (for `setImage`, follow
 it with `setTextSelection(state.selection.to)`; for `insertContentAt`, select the end of the
 inserted range). oinbox's toolbar button does this itself for the images it inserts.
+
+## TipTap 0.5.3: a mixed drop loses the other files
+
+Found 2026-10-08 while adopting 0.5.3. With `uploadImage` set, `handleDrop` collects the image files of
+a drop, uploads those, and calls `preventDefault`. A file of another kind dropped together with an
+image (a PNG and a PDF selected in Finder) is then neither inserted nor left for the host to handle:
+the host's own drop handler sees a prevented event and cannot tell which files were taken.
+
+oinbox keeps a narrow rule for this (`attachWhole` in `src/ui/ComposerView.tsx`, a capture listener on
+the composer): a drop holding any file that is not an image is attached whole and never reaches the
+editor. Drops of images only, one or several, go to the editor.
+
+What would let the rule go: an event or callback naming the files the wrapper did not take (for
+example `onFilesIgnored(files)`), or leaving the event unprevented when any file is not an image.
+Not blocking.

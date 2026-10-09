@@ -177,8 +177,6 @@ test('@phone an event card opened in week view stays on the screen', async ({ pa
   await page.locator('.calendar-view .fc-event').filter({ hasText: 'Design review' }).tap();
   const card = page.getByRole('dialog', { name: 'Design review' });
   await expect(card).toBeVisible();
-  // Everything up to here must work. Only the card's position is the open finding.
-  test.fail(true, 'docs/beta-audit.md P2: rozie Popover lets the panel leave the viewport (docs/rozie-feedback.md)');
   const b = (await card.boundingBox())!;
   expect(b.x).toBeGreaterThanOrEqual(0);
   expect(b.x + b.width).toBeLessThanOrEqual(390);

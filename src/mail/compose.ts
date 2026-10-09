@@ -102,8 +102,8 @@ export function fromEditorHtml(html: string, urls: Record<string, string>): stri
   });
 }
 
-/** The editor inlines a drop of exactly one image (it takes the first image and drops the rest); anything else is attached whole. */
-export const editorTakesDrop = (files: File[]): boolean => files.length === 1 && files[0]!.type.startsWith('image/');
+/** The editor inlines a drop of images (it ignores any other file dropped with them); a drop holding anything else is attached whole. */
+export const editorTakesDrop = (files: File[]): boolean => files.length > 0 && files.every((f) => f.type.startsWith('image/'));
 
 const bareCid = (cid: string | null) => cid?.replace(/^<|>$/g, '') ?? '';
 

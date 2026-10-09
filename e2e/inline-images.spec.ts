@@ -23,8 +23,6 @@ const insertImage = (c: Locator, name = 'chart.png') =>
 /** The image part of a message that the HTML shows in place. */
 const inlineLeaf = (parts: Awaited<ReturnType<typeof messageParts>>) => parts.leaves.find((l) => l.type === 'image/png' && l.cid);
 
-const GAP_PASTE = 'rozie TipTap leaves a pasted image selected, so typing replaces it: docs/rozie-feedback.md, "paste and drop leave the image selected"';
-const GAP_DROP = 'rozie TipTap leaves a dropped image selected, so typing replaces it: docs/rozie-feedback.md, "paste and drop leave the image selected"';
 const pasteImage = (target: Locator) =>
   target.evaluate((el, b64) => {
     const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
@@ -99,10 +97,8 @@ test('a pasted image goes into the text, not the attachments', async ({ page, br
   await expect(saveStatus(c)).toHaveText('Draft saved');
 });
 
-// Expected to fail until rozie's TipTap is fixed; it fails loudly when it starts to pass.
 test('text typed right after a pasted image does not replace it', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'building a paste with a file needs Chromium\'s ClipboardEvent');
-  test.fail(true, GAP_PASTE);
   const subject = newSubject();
   await openInbox(page);
   const c = await composeNew(page, { to: BOB, subject, body: 'Pasted below.' });
@@ -232,7 +228,7 @@ test('an image dropped on the text goes inline; dropped elsewhere on the compose
   await expect(editorImages(c)).toHaveCount(1);
 });
 
-test('files dropped on the text together are all attached, and none goes inline', async ({ page, browserName }) => {
+test('an image dropped on the text with another kind of file: both are attached, and none goes inline', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'building a drop with a file needs Chromium\'s DataTransfer');
   const subject = newSubject();
   await openInbox(page);
@@ -241,6 +237,22 @@ test('files dropped on the text together are all attached, and none goes inline'
   await dropFiles(bodyEditor(c), 'centre', [{ name: 'dropped.png', type: 'image/png' }, { name: 'notes.txt', type: 'text/plain' }]);
   await expect(c.locator('.compose-attachments .attachment')).toHaveCount(2);
   await expect(editorImages(c)).toHaveCount(0);
+});
+
+test('two images dropped on the text together both go inline, in order', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'building a drop with a file needs Chromium\'s DataTransfer');
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Dropped on this.' });
+
+  await dropFiles(bodyEditor(c), 'centre', [{ name: 'first.png', type: 'image/png' }, { name: 'second.png', type: 'image/png' }]);
+  await expect(editorImages(c)).toHaveCount(2);
+  await expect(c.locator('.compose-attachments .attachment')).toHaveCount(0);
+  // The file name is the alt text: it tells the two apart, and a reader with images off sees it.
+  expect(await editorImages(c).evaluateAll((imgs) => imgs.map((i) => i.getAttribute('alt')))).toEqual(['first.png', 'second.png']);
+  await page.keyboard.type(' dmark');
+  await expect(bodyEditor(c)).toContainText('dmark');
+  await expect(editorImages(c)).toHaveCount(2);
 });
 
 test('a lone file that is not an image, dropped on the text, is attached', async ({ page, browserName }) => {
@@ -254,10 +266,8 @@ test('a lone file that is not an image, dropped on the text, is attached', async
   await expect(editorImages(c)).toHaveCount(0);
 });
 
-// Expected to fail until rozie's TipTap is fixed; it fails loudly when it starts to pass.
 test('text typed right after a dropped image does not replace it', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'building a drop with a file needs Chromium\'s DataTransfer');
-  test.fail(true, GAP_DROP);
   const subject = newSubject();
   await openInbox(page);
   const c = await composeNew(page, { to: BOB, subject, body: 'Dropped on this.' });

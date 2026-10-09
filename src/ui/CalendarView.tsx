@@ -79,10 +79,9 @@ export function CalendarView() {
   };
 
   /** A drop or resize: write it, asking about guests first; put the event back if it isn't written. */
-  async function commitTimes(id: string, start: Date | null, end: Date | null, revert: () => void) {
+  async function commitTimes(id: string, start: Date | null, end: Date | null, allDay: boolean, revert: () => void) {
     const ev = calendar.state.events.find((e) => e.id === id);
-    const api = handle()?.getApi()?.getEventById(id);
-    if (!ev || !api || !start) return revert();
+    if (!ev || !start) return revert();
     // A refetch while we wait swaps FullCalendar's event source; reverting the old event then
     // would add a second copy next to the fresh one, and the fresh one already shows the server's state.
     const generation = eventsGeneration;
@@ -100,7 +99,7 @@ export function CalendarView() {
       if (answer === 'cancel') return undo();
       sendMessages = answer === 'notify';
     }
-    const r = await calendar.updateEvent(ev.baseEventId, patchForDrop(ev, start, end, api.allDay, zone), sendMessages);
+    const r = await calendar.updateEvent(ev.baseEventId, patchForDrop(ev, start, end, allDay, zone), sendMessages);
     if (!r.ok) {
       undo();
       toast(`Couldn't change the event: ${r.error}`, 'error');
@@ -156,8 +155,8 @@ export function CalendarView() {
           options={options}
           ref={setHandle}
           editable
-          onEventDrop={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}
-          onEventResize={({ event, revert }) => void commitTimes(event.id, event.start, event.end, revert)}
+          onEventDrop={({ event, revert }) => void commitTimes(event.id, event.start, event.end, event.allDay, revert)}
+          onEventResize={({ event, revert }) => void commitTimes(event.id, event.start, event.end, event.allDay, revert)}
           selectable
           onSelect={({ start, end, allDay }) => {
             if (!defaultCalendarId(calendar.state.calendars)) {

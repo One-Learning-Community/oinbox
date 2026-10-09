@@ -22,8 +22,8 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
     const lost = !document.activeElement || document.activeElement === document.body || root?.contains(document.activeElement);
     if (opener?.isConnected && lost) queueMicrotask(() => opener.focus());
   });
-  // The editor takes the first image of any drop and ignores the rest: oinbox decides, before the editor sees it,
-  // that a drop which is not exactly one image is attached whole (docs/rozie-feedback.md, "paste and drop take one image").
+  // The editor takes the images of a drop and ignores the other files: oinbox decides, before the editor sees it,
+  // that a drop holding anything but images is attached whole (docs/rozie-feedback.md, "a mixed drop loses the other files").
   const attachWhole = (e: DragEvent) => {
     const files = [...(e.dataTransfer?.files ?? [])];
     if (!files.length || editorTakesDrop(files)) return;
@@ -165,7 +165,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
               const next = stored(html);
               if (next !== d().bodyHtml) c.update({ bodyHtml: next === '<p></p>' ? '' : next });
             }}
-            uploadImage={(file: File) => c.insertImage(file)}
+            uploadImage={async (file: File) => ({ src: await c.insertImage(file), alt: file.name })}
             placeholder={c.mode === 'new' ? '' : 'Write your reply…'}
             ariaLabel="Message body"
             editorClass="compose-editor"

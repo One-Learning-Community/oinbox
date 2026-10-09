@@ -393,11 +393,11 @@ describe('editorTakesDrop', () => {
   const image = (name = 'a.png') => new File(['x'], name, { type: 'image/png' });
   const pdf = new File(['x'], 'a.pdf', { type: 'application/pdf' });
 
-  it('is true only for a drop of exactly one image', () => {
+  it('is true only for a drop of images and nothing else', () => {
     expect(editorTakesDrop([image()])).toBe(true);
+    expect(editorTakesDrop([image('a.png'), image('b.png')])).toBe(true);
     expect(editorTakesDrop([pdf])).toBe(false);
     expect(editorTakesDrop([image(), pdf])).toBe(false);
-    expect(editorTakesDrop([image('a.png'), image('b.png')])).toBe(false);
     expect(editorTakesDrop([])).toBe(false);
   });
 });

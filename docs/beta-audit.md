@@ -7,6 +7,8 @@ Severity: a **blocker** loses or corrupts data, or stops a main flow for everyon
 
 **Status on 2026-10-08, after the fixes.** No blocker was found. Twelve majors were found. Nine are fixed. Three remain: two are done on oinbox's side and wait on rozie component releases (A6 and P2, along with the minor A1), and one is a Stalwart cost oinbox cannot remove (L2). The table at the audit checkpoint, before the fixes, is kept below it for the record.
 
+**Update 2026-10-08, rozie release.** P2 and A1 pass their tests with Popover 0.3.2 and are closed. Toast 0.3.0 has the standing live regions A6 waited on, and an automated test confirms a toast's text lands in the right one; the VoiceOver check for A6 is still to do.
+
 | Area | Exit criteria now | Majors found | Fixed | Open |
 |---|---|---|---|---|
 | Browser engines | Met: the suite passes on Firefox and WebKit | E1 | E1 | – |
@@ -24,8 +26,8 @@ Minors: fixed A2, A4, A7, N3, N4. Left as known limitations (listed in the READM
 | Component | Gap | Finding | What turns green |
 |---|---|---|---|
 | Toaster | Standing polite and assertive live regions; `alert` for error toasts; the `toastSlot` function leaking into a DOM attribute | A6 | A VoiceOver check: an archive toast and a "Couldn't send" toast are read out |
-| Popover | The panel can leave the viewport on a narrow screen | P2 | `e2e/phone.spec.ts` "the calendar opens in day view and an event opens on tap" (an expected failure today) |
-| Popover | `aria-modal="false"` on a panel with no dialog role | A1 | `e2e/a11y.spec.ts` "event card" and "event form", both themes (expected failures today; then delete the `KNOWN` map) |
+| Popover | The panel can leave the viewport on a narrow screen | P2 | `e2e/phone.spec.ts` "the calendar opens in day view and an event opens on tap" (passes since rozie Popover 0.3.2, 2026-10-08) |
+| Popover | `aria-modal="false"` on a panel with no dialog role | A1 | `e2e/a11y.spec.ts` "event card" and "event form", both themes (pass since rozie Popover 0.3.2, 2026-10-08) |
 
 ### Still needs a person
 

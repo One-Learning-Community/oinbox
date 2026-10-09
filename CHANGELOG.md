@@ -17,10 +17,13 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 - The image passes Stalwart the client's address, taken from `X-Forwarded-For` when the request comes from a trusted proxy (`OINBOX_TRUSTED_PROXIES`, by default private addresses). Before, behind a load balancer, Stalwart saw the load balancer's address for everyone. Stalwart needs `Http.useXForwarded` on to read it.
 
+- Toasts are announced by screen readers through standing live regions, errors at once and the rest politely.
+- On a phone, an event's details card stays on the screen.
+- The calendar's event card and form pass the automated accessibility check they failed (`aria-modal`).
+
 ### Known limits
 
-- Pasting several images at once inserts the first only. Several images dropped at once are attached, not put into the text, and so is any drop of files that are not one image; the toolbar button takes several.
-- After an image is pasted or dropped into the text, the first key typed replaces it, because the editor leaves it selected; click beside it first. Inserting with the toolbar button is not affected. This is in the editor component (docs/rozie-feedback.md).
+- An image dropped on the text together with a file of another kind is attached with it, not put into the text.
 - Images cannot be resized, and are uploaded at their original size. Stalwart's default allows an account 50 MB of uploads an hour.
 
 ## 0.1.0-beta.1

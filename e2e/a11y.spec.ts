@@ -104,23 +104,26 @@ for (const scheme of ['light', 'dark'] as const) {
 }
 
 test('the event card popover has no ARIA attribute it may not have', async ({ page }) => {
-  test.fail(true, 'docs/beta-audit.md A1: waiting on rozie Popover (docs/rozie-feedback.md)');
   await screens['event card']!(page);
   const { violations } = await new AxeBuilder({ page }).withRules(['aria-allowed-attr']).analyze();
   expect(violations.flatMap((v) => v.nodes.map((n) => n.target.join(' ')))).toEqual([]);
 });
 
-test('a toast is announced by one live region, not two nested ones', async ({ page }) => {
+test('a toast is announced by the toaster\'s standing region, and its own row is not a second one', async ({ page }) => {
   // A label that doesn't exist is the cheapest way to a toast: nothing to clean up.
   await page.goto('/label/does-not-exist');
-  const toast = page.locator('.toast', { hasText: 'That label no longer exists.' });
+  const text = 'That label no longer exists.';
+  const toast = page.locator('.toast', { hasText: text });
   await expect(toast).toBeVisible();
-  // The region is rozie Toaster's; oinbox's own element inside it must not be a second one.
+  // Neither oinbox's element nor anything around it is a live region: a second one can be read twice.
   expect(await toast.evaluate((el) => {
     let regions = 0;
     for (let n: Element | null = el; n; n = n.parentElement) if (n.matches('[role=status], [role=alert], [aria-live]')) regions++;
     return regions;
-  })).toBe(1);
+  })).toBe(0);
+  // This one is information, not an error: its text is in the polite region, and not in the assertive one.
+  await expect(page.locator('[role=status]', { hasText: text })).toHaveCount(1);
+  await expect(page.locator('[role=alert]', { hasText: text })).toHaveCount(0);
 });
 
 test('sign-in has no serious axe violations', async ({ browser }) => {

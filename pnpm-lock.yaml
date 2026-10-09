@@ -25,34 +25,34 @@ importers:
         version: 6.1.21(@fullcalendar/core@6.1.21)
       '@rozie-ui/combobox-solid':
         specifier: ^0.7.0
-        version: 0.7.0(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
+        version: 0.7.0(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
       '@rozie-ui/command-palette-solid':
-        specifier: ^0.5.0
-        version: 0.5.0(@rozie-ui/combobox-solid@0.7.0(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15))(solid-js@1.9.15)
-      '@rozie-ui/data-table-solid':
-        specifier: ^0.7.1
-        version: 0.7.1(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/table-core@8.21.3)(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
-      '@rozie-ui/date-picker-solid':
-        specifier: ^0.1.15
-        version: 0.1.15(solid-js@1.9.15)
-      '@rozie-ui/dialog-solid':
-        specifier: ^0.2.0
-        version: 0.2.0(solid-js@1.9.15)
-      '@rozie-ui/fullcalendar-solid':
-        specifier: ^0.2.0
-        version: 0.2.0(@fullcalendar/core@6.1.21)(@fullcalendar/daygrid@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/interaction@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/timegrid@6.1.21(@fullcalendar/core@6.1.21))(solid-js@1.9.15)
-      '@rozie-ui/popover-solid':
-        specifier: ^0.3.0
-        version: 0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
-      '@rozie-ui/switch-solid':
-        specifier: ^0.1.4
-        version: 0.1.4(solid-js@1.9.15)
-      '@rozie-ui/tiptap-solid':
         specifier: ^0.5.2
-        version: 0.5.2(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)
-      '@rozie-ui/toast-solid':
+        version: 0.5.2(@rozie-ui/combobox-solid@0.7.0(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15))(solid-js@1.9.15)
+      '@rozie-ui/data-table-solid':
+        specifier: ^0.7.3
+        version: 0.7.3(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/table-core@8.21.3)(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
+      '@rozie-ui/date-picker-solid':
+        specifier: ^0.1.16
+        version: 0.1.16(solid-js@1.9.15)
+      '@rozie-ui/dialog-solid':
         specifier: ^0.2.2
         version: 0.2.2(solid-js@1.9.15)
+      '@rozie-ui/fullcalendar-solid':
+        specifier: ^0.2.2
+        version: 0.2.2(@fullcalendar/core@6.1.21)(@fullcalendar/daygrid@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/interaction@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/timegrid@6.1.21(@fullcalendar/core@6.1.21))(solid-js@1.9.15)
+      '@rozie-ui/popover-solid':
+        specifier: ^0.3.2
+        version: 0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
+      '@rozie-ui/switch-solid':
+        specifier: ^0.1.6
+        version: 0.1.6(solid-js@1.9.15)
+      '@rozie-ui/tiptap-solid':
+        specifier: ^0.5.3
+        version: 0.5.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)
+      '@rozie-ui/toast-solid':
+        specifier: ^0.3.0
+        version: 0.3.0(solid-js@1.9.15)
       '@solidjs/router':
         specifier: ^1.0.0
         version: 1.0.0(solid-js@1.9.15)
@@ -445,32 +445,32 @@ packages:
       '@tanstack/virtual-core':
         optional: true
 
-  '@rozie-ui/command-palette-solid@0.5.0':
-    resolution: {integrity: sha512-/yK3g4ja77FmGSK2q6UBLsT+SYlIRatJ0dBHhjR+1ZIosHqNBZsu3wWWdxSBzzbS8ARsJANG1/vkmgd1p2aYQw==}
+  '@rozie-ui/command-palette-solid@0.5.2':
+    resolution: {integrity: sha512-WZkXMYk2/787QI84yRDh21PjjosSr8xOlzE7F1xt0p3IhrpNrdeo3TT5PxXllk1wtOaX2W54Gng1P/gT6IDq6A==}
     peerDependencies:
-      '@rozie-ui/combobox-solid': ^0.5.0 || ^0.6.0 || ^0.7.0
+      '@rozie-ui/combobox-solid': ^0.5.0 || ^0.6.0 || ^0.7.0 || ^0.8.0
       solid-js: ^1.8
 
-  '@rozie-ui/data-table-solid@0.7.1':
-    resolution: {integrity: sha512-+jaTUUoFDuidi7imgJDpu1B0VXzQ+tPz/HpQoeN4+ZpZlJeNb1HNjDfV9CPrOnO1dGqucJp+Tzp6lwGkPCzRjA==}
+  '@rozie-ui/data-table-solid@0.7.3':
+    resolution: {integrity: sha512-Demzhl9sSpER/5vHOvX1veY5M40OhxEIVF40J9FDInOuwUaN3Wf+IjCCtrLJhw9/2hWncy8OL2QK+u3ugVK2qg==}
     peerDependencies:
       '@rozie-ui/popover-solid': ^0.1.0 || ^0.2.0 || ^0.3.0
       '@tanstack/table-core': ^8.21
       '@tanstack/virtual-core': ^3
       solid-js: ^1.8
 
-  '@rozie-ui/date-picker-solid@0.1.15':
-    resolution: {integrity: sha512-Dycry8jbIYWQcoOau8fauAAbMWOF+X6mjJvxS96PJsj6XqOcKf3BKBSK7yV4tUQAibBoyLQsJXdheJByo9sAvg==}
+  '@rozie-ui/date-picker-solid@0.1.16':
+    resolution: {integrity: sha512-k5d+226DB11mFNBH6DNsZpqDes7vg93pCM4W+ed3LzdQRF0rJHfKAdOHPMTRcNbjpUEqEE4fHu4idz1g87BoKw==}
     peerDependencies:
       solid-js: ^1.8
 
-  '@rozie-ui/dialog-solid@0.2.0':
-    resolution: {integrity: sha512-Ei9etM2UWMpvrMYijzEMEYYRYtMKKSLG7s8bIrEVmKPNSd9ZHdKCnIO4QwkazdngQmk7AByoYYckUQKXuEGyjw==}
+  '@rozie-ui/dialog-solid@0.2.2':
+    resolution: {integrity: sha512-uYJ/Qh16QUHvwNIFS6owN2wlSvkYo4O92ZfVSsKTUyAVGCdAu40/wbKCtXFeHSHbt2KmoblpjiXN5tD0/zK6OA==}
     peerDependencies:
       solid-js: ^1.8
 
-  '@rozie-ui/fullcalendar-solid@0.2.0':
-    resolution: {integrity: sha512-W3HqoBtKHu8PteH06RK8toQz5zB+OASyL0fspr33ujpm3hadQTzf7lCkLbBqrmkbdCjMe/SpJF/H2icbdVuhgg==}
+  '@rozie-ui/fullcalendar-solid@0.2.2':
+    resolution: {integrity: sha512-zAMmd4gAIcltOuy1zJ+A4UMlohU8QKP3x1U+Z4XI2UPwcEoyoEg5zijyNb8zKaRqZUn3F5HNK2yLAcizUHdJrQ==}
     peerDependencies:
       '@fullcalendar/core': ^6.1
       '@fullcalendar/daygrid': ^6.1
@@ -478,19 +478,19 @@ packages:
       '@fullcalendar/timegrid': ^6.1
       solid-js: ^1.8
 
-  '@rozie-ui/popover-solid@0.3.0':
-    resolution: {integrity: sha512-HvtJ5PzlAOMdNS4rCGN0q+afaUP0Avx9C6xBsVWtyCSv7oPsGYtx9lCGPu2uV+w/xcAGKsmQm2HhQ4KqaY4LqQ==}
+  '@rozie-ui/popover-solid@0.3.2':
+    resolution: {integrity: sha512-HCbdMA+sOot9r6dHWzXsnEI3wWnLqGYxDLFSTnT75hw3ZjUtHgYYyp8zveHAfDBkBF98Ip4CT4dcg+z4eDGW1g==}
     peerDependencies:
       '@floating-ui/dom': ^1.7.2
       solid-js: ^1.8
 
-  '@rozie-ui/switch-solid@0.1.4':
-    resolution: {integrity: sha512-M5hRwO+P2rnmLOyctPCi0vycaaVCginH1u06/uDsDLHcJo06nt9uXKNwUQgXXrt+qIulGhzkXuG7hV9rafYOgA==}
+  '@rozie-ui/switch-solid@0.1.6':
+    resolution: {integrity: sha512-8vXqbwOpBx0QlpX8aLEtxPRp0oMIp3cJE6//66zRk/HgoUuPwmBQr5SAw9h3+Ibey8zfbcHOh+Tz1jXvz5C/LQ==}
     peerDependencies:
       solid-js: ^1.8
 
-  '@rozie-ui/tiptap-solid@0.5.2':
-    resolution: {integrity: sha512-5p/nwCezhm1r9Z2nmruTzN+2/T10IiS9gMjQ2NaGWjkQfM1XIjy/vWqz3ba5uOQdTP80M1F/zUOZOqoNtQIM9g==}
+  '@rozie-ui/tiptap-solid@0.5.3':
+    resolution: {integrity: sha512-ZX9Q1yuIBQwMI8llrohUNlO1BiODh1rsgwzWx4jRpotdk1PFM+tynBnmhTPg9GugRU8Za9G8lxouvtxJcr6nOQ==}
     peerDependencies:
       '@tiptap/core': ^3
       '@tiptap/extension-bubble-menu': ^3
@@ -508,24 +508,24 @@ packages:
       '@tiptap/extension-image':
         optional: true
 
-  '@rozie-ui/toast-solid@0.2.2':
-    resolution: {integrity: sha512-Co3CyGsLTnPxRpSjcCI+gftrrD+w6edzDqZzUTJyaArnUUsqiCGIiZIiS8gj4eDmJSD6EoX0SU73PYJrU7zBSg==}
+  '@rozie-ui/toast-solid@0.3.0':
+    resolution: {integrity: sha512-rpzEv9sllAW9iSR27KCD7Vt6uCpt85AtKfNU9ne2EaSPhk7UoT5nCV/NHs3Ho1FnOEc4hOVFjX5dn/DyF1BdqA==}
     peerDependencies:
       solid-js: ^1.8
 
   '@rozie/runtime-keynav-core@0.8.0':
     resolution: {integrity: sha512-86kAZ8znnur55qdT04mXL6YnBH5v0XjQU+ID+WmjHvaL5gqPfMnGdhCHbwpqyCT/QjcGKv2Q5ZdpmG1kd1wIOA==}
 
-  '@rozie/runtime-keynav-core@0.9.0':
-    resolution: {integrity: sha512-INyemNWTMI4zR4Xp6uymTzLc4KU4K4P2+d9BBE+ll1/8f0kk4bl/uidwRSvawxhGHPUXlb+lDkEJl/HlZDpkkQ==}
+  '@rozie/runtime-keynav-core@0.9.1':
+    resolution: {integrity: sha512-bP9D1nefEsrYUxKeom8En7lRwgK8yZp0kAN3N/PXGhEhPygbnSZ3RYPnYfI2Xzu/RvEFZxXQr9VyMyjjp6a96g==}
 
   '@rozie/runtime-solid@0.8.0':
     resolution: {integrity: sha512-SztNVUw8cndUOk5gTYMIDn3AJYWm27i/wtq4oNV3ijTHbKIBtf3sHTG+y9sKHsifX89xYBEfmFkCzkN2tr1O6g==}
     peerDependencies:
       solid-js: ^1.8
 
-  '@rozie/runtime-solid@0.9.0':
-    resolution: {integrity: sha512-XPABp6XYi2nCeJQvHowNB4h0+bh9fcfUki6ei+PUchc9SwLrCR9cbkjqwuWptOr1jjIdanI5cK7mXZOECp13Hg==}
+  '@rozie/runtime-solid@0.9.1':
+    resolution: {integrity: sha512-qAWombl7VgyN2Ls0Fqr3BmXM5PMAgmUuMKVNHyJ3iBtYZbZyToQvzVbYCr+sObg6D1wFAZWnQJ8NOpsXS+RWLQ==}
     peerDependencies:
       solid-js: ^1.8
 
@@ -1761,65 +1761,65 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@rozie-ui/combobox-solid@0.7.0(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)':
+  '@rozie-ui/combobox-solid@0.7.0(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)':
     dependencies:
-      '@rozie-ui/popover-solid': 0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
+      '@rozie-ui/popover-solid': 0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
       '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
       '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
       solid-js: 1.9.15
     optionalDependencies:
       '@tanstack/virtual-core': 3.17.11
 
-  '@rozie-ui/command-palette-solid@0.5.0(@rozie-ui/combobox-solid@0.7.0(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15))(solid-js@1.9.15)':
+  '@rozie-ui/command-palette-solid@0.5.2(@rozie-ui/combobox-solid@0.7.0(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15))(solid-js@1.9.15)':
     dependencies:
-      '@rozie-ui/combobox-solid': 0.7.0(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie-ui/combobox-solid': 0.7.0(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
       solid-js: 1.9.15
 
-  '@rozie-ui/data-table-solid@0.7.1(@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/table-core@8.21.3)(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)':
+  '@rozie-ui/data-table-solid@0.7.3(@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15))(@tanstack/table-core@8.21.3)(@tanstack/virtual-core@3.17.11)(solid-js@1.9.15)':
     dependencies:
-      '@rozie-ui/popover-solid': 0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie-ui/popover-solid': 0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
       '@tanstack/table-core': 8.21.3
       '@tanstack/virtual-core': 3.17.11
       solid-js: 1.9.15
 
-  '@rozie-ui/date-picker-solid@0.1.15(solid-js@1.9.15)':
+  '@rozie-ui/date-picker-solid@0.1.16(solid-js@1.9.15)':
     dependencies:
-      '@rozie/runtime-solid': 0.9.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
       solid-js: 1.9.15
 
-  '@rozie-ui/dialog-solid@0.2.0(solid-js@1.9.15)':
+  '@rozie-ui/dialog-solid@0.2.2(solid-js@1.9.15)':
     dependencies:
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       solid-js: 1.9.15
 
-  '@rozie-ui/fullcalendar-solid@0.2.0(@fullcalendar/core@6.1.21)(@fullcalendar/daygrid@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/interaction@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/timegrid@6.1.21(@fullcalendar/core@6.1.21))(solid-js@1.9.15)':
+  '@rozie-ui/fullcalendar-solid@0.2.2(@fullcalendar/core@6.1.21)(@fullcalendar/daygrid@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/interaction@6.1.21(@fullcalendar/core@6.1.21))(@fullcalendar/timegrid@6.1.21(@fullcalendar/core@6.1.21))(solid-js@1.9.15)':
     dependencies:
       '@fullcalendar/core': 6.1.21
       '@fullcalendar/daygrid': 6.1.21(@fullcalendar/core@6.1.21)
       '@fullcalendar/interaction': 6.1.21(@fullcalendar/core@6.1.21)
       '@fullcalendar/timegrid': 6.1.21(@fullcalendar/core@6.1.21)
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       solid-js: 1.9.15
 
-  '@rozie-ui/popover-solid@0.3.0(@floating-ui/dom@1.8.0)(solid-js@1.9.15)':
+  '@rozie-ui/popover-solid@0.3.2(@floating-ui/dom@1.8.0)(solid-js@1.9.15)':
     dependencies:
       '@floating-ui/dom': 1.8.0
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       solid-js: 1.9.15
 
-  '@rozie-ui/switch-solid@0.1.4(solid-js@1.9.15)':
+  '@rozie-ui/switch-solid@0.1.6(solid-js@1.9.15)':
     dependencies:
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       solid-js: 1.9.15
 
-  '@rozie-ui/tiptap-solid@0.5.2(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)':
+  '@rozie-ui/tiptap-solid@0.5.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/extension-bubble-menu@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-character-count@3.31.3(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)))(@tiptap/extension-floating-menu@3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/extension-image@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3)))(@tiptap/extensions@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3))(@tiptap/starter-kit@3.31.3)(solid-js@1.9.15)':
     dependencies:
-      '@rozie/runtime-solid': 0.9.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       '@tiptap/core': 3.31.3(@tiptap/pm@3.31.3)
       '@tiptap/extension-bubble-menu': 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
       '@tiptap/extensions': 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
@@ -1830,15 +1830,15 @@ snapshots:
       '@tiptap/extension-floating-menu': 3.31.3(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
       '@tiptap/extension-image': 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))
 
-  '@rozie-ui/toast-solid@0.2.2(solid-js@1.9.15)':
+  '@rozie-ui/toast-solid@0.3.0(solid-js@1.9.15)':
     dependencies:
-      '@rozie/runtime-solid': 0.8.0(solid-js@1.9.15)
+      '@rozie/runtime-solid': 0.9.1(solid-js@1.9.15)
       '@solid-primitives/keyed': 1.5.3(solid-js@1.9.15)
       solid-js: 1.9.15
 
   '@rozie/runtime-keynav-core@0.8.0': {}
 
-  '@rozie/runtime-keynav-core@0.9.0': {}
+  '@rozie/runtime-keynav-core@0.9.1': {}
 
   '@rozie/runtime-solid@0.8.0(solid-js@1.9.15)':
     dependencies:
@@ -1846,9 +1846,9 @@ snapshots:
       solid-js: 1.9.15
       style-to-js: 2.0.2
 
-  '@rozie/runtime-solid@0.9.0(solid-js@1.9.15)':
+  '@rozie/runtime-solid@0.9.1(solid-js@1.9.15)':
     dependencies:
-      '@rozie/runtime-keynav-core': 0.9.0
+      '@rozie/runtime-keynav-core': 0.9.1
       solid-js: 1.9.15
       style-to-js: 2.0.2
 
