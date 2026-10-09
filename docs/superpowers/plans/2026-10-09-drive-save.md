@@ -18,7 +18,7 @@
 - Drive never delays or breaks mail: `/drive.json` is not awaited at start-up, no Drive request is made before the user's first Drive action, and a Drive failure never reaches the connection banner.
 - The Drive is the signed-in user's personal drive, whichever mailbox is on screen.
 - Saving never replaces a file: a taken name becomes `name (1).ext`, `name (2).ext`, compared without regard to case.
-- OpenCloud image in the dev stack: `opencloudeu/opencloud:7.2.4`, pinned.
+- OpenCloud is opt-in in the dev stack: `deploy/docker-compose.drive.yml`, image `opencloudeu/opencloud:7.2.4`, pinned. The default stack and CI run without it (decided 2026-10-09, to spare CI minutes). A spec that needs a real OpenCloud skips itself unless `/drive.json` says `enabled: true`; everything else about Drive is tested in CI with the fake or with answers played by the test.
 - Copy, verbatim: menu items `Download` and `Save to Drive`; button `Save all to Drive`; dialog titles `Save to Drive` and `Save 3 files to Drive`; buttons `New folder`, `Save here`, `Cancel`, `Try again`; toasts `Saved to Drive: <folder>` and `3 files saved to Drive: <folder>`; errors `Drive isn't available right now.`, `That folder is no longer in Drive.`, `Not enough space in Drive.`.
 - Narrower than the spec in this slice, on purpose: `DriveClient` has only `drive`, `children`, `createFolder` and `upload`, and `upload` uses `fetch` with no progress callback. The rest arrives with the slices that use it.
 - Commit after every task, message prefix `Drive:`, ending with the session's attribution lines (`Co-Authored-By` and `Claude-Session`). Do not push: pushes are batched.
@@ -36,7 +36,7 @@
 | File | Responsibility |
 |---|---|
 | `deploy/routes.caddy` (modify) | `/drive.json` and the `/drive/*` proxy. |
-| `deploy/docker-compose.yml` (modify) | OpenCloud in the dev stack; Caddy told where it is. |
+| `deploy/docker-compose.drive.yml` (create) | An override that adds OpenCloud to the dev stack and tells Caddy where it is. |
 | `deploy/production/docker-compose.yml`, `deploy/production/.env.example` (modify) | The two variables passed through. |
 | `deploy/examples/nginx.conf` (modify) | The same route for operators with their own proxy. |
 | `public/drive.json` (create) | The static answer, Drive off, for operators with their own proxy. |
@@ -55,14 +55,14 @@
 
 ---
 
-### Task 1: The route and OpenCloud in the dev stack
+### Task 1: The route, and OpenCloud as an option in the dev stack
 
 **Files:**
-- Modify: `deploy/routes.caddy`, `deploy/docker-compose.yml`, `deploy/production/docker-compose.yml`, `deploy/production/.env.example`, `deploy/examples/nginx.conf`, `vite.config.ts`
-- Create: `public/drive.json`, `e2e/support/drive.ts`, `e2e/drive-stack.spec.ts`
+- Modify: `deploy/routes.caddy`, `deploy/production/docker-compose.yml`, `deploy/production/.env.example`, `deploy/examples/nginx.conf`, `vite.config.ts`
+- Create: `deploy/docker-compose.drive.yml`, `public/drive.json`, `e2e/support/drive.ts`, `e2e/drive-stack.spec.ts`
 
 **Interfaces:**
-- Produces: `GET /drive.json` → `{"enabled":boolean,"linkOverMb":number}`; `/drive/<path>` → OpenCloud's `/<path>`; e2e helpers `driveToken(page)`, `driveFetch(token, path, init?)`, `driveId(token)`, `driveChildren(token, itemId?)`, `removeFromDrive(token, path)`, `waitForDrive(token)`.
+- Produces: `GET /drive.json` → `{"enabled":boolean,"linkOverMb":number}`; `/drive/<path>` → OpenCloud's `/<path>`; e2e helpers `driveOn()`, `driveToken(page)`, `driveFetch(token, path, init?)`, `driveId(token)`, `driveChildren(token, itemId?)`, `removeFromDrive(token, path)`, `waitForDrive(token)`.
 
 Background the implementer needs (all probed on 2026-10-09):
 - OpenCloud accepts Stalwart's access token when `PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD=none`; it asks Stalwart's `/auth/userinfo`.
@@ -78,6 +78,10 @@ Create `e2e/support/drive.ts`:
 // Test-side helpers for OpenCloud behind the dev stack's /drive prefix.
 import type { Page } from '@playwright/test';
 import { BASE, waitFor } from './mail';
+
+/** Whether this stack runs OpenCloud (it was started with deploy/docker-compose.drive.yml). CI's does not. */
+export const driveOn = (): Promise<boolean> =>
+  fetch(`${BASE}/drive.json`).then(async (r) => r.ok && ((await r.json()) as { enabled?: boolean }).enabled === true, () => false);
 
 /** The signed-in page's access token: OpenCloud takes no Basic auth, only what Stalwart issued. */
 export const driveToken = (page: Page): Promise<string> =>
@@ -124,19 +128,28 @@ Create `e2e/drive-stack.spec.ts`:
 ```ts
 import { expect, test } from '@playwright/test';
 import { openInbox } from './support/app';
-import { driveFetch, driveToken, waitForDrive } from './support/drive';
+import { driveFetch, driveOn, driveToken, waitForDrive } from './support/drive';
 import { BASE } from './support/mail';
 
-// The dev stack runs OpenCloud behind /drive (deploy/routes.caddy). These check the route itself.
-test('the stack says Drive is on, as JSON, never cached', async ({ request }) => {
+// The /drive route itself (deploy/routes.caddy). The default stack and CI have no OpenCloud; a stack
+// started with deploy/docker-compose.drive.yml has one, and the tests that need it run only there.
+test('the stack says whether there is a Drive, as JSON, never cached', async ({ request }) => {
   const res = await request.get('/drive.json');
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/json');
   expect(res.headers()['cache-control']).toBe('no-cache');
-  expect(await res.json()).toEqual({ enabled: true, linkOverMb: 20 });
+  expect(await res.json()).toEqual({ enabled: await driveOn(), linkOverMb: 20 });
+});
+
+test('with no OpenCloud, a Drive request is answered 404 and never with the app page', async () => {
+  test.skip(await driveOn(), 'this stack has an OpenCloud');
+  const res = await fetch(`${BASE}/drive/graph/v1.0/me/drive`);
+  expect(res.status).toBe(404);
+  expect(await res.text()).not.toContain('<html');
 });
 
 test("OpenCloud answers under /drive with the mail token and creates the user's drive", async ({ page }) => {
+  test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
   test.setTimeout(180_000);
   await openInbox(page);
   const token = await driveToken(page);
@@ -147,6 +160,7 @@ test("OpenCloud answers under /drive with the mail token and creates the user's 
 });
 
 test('without a token OpenCloud answers 401 and no browser login prompt', async () => {
+  test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
   const res = await fetch(`${BASE}/drive/graph/v1.0/me/drive`, { redirect: 'manual' });
   expect(res.status).toBe(401);
   expect(res.headers.get('www-authenticate')).toBeNull();
@@ -156,7 +170,7 @@ test('without a token OpenCloud answers 401 and no browser login prompt', async 
 - [ ] **Step 2: Run it to see it fail**
 
 Run: `pnpm build && pnpm e2e e2e/drive-stack.spec.ts`
-Expected: FAIL. The first test gets HTML (the app's `index.html`) where it expects JSON; the others get 200 with HTML or time out.
+Expected: 2 failed, 2 skipped. The first test gets HTML (the app's `index.html`) where it expects JSON, and the second gets that page with a 200 where it expects 404.
 
 - [ ] **Step 3: Add the route**
 
@@ -205,20 +219,22 @@ and change "has to do these five things" to "has to do these things". Then inser
 	}
 ```
 
-- [ ] **Step 4: Add OpenCloud to the dev stack**
+- [ ] **Step 4: Add OpenCloud as an override of the dev stack**
 
-In `deploy/docker-compose.yml`, add to the `caddy` service's `environment`:
+`deploy/docker-compose.yml` is not changed: the default stack, and CI with it, has no OpenCloud and no `OINBOX_DRIVE_UPSTREAM`. Create `deploy/docker-compose.drive.yml`:
 
 ```yaml
-      # OpenCloud shares this container's network (see the opencloud service), so it is on localhost.
+# Override: add OpenCloud to the dev stack as Drive. Not part of the default stack or of CI.
+#   docker compose -f docker-compose.yml -f docker-compose.local-dist.yml -f docker-compose.drive.yml up -d
+# Leave it out again and Drive is off; add `--remove-orphans` to stop the OpenCloud container too.
+services:
+  caddy:
+    environment:
+      # OpenCloud shares this container's network (below), so it is on localhost.
       OINBOX_DRIVE_UPSTREAM: "localhost:9200"
-```
 
-Add this service after `caddy`:
-
-```yaml
   opencloud:
-    # Drive. It shares Caddy's network namespace so that Stalwart's public URL (http://localhost:8080,
+    # It shares Caddy's network namespace so that Stalwart's public URL (http://localhost:8080,
     # which OpenCloud must reach to check a token) means the same inside this container as in the
     # browser. It publishes no port: the app reaches it through Caddy's /drive route.
     # After `docker compose restart caddy`, restart this service too: it loses its network with Caddy's.
@@ -249,9 +265,11 @@ Add this service after `caddy`:
     depends_on:
       stalwart:
         condition: service_healthy
-```
 
-and to the top-level `volumes:` add `opencloud-config:` and `opencloud-data:`.
+volumes:
+  opencloud-config:
+  opencloud-data:
+```
 
 - [ ] **Step 5: Pass the variables through elsewhere**
 
@@ -293,16 +311,23 @@ In `deploy/examples/nginx.conf`, extend the comment that mentions `branding.json
 
 In `vite.config.ts`, add `'/drive'` to the proxied prefixes array (it covers `/drive.json` too) and extend the comment above it with `Drive (OpenCloud) is at /drive.`
 
-- [ ] **Step 6: Bring the stack up and run the test**
+- [ ] **Step 6: Run the test without OpenCloud, then with it**
 
-Run:
+Run, as CI will:
 ```sh
-(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d)
+(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d && docker compose restart caddy)
 pnpm e2e e2e/drive-stack.spec.ts
 ```
-Expected: 3 passed. The second test can take up to two minutes on OpenCloud's first start.
+Expected: 2 passed, 2 skipped.
 
-If the second test times out, read `docker compose logs opencloud | tail -50` in `deploy/`. A line with `failed to get userinfo` means OpenCloud cannot reach `http://localhost:8080`: check `network_mode`.
+Then with OpenCloud:
+```sh
+(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml -f docker-compose.drive.yml up -d)
+pnpm e2e e2e/drive-stack.spec.ts
+```
+Expected: 3 passed, 1 skipped. The drive test can take up to two minutes on OpenCloud's first start.
+
+If it times out, read `docker compose -f docker-compose.yml -f docker-compose.drive.yml logs opencloud | tail -50` in `deploy/`. A line with `failed to get userinfo` means OpenCloud cannot reach `http://localhost:8080`: check `network_mode`.
 
 - [ ] **Step 7: Check the rest of the suite still starts**
 
@@ -312,8 +337,8 @@ Expected: all pass (the route change must not disturb the others).
 - [ ] **Step 8: Commit**
 
 ```bash
-git add deploy/routes.caddy deploy/docker-compose.yml deploy/production/docker-compose.yml deploy/production/.env.example deploy/examples/nginx.conf public/drive.json vite.config.ts e2e/support/drive.ts e2e/drive-stack.spec.ts
-git commit -m "Drive: OpenCloud behind /drive on the app's origin, and /drive.json to say it is there"
+git add deploy/routes.caddy deploy/docker-compose.drive.yml deploy/production/docker-compose.yml deploy/production/.env.example deploy/examples/nginx.conf public/drive.json vite.config.ts e2e/support/drive.ts e2e/drive-stack.spec.ts
+git commit -m "Drive: OpenCloud behind /drive on the app's origin, as an option, and /drive.json to say whether it is there"
 ```
 
 ---
@@ -2060,7 +2085,7 @@ Expected: every test passes, including the 6 new ones in `Attachments.test.tsx`;
 Run:
 ```sh
 pnpm build
-(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d)
+(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml -f docker-compose.drive.yml up -d)
 ```
 Open `http://localhost:8080`, sign in as `alice@example.test` / `oinbox-dev-pass`, open a message with an attachment (send one to yourself with a file if the seed has none), and check by hand: the chip opens a menu; `Save to Drive` opens the picker; `New folder` then `Save here` shows the toast; the picker reopens in that folder. Check in dark theme too (the theme button in the top bar).
 
@@ -2090,10 +2115,11 @@ Create `e2e/drive.spec.ts`:
 import { expect, test, type Page } from '@playwright/test';
 import { openInbox, rowFor } from './support/app';
 import { inlineImageMail, toast } from './support/compose';
-import { driveChildren, driveToken, removeFromDrive, waitForDrive } from './support/drive';
+import { driveChildren, driveOn, driveToken, removeFromDrive, waitForDrive } from './support/drive';
 import { deliverToAlice, destroyEmails, uniqueTag, type EmailInfo } from './support/mail';
 
-// Save to Drive against the dev stack's OpenCloud (deploy/docker-compose.yml, behind /drive).
+// Save to Drive. The first test needs a real OpenCloud (a stack started with deploy/docker-compose.drive.yml)
+// and skips itself without one; the other two play Drive's answers themselves and run everywhere, CI included.
 const NOTES = 'notes for the chart';
 let mail: EmailInfo;
 
@@ -2113,6 +2139,7 @@ async function openMessage(page: Page) {
 const chip = (page: Page) => page.locator('.attachments').getByRole('button', { name: /notes\.txt/ });
 
 test('an attachment is saved into a new Drive folder, and a second save keeps both', async ({ page }) => {
+  test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
   test.setTimeout(240_000);
   const folder = uniqueTag('e2e-drive');
   await openMessage(page);
@@ -2167,6 +2194,7 @@ test('without a Drive the chip downloads, as it always did', async ({ page }) =>
 });
 
 test('a Drive that is down says so and leaves mail alone', async ({ page }) => {
+  await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 20 } }));
   await page.route('**/drive/graph/**', (route) => route.fulfill({ status: 503, body: '' }));
   await openMessage(page);
   // Nothing was asked of Drive just by opening the app and a message.
@@ -2192,15 +2220,24 @@ Before running, check two names this file assumes and correct them to what the c
 
 The seed's `inlineImageMail(cid, attachment)` gives the message one inline image and `notes.txt`; only `notes.txt` is listed as a chip, so `Save all to Drive` does not appear, which is what the first test relies on.
 
-- [ ] **Step 2: Run them**
+- [ ] **Step 2: Run them with OpenCloud**
 
-Run: `pnpm build && pnpm e2e e2e/drive.spec.ts e2e/drive-stack.spec.ts`
-Expected: 6 passed.
+Run:
+```sh
+pnpm build
+(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml -f docker-compose.drive.yml up -d)
+pnpm e2e e2e/drive.spec.ts e2e/drive-stack.spec.ts
+```
+Expected: 6 passed, 1 skipped (the "with no OpenCloud" route test).
 
-- [ ] **Step 3: Run the whole suite in the three engines once**
+- [ ] **Step 3: Run the whole suite as CI does, without OpenCloud**
 
-Run: `pnpm test && pnpm e2e:all`
-Expected: everything passes. Drive is now on in the dev stack for every spec, so a spec that clicks an attachment chip expecting a download (search with `grep -rn "\.attachment" e2e/*.spec.ts`) must choose `Download` from the menu instead; fix any that fail for that reason, and no other.
+Run:
+```sh
+(cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d --remove-orphans && docker compose restart caddy)
+pnpm test && pnpm e2e:all
+```
+Expected: everything passes; in each engine the Drive specs report 4 passed and 3 skipped. No other spec changes behaviour, because without `OINBOX_DRIVE_UPSTREAM` an attachment chip still downloads on a click.
 
 - [ ] **Step 4: Write the documentation**
 
@@ -2250,7 +2287,7 @@ Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy `/drive
 Tested with Stalwart 0.16.23 and OpenCloud 7.2.4 and 8.1.0.
 ```
 
-In `deploy/README.md`: add "OpenCloud 7.2.4 (Drive)" to the first paragraph's list of what the stack runs; add `/drive.json` and `/drive/*` (to OpenCloud, prefix removed) under "Paths proxied to Stalwart" as a short separate paragraph headed "Paths proxied to OpenCloud", with the sentence "Keep SPA routes clear of `/drive` too."; and add a note: "OpenCloud shares Caddy's network namespace, which is how it reaches Stalwart at `http://localhost:8080`. It publishes no port and its own web UI is not reachable. After `docker compose restart caddy`, run `docker compose restart opencloud` as well."
+In `deploy/README.md`: add a section "Drive (optional)" saying that OpenCloud 7.2.4 joins the stack with the `docker-compose.drive.yml` override (give the full `docker compose -f … up -d` command from that file's header), that the default stack and CI run without it, and that the Drive specs needing it skip themselves otherwise; add `/drive.json` and `/drive/*` (to OpenCloud, prefix removed) under "Paths proxied to Stalwart" as a short separate paragraph headed "Paths proxied to OpenCloud", with the sentence "Keep SPA routes clear of `/drive` too."; and add a note: "OpenCloud shares Caddy's network namespace, which is how it reaches Stalwart at `http://localhost:8080`. It publishes no port and its own web UI is not reachable. After `docker compose restart caddy`, run `docker compose restart opencloud` as well."
 
 In `README.md`, add to the feature list (in the list's own style): "Save attachments to Drive, where an OpenCloud runs beside Stalwart."
 
@@ -2278,4 +2315,4 @@ git commit -m "Drive: end-to-end tests for saving, for no Drive and for a Drive 
 
 - [ ] **Step 7: Note for whoever pushes**
 
-Each of the four end-to-end jobs in `.github/workflows/ci.yml` now pulls and starts OpenCloud as part of `docker compose up --wait`. After the first push, compare the jobs' duration with the previous run and report the difference; nothing in the workflow needs changing for it to work.
+CI is unchanged: its stack has no OpenCloud, so the saving flow against a real OpenCloud is checked only by hand, with Step 2's commands. Say so in the pull request, with the result of the last local run of Step 2.
