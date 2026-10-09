@@ -107,7 +107,7 @@ The release image is configured by environment variables. All are optional.
 | `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
 | `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
 | `OINBOX_DRIVE_UPSTREAM` | none | Where an OpenCloud's HTTP listener is, as `host:port`. Set, the app offers Drive; unset, it shows none. See "Drive". |
-| `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Reserved for sending large files as Drive links, which this version does not yet do. A whole number. |
+| `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Past this many megabytes of attachments, a message's files are offered as a Drive link instead. A file larger than Stalwart's own upload limit is always offered as one. A number. |
 
 ### Branding
 
@@ -119,7 +119,7 @@ The browser remembers the branding it last saw, so a change shows on the second 
 
 ### Drive
 
-oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as the user's Drive. In this version that means two things: an attachment can be saved into a Drive folder from the message it came in, and files can be attached to a message straight from Drive. Users sign in once; OpenCloud accepts the sign-in Stalwart gave oinbox.
+oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as the user's Drive. It does three things: an attachment can be saved into a Drive folder from the message it came in; files can be attached to a message straight from Drive; and files too large for mail are uploaded to Drive and sent as one link, with a password and an expiry the sender chooses. Users sign in once; OpenCloud accepts the sign-in Stalwart gave oinbox.
 
 **What you need**
 
@@ -136,17 +136,20 @@ oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as
   | `PROXY_ROLE_ASSIGNMENT_DRIVER` | `default` |
   | `GRAPH_USERNAME_MATCH` | `none` (user names are e-mail addresses) |
 
-- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends OpenCloud's two APIs, `/drive/graph/*` and `/drive/dav/spaces/*`, to it with the prefix removed, and tells the app Drive is on in `/drive.json`. Nothing else of OpenCloud is reachable through oinbox: its own web UI and its public-link pages stay on its own address.
+- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends OpenCloud's three APIs, `/drive/graph/*`, `/drive/dav/spaces/*` and `/drive/ocs/*`, to it with the prefix removed, and tells the app Drive is on in `/drive.json`. Nothing else of OpenCloud is reachable through oinbox: its own web UI and its public-link pages stay on its own address.
 - OpenCloud able to reach Stalwart at that public URL from where it runs.
 
 OpenCloud need not run beside oinbox. Any `host:port` the oinbox container reaches over plain HTTP on a private network will do: a separate service in the same VPC, for example. (Reaching it through its own public HTTPS address has not been tested.)
 
-Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/drive/graph/` and `/drive/dav/spaces/` to OpenCloud with the prefix removed, answer 404 for anything else under `/drive/`, send OpenCloud `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, replace its `Content-Security-Policy` with `sandbox; default-src 'none'` and set `X-Content-Type-Options: nosniff`, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files. The two headers and the 404 matter: OpenCloud serves files its users uploaded, and on the mail origin a file that the browser ran as a page could read the mail sign-in.
+Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/drive/graph/`, `/drive/dav/spaces/` and `/drive/ocs/` to OpenCloud with the prefix removed, answer 404 for anything else under `/drive/`, send OpenCloud `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, replace its `Content-Security-Policy` with `sandbox; default-src 'none'` and set `X-Content-Type-Options: nosniff`, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files. The two headers and the 404 matter: OpenCloud serves files its users uploaded, and on the mail origin a file that the browser ran as a page could read the mail sign-in.
 
 **Things to know before the first user signs in**
 
 - *Accounts need a name.* An account with no description in Stalwart has no `name` to give OpenCloud, which then refuses to create the user (the Drive actions answer "Drive isn't available right now", and OpenCloud logs `missing claim 'name'`). Either give every account a description, or set `PROXY_AUTOPROVISION_CLAIM_DISPLAYNAME=preferred_username` and accept the address as the display name.
 - *What a user is known by.* With the settings above the OpenCloud user is the e-mail address, so a renamed mailbox gets a new, empty drive. Setting `PROXY_USER_OIDC_CLAIM=sub` and `PROXY_AUTOPROVISION_CLAIM_USERNAME=sub` keeps the drive across a rename; the user is then known by Stalwart's account number. Choose before anyone signs in: changing it afterwards makes new users. oinbox works with either.
+- *Links are opened at OpenCloud's own address.* A link in a sent message is whatever OpenCloud makes from its `OC_URL`, so that address has to be reachable by the people your users write to, even though oinbox itself reaches OpenCloud privately.
+- *Link passwords.* OpenCloud requires a password on every public link unless `OC_SHARING_PUBLIC_SHARE_MUST_HAVE_PASSWORD=false`. oinbox follows whichever you choose: required, the sender types or generates one; not required, the step is optional. The sender decides whether the password goes in the message or is passed on another way. oinbox never stores it, beyond half an hour in the sender's own browser tab.
+- *Where the files go.* Each message's files are in `Mail attachments/<date> <subject>` in the sender's drive, and stay there after sending; discarding the draft removes them. They count against the sender's Drive quota, not Stalwart's.
 - *Trust.* Every Drive request carries the user's mail token to OpenCloud. Run only an OpenCloud you would trust with the mail.
 - *Signing out.* A token Stalwart has revoked (a changed password, say) stops working in OpenCloud within a second.
 

@@ -6,7 +6,7 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 ### Added
 
-- Drive: where an OpenCloud runs beside Stalwart, an attachment can be saved into one of its folders from the message, and files can be attached from it when writing, with no second sign-in. Operators turn it on with `OINBOX_DRIVE_UPSTREAM` (docs/operating.md, "Drive"). Tested against OpenCloud 7.2.4 and 8.1.0.
+- Drive: where an OpenCloud runs beside Stalwart, an attachment can be saved into one of its folders from the message; files can be attached from it when writing; and files too large for mail are uploaded to it and sent as one link, with a password (typed or generated, in the message or passed on another way) and an expiry. No second sign-in. Operators turn it on with `OINBOX_DRIVE_UPSTREAM` (docs/operating.md, "Drive"). Tested against OpenCloud 7.2.4 and 8.1.0.
 
 ## 0.1.0-beta.2
 

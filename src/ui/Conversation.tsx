@@ -6,10 +6,11 @@ import { avatarColor, fullDate, listDate } from '../mail/format';
 import { displayName } from '../mail/participants';
 import type { EmailRec } from '../sync/engine';
 import { Attachments } from './Attachments';
+import { LinkPasswordNote } from './LinkPasswordNote';
 import { hiddenMailboxIds, isHidden, isLabel, type View } from '../sync/selectors';
 import { Icon } from './icons';
 import { InviteCard } from './InviteCard';
-import { MessageBody } from './MessageBody';
+import { bodyOf, MessageBody } from './MessageBody';
 import { PaneBoundary } from './PaneBoundary';
 import { logUnexpected } from '../sync/connection';
 
@@ -349,6 +350,7 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
           <PaneBoundary name="message">
             <MessageBody email={props.email} />
           </PaneBoundary>
+          <LinkPasswordNote text={bodyOf(props.email).value} />
           <Attachments email={props.email} />
           <Show when={isDraft()}>
             <button class="btn tonal" style={{ 'margin-top': '12px' }} onClick={() => composers.openDraft(props.email)}>

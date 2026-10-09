@@ -19,7 +19,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Shared mailboxes**: a Stalwart group you belong to (`support@`, say) appears in a switcher above Compose. Work its inbox and send from it; unread counts for every mailbox are always in view.
 - **Notifications**: the unread count in the tab title, and desktop notifications for new Inbox mail while oinbox is open in a tab you're not looking at (switched on in Settings).
 - **Branding**: your own name and logo in place of "oinbox", set by the operator.
-- **Drive**: where an [OpenCloud](https://opencloud.eu) runs beside Stalwart, save a message's attachments into a Drive folder and attach files from Drive when writing, with no second sign-in.
+- **Drive**: where an [OpenCloud](https://opencloud.eu) runs beside Stalwart, save a message's attachments into a Drive folder, attach files from Drive when writing, and send files too large for mail as a Drive link with a password and an expiry, all with no second sign-in.
 - **Calendar**: month, week and day views of your Stalwart calendars; create, move, resize, rename and delete single events; invitations shown in the message with Accept, Maybe and Decline, and updates and cancellations followed.
 - **Safety**: message HTML is sanitized and shown in a sandboxed frame that runs no scripts, under its own Content-Security-Policy; remote images are blocked until you allow them, per message or per sender.
 - **When things go wrong**: a banner when the server can't be reached, with automatic retry; a failed send or save keeps your text and offers Retry; a fault in one part of the screen is contained there; being signed out keeps the draft you were writing.
@@ -48,7 +48,7 @@ From the beta audit ([docs/beta-audit.md](docs/beta-audit.md) has the detail and
 - **Safari: keyboard shortcuts stop working after you click inside a message** until you click outside it again (E5).
 - **Events cannot be moved or resized from the keyboard.** They can be created with "New event" and renamed, re-filed and deleted from their card (A9).
 - An event's card can cover a neighbouring event in Firefox and Safari until it is closed (E2). In Safari the label name is not pre-selected in the Rename dialog (E3). Closing the label picker with Escape leaves focus on the page (A10). In a long thread on a phone, Send can be below the fold while you type a reply (P1). At 360px the calendar toolbar wraps unevenly and message dates wrap onto three lines (P5, P6).
-- Attachments are bounded by Stalwart's upload quota: 50 MB per account per hour by default.
+- Attachments are bounded by Stalwart's upload quota: 50 MB per account per hour by default. Where there is a Drive, larger files are sent as a link instead.
 
 ## Develop
 

@@ -56,6 +56,7 @@ function Ask(props: { req: LinkRequest }) {
     return checkPassword(password(), r.policy);
   };
   const names = req.sources.map((s) => s.name).join(', ');
+  const them = req.sources.length === 1 ? 'it' : 'them';
 
   const send = (e: SubmitEvent) => {
     e.preventDefault();
@@ -72,8 +73,8 @@ function Ask(props: { req: LinkRequest }) {
           <strong>{names}</strong> ({fileSize(req.bytes)}){' '}
           <Show when={!req.adding} fallback={<span>Adding to this message's Drive link.</span>}>
             {req.canAttach
-              ? 'is a lot to attach to a message. Send a link to it in your Drive instead?'
-              : 'is more than the mail server accepts. It can be sent as a link to it in your Drive.'}
+              ? `is a lot to attach to a message. Send a link to ${them} in your Drive instead?`
+              : `is more than the mail server accepts. Send a link to ${them} in your Drive instead.`}
           </Show>
         </p>
 

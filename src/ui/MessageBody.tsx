@@ -6,7 +6,7 @@ import { buildFrameDocument, plainTextToHtml, sanitizeEmailHtml } from '../mail/
 import type { EmailRec } from '../sync/engine';
 
 /** Pick the displayable body: concatenated text/html parts, else text/plain. */
-function bodyOf(email: EmailRec): { kind: 'html' | 'text'; value: string } {
+export function bodyOf(email: EmailRec): { kind: 'html' | 'text'; value: string } {
   const values = email.bodyValues ?? {};
   const join = (parts: EmailBodyPart[] | undefined, type: string) =>
     (parts ?? [])

@@ -266,6 +266,9 @@ export function createDriveLinks(deps: {
       finish('cancel');
     },
 
+    /** The links made in this tab whose passwords are still remembered, among those this text mentions. */
+    recallIn: (text: string) => passwords.findIn(text),
+
     /** For the composer (createComposers): what discarding a draft means for its files in Drive. */
     hooks: {
       discardNote: (c: object): string | null => (sessions.has(c as ComposerLike) ? 'The files uploaded to Drive for it will be removed.' : null),

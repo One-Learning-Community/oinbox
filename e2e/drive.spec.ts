@@ -1,8 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { openInbox, rowFor } from './support/app';
-import { composeNew, deliveredCopy, destroyBySubject, emailDetails, inlineImageMail, sendAndWait, toast } from './support/compose';
+import { bodyEditor, composeNew, deliveredCopy, destroyBySubject, emailDetails, inlineImageMail, sendAndWait, toast } from './support/compose';
 import { driveChildren, driveFetch, driveId, driveOn, driveToken, removeFromDrive, waitForDrive } from './support/drive';
-import { BOB, deliverToAlice, destroyEmails, mailboxByRole, uniqueTag, type EmailInfo } from './support/mail';
+import { accountId, ALICE, BOB, deliverToAlice, destroyEmails, jmap, mailboxByRole, uniqueTag, waitFor, type EmailInfo } from './support/mail';
 
 // Save to Drive. The first test needs a real OpenCloud (a stack started with deploy/docker-compose.drive.yml)
 // and skips itself without one; the other two play Drive's answers themselves and run everywhere, CI included.
@@ -188,6 +188,142 @@ test('without a Drive the paperclip opens the file chooser directly', async ({ p
     await paperclip(c).click();
     await chooser;
     await expect(page.getByRole('menu')).toHaveCount(0);
+  } finally {
+    await destroyBySubject(subject);
+  }
+});
+
+// --- Sending large files as a link -------------------------------------------------------------
+
+/** A threshold of about a kilobyte, so a test needs no 20 MB file. */
+const tinyThreshold = (page: Page) => page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 0.001 } }));
+const linkDialog = (page: Page) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Send as a Drive link' }) });
+const addLargeFile = (c: Locator, name = 'clip.bin') => c.locator('input[type=file]:not([accept])').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: Buffer.alloc(4096, 7) });
+
+/** The plain-text part of a stored message. */
+async function textOf(id: string, user: string): Promise<string> {
+  const r = await jmap([['Email/get', { accountId: await accountId(user), ids: [id], properties: ['textBody', 'bodyValues'], fetchTextBodyValues: true }, 'g']], user);
+  const email = r.g.list[0] as { textBody: { partId: string }[]; bodyValues: Record<string, { value: string }> };
+  return email.textBody.map((p) => email.bodyValues[p.partId]?.value ?? '').join('\n');
+}
+
+/** The folder made in Drive for the message with this subject, if there is one. */
+async function mailFolder(token: string, subject: string) {
+  const parent = (await driveChildren(token)).find((e) => e.name === 'Mail attachments');
+  return parent ? (await driveChildren(token, parent.id)).find((e) => e.name.endsWith(subject)) : undefined;
+}
+
+/** What OpenCloud answers someone opening the link with this password. */
+async function asRecipient(url: string, password: string): Promise<{ status: number; names: string[] }> {
+  const token = url.split('/').pop()!;
+  const res = await fetch(`${new URL(url).origin}/dav/public-files/${token}/`, {
+    method: 'PROPFIND',
+    headers: { depth: '1', authorization: 'Basic ' + Buffer.from(`public:${password}`).toString('base64') },
+  });
+  const names = [...(await res.text()).matchAll(/<d:href>[^<]*\/([^/<]+)<\/d:href>/g)].map((m) => decodeURIComponent(m[1]!));
+  return { status: res.status, names };
+}
+
+test('a file too large for the message is sent as a Drive link the recipient can open with its password', async ({ page }) => {
+  test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
+  test.setTimeout(240_000);
+  await tinyThreshold(page);
+  const subject = `Drive link ${uniqueTag()}`;
+  await openInbox(page);
+  const token = await driveToken(page);
+  await waitForDrive(token);
+  try {
+    const c = await composeNew(page, { to: BOB, subject, body: 'The recording is too big to attach.' });
+    await addLargeFile(c);
+    const dialog = linkDialog(page);
+    await expect(dialog).toContainText('clip.bin (4 KB)');
+    await dialog.getByRole('button', { name: 'Generate' }).click();
+    const password = await dialog.getByLabel(/^Password/).inputValue();
+    expect(password).toHaveLength(16);
+    await dialog.getByRole('button', { name: 'Send as a link' }).click();
+    await expect(dialog).toBeHidden();
+
+    // The message says where the files are; nothing was attached.
+    await expect(bodyEditor(c)).toContainText('Files for this message: http');
+    await expect(bodyEditor(c)).toContainText(`Password: ${password}`);
+    await expect(bodyEditor(c)).toContainText('The recording is too big to attach.');
+    await expect(c.locator('.compose-attachments')).toHaveCount(0);
+    await sendAndWait(page, c);
+
+    const received = await deliveredCopy(subject, BOB, await mailboxByRole('inbox', BOB));
+    const text = await textOf(received.id, BOB);
+    const url = /Files for this message: (\S+)/.exec(text)?.[1];
+    expect(url, text).toBeTruthy();
+    expect(text).toContain(`Password: ${password}`);
+    expect(text).toMatch(/Available until \d{1,2} \w+ \d{4}\./);
+    expect((await emailDetails(received.id, BOB)).attachments).toEqual([]);
+
+    // As Bob would: the link opens with the password, and only with it.
+    expect(await asRecipient(url!, password)).toEqual({ status: 207, names: ['clip.bin'] });
+    expect((await asRecipient(url!, 'not-the-password')).status).toBe(401);
+
+    // Back in Alice's Sent copy, the password can still be read in this tab.
+    const sent = await waitFor(async () => (await mailboxByRole('sent').then(async (id) => (await deliveredCopy(subject, ALICE, id)))), 20_000, 'the Sent copy');
+    await page.goto(`/sent/t/${sent.threadId}`);
+    const note = page.locator('.link-recall');
+    await expect(note).toContainText('Password for the Drive link:');
+    await expect(note).not.toContainText(password);
+    await note.getByRole('button', { name: 'Show' }).click();
+    await expect(note).toContainText(password);
+  } finally {
+    const folder = await mailFolder(token, subject);
+    if (folder) await removeFromDrive(token, ['Mail attachments', folder.name]);
+    await destroyBySubject(subject);
+  }
+});
+
+test("discarding a draft removes the files uploaded to Drive for it, after saying so", async ({ page }) => {
+  test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
+  test.setTimeout(240_000);
+  await tinyThreshold(page);
+  const subject = `Drive discard ${uniqueTag()}`;
+  await openInbox(page);
+  const token = await driveToken(page);
+  await waitForDrive(token);
+  try {
+    const c = await composeNew(page, { to: BOB, subject, body: 'Never mind.' });
+    await addLargeFile(c);
+    const dialog = linkDialog(page);
+    await dialog.getByRole('button', { name: 'Generate' }).click();
+    await dialog.getByRole('button', { name: 'Send as a link' }).click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(async () => !!(await mailFolder(token, subject))).toBe(true);
+
+    await c.getByRole('button', { name: 'Discard draft' }).click();
+    const confirm = page.getByRole('dialog').filter({ hasText: 'Discard draft?' });
+    await expect(confirm).toContainText('The files uploaded to Drive for it will be removed.');
+    await confirm.getByRole('button', { name: 'Discard' }).click();
+    await expect.poll(async () => !!(await mailFolder(token, subject))).toBe(false);
+  } finally {
+    const folder = await mailFolder(token, subject);
+    if (folder) await removeFromDrive(token, ['Mail attachments', folder.name]);
+    await destroyBySubject(subject);
+  }
+});
+
+test('the offer of a link can be declined: the file is attached as before', async ({ page }) => {
+  // Drive's answers are played here, so this runs without an OpenCloud too.
+  await tinyThreshold(page);
+  await page.route('**/drive/ocs/**', (route) =>
+    route.fulfill({ json: { ocs: { data: { capabilities: { password_policy: { min_characters: 8 }, files_sharing: { public: { password: { enforced_for: { read_only: true } } } } } } } } }),
+  );
+  const subject = `Drive decline ${uniqueTag()}`;
+  await openInbox(page);
+  try {
+    const c = await composeNew(page, { to: BOB, subject, body: 'Attached after all.' });
+    await addLargeFile(c);
+    const dialog = linkDialog(page);
+    await expect(dialog.getByLabel(/^Password/)).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Send as a link' })).toBeDisabled();
+    await dialog.getByRole('button', { name: 'Attach anyway' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(c.locator('.compose-attachments .attachment', { hasText: 'clip.bin' })).toBeVisible();
+    await expect(bodyEditor(c)).not.toContainText('Files for this message');
   } finally {
     await destroyBySubject(subject);
   }

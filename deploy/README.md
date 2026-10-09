@@ -71,7 +71,7 @@ Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwa
 
 ### Paths proxied to OpenCloud
 
-`/drive/graph/*` and `/drive/dav/spaces/*` go to OpenCloud with the prefix removed, and `/drive.json` tells the app whether there is one. Everything else under `/drive/` answers 404, OpenCloud's web UI included. Without `OINBOX_DRIVE_UPSTREAM`, `/drive.json` says `enabled: false` and all of `/drive/*` answers 404. Keep SPA routes clear of `/drive` too.
+`/drive/graph/*`, `/drive/dav/spaces/*` and `/drive/ocs/*` go to OpenCloud with the prefix removed, and `/drive.json` tells the app whether there is one. Everything else under `/drive/` answers 404, OpenCloud's web UI included. Without `OINBOX_DRIVE_UPSTREAM`, `/drive.json` says `enabled: false` and all of `/drive/*` answers 404. Keep SPA routes clear of `/drive` too.
 
 ### Settings that matter
 
@@ -89,7 +89,7 @@ docker compose -f docker-compose.yml -f docker-compose.local-dist.yml -f docker-
 ```
 
 * Users are created in OpenCloud on their first Drive action, from their Stalwart sign-in. Nothing is seeded.
-* OpenCloud shares Caddy's network namespace, which is how it reaches Stalwart at `http://localhost:8080`. It publishes no port, and its own web UI is not reachable.
+* OpenCloud shares Caddy's network namespace, which is how it reaches Stalwart at `http://localhost:8080`. The app reaches it through Caddy's `/drive` route only. Its own address, where a mailed Drive link is opened, is published as http://localhost:9201 (9200 is often taken); signing in to its web UI there is not set up.
 * After `docker compose restart caddy`, run `docker compose -f docker-compose.yml -f docker-compose.drive.yml restart opencloud` as well: it loses its network with Caddy's.
 * To switch Drive off again, bring the stack up without the override and with `--remove-orphans`.
 * The end-to-end tests that need a real OpenCloud (`e2e/drive.spec.ts`, `e2e/drive-stack.spec.ts`) skip themselves without it. Run them with the override up before changing anything under `src/drive/`.

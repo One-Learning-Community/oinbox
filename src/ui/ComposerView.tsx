@@ -11,7 +11,9 @@ import { MenuButton } from './MenuButton';
 import { closedSuggestions, pickedSuggestion, RecipientField } from './RecipientField';
 
 export function ComposerView(props: { composer: Composer; inline: boolean }) {
-  const { composers, drive } = useApp();
+  const { composers, drive, driveLinks } = useApp();
+  /** Files from this computer: attached, or offered as a Drive link when they are too much for a message. */
+  const addFiles = (files: FileList | File[]) => void driveLinks.add(c, [...files].map((f) => ({ name: f.name, size: f.size, file: f })));
   const c = props.composer;
   const [showCc, setShowCc] = createSignal(c.draft().cc.length > 0 || c.draft().bcc.length > 0);
   const [dragging, setDragging] = createSignal(false);
@@ -31,7 +33,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
-    void c.attach(files);
+    addFiles(files);
   };
   onMount(() => {
     root?.addEventListener('drop', attachWhole, true);
@@ -101,7 +103,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
         if (e.defaultPrevented) return;
         if (e.dataTransfer?.files.length) {
           e.preventDefault();
-          void c.attach(e.dataTransfer.files);
+          addFiles(e.dataTransfer.files);
         }
       }}
     >
@@ -218,7 +220,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
         <button type="button" class="btn" onClick={() => void composers.send(c)} title="Send (Ctrl+Enter)">
           Send
         </button>
-        <input ref={fileInput} type="file" multiple hidden onChange={(e) => { void c.attach(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} />
+        <input ref={fileInput} type="file" multiple hidden onChange={(e) => { addFiles(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} />
         <Show
           when={drive.offered()}
           fallback={
@@ -236,7 +238,8 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
             items={[
               { label: 'From this computer', run: () => fileInput?.click() },
               // A file from Drive is attached like one from disk: the composer uploads it and reports on it.
-              { label: 'From Drive', run: () => drive.attachFromDrive((files) => c.attach(files)) },
+              // Files that are too much for the message are copied to its folder in Drive, not fetched.
+              { label: 'From Drive', run: () => drive.attachFromDrive((files) => c.attach(files), (refs) => driveLinks.intercept(c, refs)) },
             ]}
           >
             <Icon name="clip" />
