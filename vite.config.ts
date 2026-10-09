@@ -26,7 +26,8 @@ export default defineConfig({
     // Dev: proxy JMAP + OAuth to the Docker Compose Caddy so the app stays same-origin.
     proxy: Object.fromEntries(
       // Stalwart's OAuth lives at /login (authorize), /api/auth (login form), /auth/token.
-      ['/.well-known', '/jmap', '/auth/token', '/auth/register', '/api', '/login', '/logo']
+      // Drive (OpenCloud) is at /drive, and /drive.json says whether there is one.
+      ['/.well-known', '/jmap', '/auth/token', '/auth/register', '/api', '/login', '/logo', '/drive']
         .map((p) => [p, { target: 'http://localhost:8080', changeOrigin: false }]),
     ),
   },

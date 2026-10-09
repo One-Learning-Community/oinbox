@@ -1,10 +1,11 @@
 # Routing shared by the dev stack (Caddyfile) and the production template (production/Caddyfile),
-# so the two cannot drift apart. Any reverse proxy in front of Stalwart has to do these five things:
+# so the two cannot drift apart. Any reverse proxy in front of Stalwart has to do these things:
 #   1. send Stalwart's paths to Stalwart, except /auth/callback, which is the app's;
 #   2. take WWW-Authenticate off Stalwart's answers;
 #   3. stream the push connection unbuffered, with no read timeout;
 #   4. serve the app with its security headers, falling back to index.html;
-#   5. compress the app's files, and only those.
+#   5. compress the app's files, and only those;
+#   6. if there is an OpenCloud, send /drive/* to it with the prefix removed, and say so in /drive.json.
 (oinbox_routes) {
 	# --- Paths owned by Stalwart (same origin as the SPA) --------------------
 	# /auth/callback is the SPA's OAuth redirect_uri, so it must NOT go to Stalwart,
@@ -47,6 +48,41 @@
 			X-Content-Type-Options "nosniff"
 		}
 		respond `{"name":"{$OINBOX_BRAND_NAME:oinbox}","logo":"{$OINBOX_BRAND_LOGO:}"}`
+	}
+
+	# --- Drive (OpenCloud), optional -------------------------------------------
+	# OINBOX_DRIVE_UPSTREAM is where OpenCloud's HTTP listener is. Unset: no Drive, and the app shows
+	# none (src/drive/config.ts). The values are put in as text, so the expressions below compare constants.
+	handle /drive.json {
+		header {
+			Content-Type "application/json"
+			Cache-Control "no-cache"
+			X-Content-Type-Options "nosniff"
+		}
+		@drive_on expression `"{$OINBOX_DRIVE_UPSTREAM:}" != ""`
+		respond @drive_on `{"enabled":true,"linkOverMb":{$OINBOX_DRIVE_LINK_OVER_MB:20}}`
+		respond `{"enabled":false,"linkOverMb":{$OINBOX_DRIVE_LINK_OVER_MB:20}}`
+	}
+	@drive {
+		path /drive/*
+		expression `"{$OINBOX_DRIVE_UPSTREAM:}" != ""`
+	}
+	handle @drive {
+		uri strip_prefix /drive
+		# The address after the colon is never used: the matcher above is false when the variable is
+		# unset. It is there because a proxy with no upstream does not parse.
+		reverse_proxy {$OINBOX_DRIVE_UPSTREAM:localhost:9} {
+			# OpenCloud redirects to https:// when told the request came by http, as it does in the dev stack.
+			header_up -X-Forwarded-Proto
+			# As for Stalwart: a Basic challenge would put a browser login prompt over the app.
+			header_down -Www-Authenticate
+			# Uploads and downloads are streamed, not buffered.
+			flush_interval -1
+		}
+	}
+	# No OpenCloud: a Drive request must not be answered with index.html.
+	handle /drive/* {
+		respond 404
 	}
 
 	# --- SPA ---------------------------------------------------------------

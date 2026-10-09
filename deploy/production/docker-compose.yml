@@ -54,6 +54,8 @@ services:
       # Optional branding (docs/operating.md, "Branding").
       OINBOX_BRAND_NAME: "${OINBOX_BRAND_NAME:-oinbox}"
       OINBOX_BRAND_LOGO: "${OINBOX_BRAND_LOGO:-}"
+      OINBOX_DRIVE_UPSTREAM: "${OINBOX_DRIVE_UPSTREAM:-}"
+      OINBOX_DRIVE_LINK_OVER_MB: "${OINBOX_DRIVE_LINK_OVER_MB:-20}"
     ports:
       - "80:80"     # redirects to HTTPS; also answers the certificate authority's challenge
       - "443:443"
