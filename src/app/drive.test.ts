@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DriveError } from '../drive/client';
+import { DriveError, type DriveItem } from '../drive/client';
 import { FakeDrive } from '../drive/fake';
 import { createDrive, driveMessage, freeName, safeName, type SaveFile, type Trail } from './drive';
 
@@ -52,6 +52,9 @@ describe('driveMessage', () => {
     expect(driveMessage(new DriveError('tooLarge', 507, 'x'))).toBe('Not enough space in Drive.');
     expect(driveMessage(new DriveError('other', 500, 'Uploading: HTTP 500'))).toBe("Couldn't save to Drive: Uploading: HTTP 500");
     expect(driveMessage(new Error('blob gone'))).toBe("Couldn't save to Drive: blob gone");
+    expect(driveMessage(new DriveError('missing', 404, 'x'), 'attach')).toBe('That file is no longer in Drive.');
+    expect(driveMessage(new DriveError('unavailable', 0, 'x'), 'attach')).toBe("Drive isn't available right now.");
+    expect(driveMessage(new DriveError('other', 425, 'Downloading: HTTP 425'), 'attach')).toBe("Couldn't attach from Drive: Downloading: HTTP 425");
   });
 });
 
@@ -66,7 +69,8 @@ describe('createDrive', () => {
   it('asks nothing of OpenCloud until a folder is confirmed', () => {
     const { server, drive } = setup();
     drive.saveToDrive([file('notes.txt')]);
-    expect(drive.request()?.files).toHaveLength(1);
+    const req = drive.request();
+    expect(req?.kind === 'save' && req.files.length).toBe(1);
     expect(server.requests).toEqual([]);
   });
 
@@ -164,5 +168,82 @@ describe('createDrive', () => {
     const { server, drive } = setup();
     expect(await drive.confirm(TOP)).toBe(false);
     expect(server.requests).toEqual([]);
+  });
+});
+
+describe('attaching from Drive', () => {
+  const item = (id: string, name: string): DriveItem => ({ id, name, size: 1, folder: false, modified: '' });
+
+  it('opens a request for files and asks nothing of OpenCloud yet', () => {
+    const { server, drive } = setup();
+    drive.attachFromDrive(() => {});
+    expect(drive.request()?.kind).toBe('pick');
+    expect(server.requests).toEqual([]);
+  });
+
+  it('fetches the chosen files, hands them over as Files, closes, and remembers the folder', async () => {
+    const { server, drive } = setup();
+    const folder = server.mkdir(['Reports']);
+    const a = server.put(['Reports', 'q3.pdf'], new Blob(['pdf!'], { type: 'application/pdf' }));
+    const b = server.put(['Reports', 'empty.txt'], new Blob([]));
+    const deliver = vi.fn<(files: File[]) => void>();
+    const trail: Trail = [{ name: 'Drive' }, { id: folder, name: 'Reports' }];
+    drive.attachFromDrive(deliver);
+    expect(await drive.choose(trail, [item(a, 'q3.pdf'), item(b, 'empty.txt')])).toBe(true);
+    const files = deliver.mock.calls[0]![0];
+    expect(files.map((f) => ({ name: f.name, type: f.type, size: f.size }))).toEqual([
+      { name: 'q3.pdf', type: 'application/pdf', size: 4 },
+      { name: 'empty.txt', type: 'application/octet-stream', size: 0 },
+    ]);
+    expect(files[0]).toBeInstanceOf(File);
+    expect(drive.request()).toBeNull();
+    expect(drive.lastTrail()).toEqual(trail);
+  });
+
+  it('says so when a file has gone since the folder was listed, attaches nothing and stays open', async () => {
+    const { server, toast, drive } = setup();
+    const a = server.put(['a.txt'], blob('a'));
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    server.remove(['a.txt']);
+    expect(await drive.choose(TOP, [item(a, 'a.txt')])).toBe(false);
+    expect(toast).toHaveBeenCalledWith('That file is no longer in Drive.', 'error');
+    expect(deliver).not.toHaveBeenCalled();
+    expect(drive.request()?.kind).toBe('pick');
+  });
+
+  it('attaches none when one of several cannot be fetched', async () => {
+    const { server, drive } = setup();
+    const a = server.put(['a.txt'], blob('a'));
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    expect(await drive.choose(TOP, [item(a, 'a.txt'), item('gone', 'b.txt')])).toBe(false);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it('says Drive is unavailable when it is', async () => {
+    const { server, toast, drive } = setup();
+    const a = server.put(['a.txt'], blob('a'));
+    drive.attachFromDrive(() => {});
+    server.down = true;
+    expect(await drive.choose(TOP, [item(a, 'a.txt')])).toBe(false);
+    expect(toast).toHaveBeenCalledWith("Drive isn't available right now.", 'error');
+  });
+
+  it('does nothing with no files chosen, and keeps saving and picking apart', async () => {
+    const { server, drive } = setup();
+    const a = server.put(['a.txt'], blob('a'));
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    expect(await drive.choose(TOP, [])).toBe(false);
+    // A pick request is not a save…
+    expect(await drive.confirm(TOP)).toBe(false);
+    expect(drive.request()?.kind).toBe('pick');
+    drive.cancel();
+    // …and a save request is not a pick.
+    drive.saveToDrive([file('x.txt')]);
+    expect(await drive.choose(TOP, [item(a, 'a.txt')])).toBe(false);
+    expect(deliver).not.toHaveBeenCalled();
+    expect(server.names([])).toEqual(['a.txt']);
   });
 });

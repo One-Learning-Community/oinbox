@@ -11,7 +11,7 @@ export function DrivePicker() {
   const { drive } = useApp();
   return (
     <Show when={drive.request()} keyed>
-      {(req) => <Picker count={req.files.length} />}
+      {(req) => <Picker count={req.kind === 'save' ? req.files.length : 1} />}
     </Show>
   );
 }
