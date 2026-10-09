@@ -24,7 +24,7 @@ Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud 8.1.0 (rolling) and 7.2
 | Need | Call | Notes |
 |---|---|---|
 | The user's drive | `GET /graph/v1.0/me/drive` | The id contains `$` and `!`; encode it in paths. |
-| A folder's contents | `GET /graph/v1.0/me/drive/root/children`, `GET /graph/v1.0/drives/{drive}/items/{item}/children` | Items have `id`, `name`, `size`, and `folder` or `file`. The `v1beta1` form of the second is 404. |
+| A folder's contents | `GET /graph/v1.0/me/drive/root/children`, `GET /graph/v1.0/drives/{drive}/items/{item}/children` | Items have `id`, `name`, `size`, and `folder` or `file`. The `v1beta1` form of the second is 404. A folder that has been deleted: 404 `itemNotFound`. |
 | Create a folder | `MKCOL /dav/spaces/{drive}/{path}` | 201; 405 if it exists. No id in the answer. |
 | Upload | `PUT /dav/spaces/{drive}/{path}` | 201, with the new item's id in `Oc-Fileid`. Onto an existing file: 204, and the file is replaced, `If-None-Match: *` or not. Into a folder that is not there: 409. |
 | Download | `GET /dav/spaces/{drive}/{path}` | Straight after an upload it can answer 425; retry. |
@@ -88,6 +88,8 @@ Caddy writes the file from two variables and proxies `/drive/*` to OpenCloud wit
 |---|---|---|
 | `OINBOX_DRIVE_UPSTREAM` | none | Where OpenCloud's HTTP listener is. Unset: no Drive. |
 | `OINBOX_DRIVE_LINK_OVER_MB` | `20` | The link threshold. |
+
+Only OpenCloud's two APIs are proxied, `/drive/graph/*` and `/drive/dav/spaces/*`, and their answers are given `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`. OpenCloud's web UI and public-link pages serve what users upload; on the origin that holds the mail token they must not be reachable (found in review, 2026-10-09: all of OpenCloud was at `/drive/`). Slice 3 adds `/drive/ocs/*` for the sharing rules.
 
 `deploy/routes.caddy` holds the route, so the dev stack and the production template share it. `deploy/examples/nginx.conf` gets the same route. `/drive` joins the list of prefixes the app's own routes must avoid.
 

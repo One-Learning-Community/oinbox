@@ -136,12 +136,12 @@ oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as
   | `PROXY_ROLE_ASSIGNMENT_DRIVER` | `default` |
   | `GRAPH_USERNAME_MATCH` | `none` (user names are e-mail addresses) |
 
-- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends `/drive/*` to it with the prefix removed, and tells the app Drive is on in `/drive.json`.
+- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends OpenCloud's two APIs, `/drive/graph/*` and `/drive/dav/spaces/*`, to it with the prefix removed, and tells the app Drive is on in `/drive.json`. Nothing else of OpenCloud is reachable through oinbox: its own web UI and its public-link pages stay on its own address.
 - OpenCloud able to reach Stalwart at that public URL from where it runs.
 
 OpenCloud need not run beside oinbox. Any `host:port` the oinbox container reaches over plain HTTP on a private network will do: a separate service in the same VPC, for example. (Reaching it through its own public HTTPS address has not been tested.)
 
-Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy `/drive/` to OpenCloud with the prefix removed, send it `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files.
+Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/drive/graph/` and `/drive/dav/spaces/` to OpenCloud with the prefix removed, answer 404 for anything else under `/drive/`, send OpenCloud `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, replace its `Content-Security-Policy` with `sandbox; default-src 'none'` and set `X-Content-Type-Options: nosniff`, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files. The two headers and the 404 matter: OpenCloud serves files its users uploaded, and on the mail origin a file that the browser ran as a page could read the mail sign-in.
 
 **Things to know before the first user signs in**
 
@@ -150,7 +150,7 @@ Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy `/drive
 - *Trust.* Every Drive request carries the user's mail token to OpenCloud. Run only an OpenCloud you would trust with the mail.
 - *Signing out.* A token Stalwart has revoked (a changed password, say) stops working in OpenCloud within a second.
 
-**If Drive is set but not working**, the app still shows the Drive actions and answers "Drive isn't available right now" when one is used; mail is unaffected. Check that `https://<your host>/drive/graph/v1.0/me/drive` answers 401 (not 404, and not the app's page), then OpenCloud's log for `failed to get userinfo`, which means it cannot reach Stalwart at `OC_OIDC_ISSUER`.
+**If Drive is set but not working**, the app still shows the Drive actions and answers "Drive isn't available right now" when one is used; mail is unaffected. Check that `https://<your host>/drive/graph/v1.0/me/drive` answers 401 when asked without signing in (not 404, and not the app's page), then OpenCloud's log for `failed to get userinfo`, which means it cannot reach Stalwart at `OC_OIDC_ISSUER`.
 
 Tested with Stalwart 0.16.23 and OpenCloud 7.2.4 and 8.1.0.
 
