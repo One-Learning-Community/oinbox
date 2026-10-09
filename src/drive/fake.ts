@@ -26,6 +26,8 @@ export class FakeDrive {
   down = false;
   /** Uploads answer 507. */
   full = false;
+  /** The next this-many downloads answer 425, as OpenCloud does for a file it has not finished with. */
+  early = 0;
   requests: { method: string; path: string }[] = [];
   private seq = 0;
   private root: Node = { id: `${this.driveId}!root`, name: '', modified: '2026-10-09T12:00:00Z', children: new Map() };
@@ -111,6 +113,17 @@ export class FakeDrive {
       const names = dav[2]!.split('/').map(decodeURIComponent);
       const parent = this.at(names.slice(0, -1));
       const name = names.at(-1)!;
+      if (method === 'GET') {
+        const node = parent?.children?.get(name);
+        if (!node?.data) return empty(404);
+        if (this.early > 0) {
+          this.early--;
+          return empty(425);
+        }
+        // Not a real Response: under jsdom a Response built from a Blob does not give the same Blob back.
+        const data = node.data;
+        return { ok: true, status: 200, headers: new Headers({ 'content-type': data.type }), blob: async () => data } as Response;
+      }
       if (method === 'MKCOL') {
         if (!parent?.children) return empty(409);
         if (parent.children.has(name)) return empty(405);

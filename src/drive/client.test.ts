@@ -119,4 +119,37 @@ describe('DriveClient', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
     expect(await kindOf(server.client({ getToken: async () => 'wrong' }).children())).toBe('refused');
   });
+
+  it("downloads a file's bytes, an empty file too", async () => {
+    const server = new FakeDrive();
+    server.mkdir(['Reports']);
+    const body = blob('pdf!');
+    server.put(['Reports', 'q3 #1.pdf'], body);
+    server.put(['empty.txt'], new Blob([]));
+    const c = server.client();
+    expect(await c.download(['Reports', 'q3 #1.pdf'])).toBe(body);
+    expect(server.requests.at(-1)).toEqual({ method: 'GET', path: `/dav/spaces/${encodeURIComponent(server.driveId)}/Reports/q3%20%231.pdf` });
+    expect((await c.download(['empty.txt'])).size).toBe(0);
+  });
+
+  it('waits out "too early" for a file that was only just uploaded', async () => {
+    const server = new FakeDrive();
+    server.put(['new.txt'], blob('fresh'));
+    server.early = 2;
+    const fetched = await server.client({ retryMs: 1 }).download(['new.txt']);
+    expect(fetched.size).toBe(5);
+    expect(server.requests.filter((r) => r.method === 'GET' && r.path.endsWith('/new.txt'))).toHaveLength(3);
+  });
+
+  it('gives up on a file that stays "too early", and says a missing one is missing', async () => {
+    const server = new FakeDrive();
+    server.put(['stuck.txt'], blob('x'));
+    server.early = 99;
+    const c = server.client({ retryMs: 1 });
+    expect(await kindOf(c.download(['stuck.txt']))).toBe('other');
+    expect(server.requests.filter((r) => r.path.endsWith('/stuck.txt'))).toHaveLength(5);
+    server.early = 0;
+    expect(await kindOf(c.download(['nope.txt']))).toBe('missing');
+    expect(await kindOf(c.download(['No folder', 'a.txt']))).toBe('missing');
+  });
 });

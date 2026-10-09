@@ -41,6 +41,8 @@ export interface DriveClientOptions {
   fetch?: typeof fetch;
   /** For everything but uploads, which take as long as they take. */
   timeoutMs?: number;
+  /** How long to wait before asking again for a file OpenCloud says is not ready (425). */
+  retryMs?: number;
 }
 
 const kindOf = (status: number): DriveErrorKind => {
@@ -148,5 +150,22 @@ export class DriveClient {
     const res = await this.request(await this.dav(path), { method: 'PUT', headers: { 'content-type': body.type || 'application/octet-stream' }, body }, true);
     if (!res.ok) this.fail(res, 'Uploading');
     return res.headers.get('oc-fileid') ?? '';
+  }
+
+  /**
+   * A file's bytes. Straight after an upload OpenCloud can answer 425 while it finishes with the
+   * file (seen 2026-10-09): wait and ask again, five times in all.
+   */
+  async download(path: string[]): Promise<Blob> {
+    const url = await this.dav(path);
+    for (let attempt = 1; ; attempt++) {
+      const res = await this.request(url, {}, true);
+      if (res.status === 425 && attempt < 5) {
+        await new Promise((r) => setTimeout(r, this.opts.retryMs ?? 400));
+        continue;
+      }
+      if (!res.ok) this.fail(res, 'Downloading');
+      return res.blob();
+    }
   }
 }
