@@ -8,7 +8,7 @@ This is one design built in three slices, each with its own plan: **1. Save to D
 
 ## What the servers give us
 
-Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud rolling 8.1.0, by script, on the dev stack. Not yet tried: a real browser, HTTPS, a proxy prefix (see "Not yet known").
+Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud 8.1.0 (rolling) and 7.2.4 (stable), by script, on throwaway stacks. Not yet tried: HTTPS and oinbox itself in a browser (see "Not yet known").
 
 ### Sign-in
 
@@ -16,6 +16,7 @@ Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud rolling 8.1.0, by scrip
 - **OpenCloud accepts it all the same** when told to verify by asking: with `PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD=none` it calls Stalwart's `/auth/userinfo` with the token and caches the answer. There is no audience check. The token oinbox already holds works unchanged.
 - **The account is created on first use**, named after the e-mail address (`GRAPH_USERNAME_MATCH=none` allows the `@`).
 - **Stalwart keeps no browser session**: its sign-in sets no cookie. A second OAuth client for Drive would mean a second password prompt, so there is none.
+- **A revoked token stops working at once.** After a password change, OpenCloud refused the old token within a second.
 - **Stalwart's user info carries no groups** (id, name, username, e-mail only). OpenCloud cannot learn of a Stalwart group.
 
 ### Files and links
@@ -25,7 +26,7 @@ Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud rolling 8.1.0, by scrip
 | The user's drive | `GET /graph/v1.0/me/drive` | The id contains `$` and `!`; encode it in paths. |
 | A folder's contents | `GET /graph/v1.0/me/drive/root/children`, `GET /graph/v1.0/drives/{drive}/items/{item}/children` | Items have `id`, `name`, `size`, and `folder` or `file`. The `v1beta1` form of the second is 404. |
 | Create a folder | `MKCOL /dav/spaces/{drive}/{path}` | 201; 405 if it exists. No id in the answer. |
-| Upload | `PUT /dav/spaces/{drive}/{path}` | 201, with the new item's id in `Oc-Fileid`. |
+| Upload | `PUT /dav/spaces/{drive}/{path}` | 201, with the new item's id in `Oc-Fileid`. Onto an existing file: 204, and the file is replaced, `If-None-Match: *` or not. Into a folder that is not there: 409. |
 | Download | `GET /dav/spaces/{drive}/{path}` | Straight after an upload it can answer 425; retry. |
 | An item's id from its path | `PROPFIND`, depth 0, `oc:fileid` | Needed for a folder made with `MKCOL`. |
 | Sharing rules | `GET /ocs/v1.php/cloud/capabilities?format=json` | `password_policy` and `files_sharing.public.password.enforced_for.read_only`. |
@@ -34,6 +35,7 @@ Probed on 2026-10-09 with Stalwart 0.16.23 and OpenCloud rolling 8.1.0, by scrip
 - **A public link needs a password by default.** Without one: `400 password protection is enforced`. With one that breaks the policy: 400 with the rules in the message. The default policy is 8 to 72 characters with a lower-case letter, an upper-case letter, a digit and a special character.
 - **OpenCloud never gives a link's password back**, only `hasPassword`.
 - **An expiry is rounded to the end of its day.** None is required by default.
+- **Behind a prefix it all works**, given one thing: OpenCloud answers 308 to `https://` when the proxy says the request came by `http` (`X-Forwarded-Proto: http`), as Caddy does in the dev stack. The route drops that header.
 - **URLs in answers are of no use to us.** `webDavUrl` is absolute on OpenCloud's own host and `PROPFIND` hrefs are absolute paths. Only a link's `webUrl` is used, and that one is meant for the recipient.
 
 ## Decisions
@@ -80,7 +82,7 @@ export interface DriveConfig {
 
 A missing file, a failed fetch or a malformed one means `{ enabled: false, linkOverMb: 20 }`. Unlike branding it is not remembered between visits: a Drive that was switched off must disappear.
 
-Caddy writes the file from two variables and proxies `/drive/*` to OpenCloud with the prefix removed:
+Caddy writes the file from two variables and proxies `/drive/*` to OpenCloud with the prefix removed. With the upstream unset, `/drive.json` says `enabled: false` and `/drive/*` answers 404:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -110,9 +112,9 @@ class DriveClient {
 }
 ```
 
-`upload` uses `XMLHttpRequest`, the only way a browser reports upload progress. It sends `If-None-Match: *`, so an existing file is not overwritten; on that refusal the caller picks another name (see "Save to Drive").
+`upload` uses `XMLHttpRequest`, the only way a browser reports upload progress. It replaces a file of the same name: OpenCloud has no way to refuse (see above), so a caller that must not overwrite lists the folder first (see "Save to Drive").
 
-Errors are of one type, `DriveError`, with a kind: `unavailable` (network, 502, 503, 404 on the drive itself), `refused` (401 after a token refresh, 403), `exists`, `tooLarge` (507, 413), `policy` (a link password OpenCloud rejects, with its message) and `other`.
+Errors are of one type, `DriveError`, with a kind: `unavailable` (network, 502, 503, 404 on the drive itself), `refused` (401 after a token refresh, 403), `missing` (404 and 409: the file or its folder is gone), `tooLarge` (507, 413), `policy` (a link password OpenCloud rejects, with its message) and `other`.
 
 ### What is offered (`src/app/drive.ts`)
 
@@ -134,7 +136,7 @@ Each attachment chip in the reader gains a menu with "Download" and "Save to Dri
 
 1. The picker opens in folder mode.
 2. On "Save here", the app fetches the blob from Stalwart (`engine.fetchBlob`, as download does) and uploads it.
-3. If the name is taken, it tries `name (1).ext`, `name (2).ext`, up to 20, as a browser does with downloads.
+3. It lists the folder first, and if the name is taken (compared without regard to case) it uses `name (1).ext`, `name (2).ext` and so on, as a browser does with downloads. Two saves at the same instant could still collide; OpenCloud keeps the replaced file as an earlier version, so nothing is lost.
 4. A toast says "Saved to Drive: *folder*", or what went wrong.
 
 The bytes pass through the browser's memory. Attachments are bounded by what Stalwart accepted, so this is no worse than a download.
@@ -222,12 +224,9 @@ It is `sessionStorage` on purpose: it ends with the tab, is not shared between t
 
 Each is the first task of the slice that needs it; an answer that breaks a decision above comes back to this document.
 
-1. **The prefix** (slice 1). OpenCloud's API behind `/drive/` with the prefix removed, in a real browser under the app's policy, and what Caddy does with the route when `OINBOX_DRIVE_UPSTREAM` is unset.
-2. **`If-None-Match: *` on upload** (slice 1): that OpenCloud refuses with 412 and leaves the file alone.
-3. **Large uploads** (slice 3): a 1 GB `PUT` through Caddy. If it fails, slice 3 uses OpenCloud's resumable uploads (TUS, 10 MB chunks by its own account) from the start.
-4. **Copy inside OpenCloud** (slice 3): WebDAV `COPY` between two folders of one drive.
-5. **A revoked token** (slice 1, for the guide): how long OpenCloud's cached answer keeps a signed-out token working.
-6. **A password that is not required** (slice 3): the same calls with OpenCloud's requirement switched off, and what the capabilities then say.
+1. **Large uploads** (slice 3): a 1 GB `PUT` through Caddy. If it fails, slice 3 uses OpenCloud's resumable uploads (TUS, 10 MB chunks by its own account) from the start.
+2. **Copy inside OpenCloud** (slice 3): WebDAV `COPY` between two folders of one drive.
+3. **A password that is not required** (slice 3): the same calls with OpenCloud's requirement switched off, and what the capabilities then say.
 
 ## Not in this version
 
