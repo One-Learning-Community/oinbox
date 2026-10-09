@@ -89,6 +89,7 @@ function AttachmentMenu(props: { name: string; onDownload: () => void; onSave: (
   };
 
   return (
+    <span class="attachment-menu">
     <Popover
       open={open()}
       onOpenChange={setOpen}
@@ -107,5 +108,6 @@ function AttachmentMenu(props: { name: string; onDownload: () => void; onSave: (
         <button type="button" role="menuitem" onClick={() => choose(props.onSave)}>Save to Drive</button>
       </div>
     </Popover>
+    </span>
   );
 }

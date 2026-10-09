@@ -118,11 +118,13 @@ a { color: var(--accent); }
 .nav-add, .nav-more { width: 28px; height: 28px; }
 .nav-row { position: relative; }
 .nav-row .nav-item { padding-right: 40px; }
-.nav-menu {
-  position: absolute; top: 2px; right: 6px;
+.nav-menu { position: absolute; top: 2px; right: 6px; }
+/* A popover menu takes its colours from its wrapper; without these it is rozie's white in either theme. */
+.nav-menu, .attachment-menu {
   --rozie-popover-bg: var(--surface); --rozie-popover-color: var(--text); --rozie-popover-border: 1px solid var(--border);
   --rozie-popover-shadow: var(--shadow); --rozie-popover-padding: 4px;
 }
+.attachment-menu { display: inline-flex; max-width: 100%; }
 .nav-more { opacity: 0; }
 .nav-row:hover .nav-more, .nav-row:focus-within .nav-more, .nav-more[aria-expanded='true'] { opacity: 1; }
 @media (hover: none) { .nav-more { opacity: 1; } }

@@ -98,3 +98,28 @@ test('a Drive that is down says so and leaves mail alone', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'Download' }).click();
   expect((await download).suggestedFilename()).toBe('notes.txt');
 });
+
+test("in the dark theme the chip's menu is dark, with text that can be read", async ({ page }) => {
+  await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 20 } }));
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await openMessage(page);
+  await chip(page).click();
+  const item = page.getByRole('menuitem', { name: 'Save to Drive' });
+  await expect(item).toBeVisible();
+  // The surface behind the item: the nearest ancestor that paints a background.
+  const { surface, text } = await item.evaluate((el) => {
+    const lum = (css: string) => {
+      const [r, g, b] = (css.match(/[\d.]+/g) ?? []).map(Number) as [number, number, number];
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    };
+    let node: Element | null = el;
+    let bg = 'rgba(0, 0, 0, 0)';
+    while (node && /rgba\(0, 0, 0, 0\)|transparent/.test(bg)) {
+      bg = getComputedStyle(node).backgroundColor;
+      node = node.parentElement;
+    }
+    return { surface: lum(bg), text: lum(getComputedStyle(el).color) };
+  });
+  expect(surface).toBeLessThan(0.3);
+  expect(text - surface).toBeGreaterThan(0.4);
+});
