@@ -68,7 +68,7 @@ export function createComposers(
   /** Registers a callback for when the server can be reached again. */
   onRecovered?: (fn: () => void) => void,
   /** What discarding a draft means for files it has in Drive (app/driveLinks.ts). */
-  drive?: { discardNote: (c: Composer) => string | null; discarded: (c: Composer) => void },
+  drive?: { discardNote: (c: Composer) => string | null; discarded: (c: Composer) => void; reopened?: (from: Composer, to: Composer) => void },
 ) {
   const [list, setList] = createSignal<Composer[]>([]);
   let seq = 0;
@@ -469,6 +469,7 @@ export function createComposers(
         }
         // Still a draft for now, perhaps: the submission may be in flight yet, so check again before any save.
         const reopened = create(c.mode, null, { ...snapshot, draftId: state === 'gone' ? null : draftId, unconfirmedSend: state !== 'gone' });
+        drive?.reopened?.(c, reopened);
         setList([...list(), reopened]);
         toast("Couldn't send. Your message is still here.", 'error', { label: 'Retry', run: () => void send(reopened) });
       }
@@ -481,7 +482,10 @@ export function createComposers(
         cancelled = true;
         clearTimeout(timer);
         pendingSends.delete(c.id);
-        setList([...list(), create(c.mode, null, snapshot)]);
+        const back = create(c.mode, null, snapshot);
+        // The message is the same one: files it has in Drive are still its own.
+        drive?.reopened?.(c, back);
+        setList([...list(), back]);
         toast('Sending undone.');
       },
     });

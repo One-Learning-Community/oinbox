@@ -5,7 +5,8 @@ import { RECALL_MS } from '../app/linkPasswords';
 import { LinkPasswordNote } from './LinkPasswordNote';
 
 const URL = 'https://files.test/s/abc';
-const until = new Date(2026, 9, 9, 15, 26).getTime();
+// Tomorrow at 15:26: still to come whenever the tests run, and with minutes the note can be seen to show.
+const until = new Date(new Date().setHours(15, 26, 0, 0) + 86_400_000).getTime();
 
 function setup(remembered: boolean, text = `<p>Files for this message: <a href="${URL}">${URL}</a></p>`) {
   const recallIn = vi.fn((body: string) => (remembered && body.includes(URL) ? [{ url: URL, password: 'Corr3ct-horse!', until }] : []));
@@ -42,5 +43,27 @@ describe('LinkPasswordNote', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(writeText).toHaveBeenCalledWith('Corr3ct-horse!');
     expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+
+  it('goes when its time is up, though the message stays open', () => {
+    vi.useFakeTimers();
+    try {
+      const soon = Date.now() + 60_000;
+      const recallIn = vi.fn(() => [{ url: URL, password: 'Corr3ct-horse!', until: soon }]);
+      render(() => (
+        <AppContext.Provider value={{ driveLinks: { recallIn } } as unknown as App}>
+          <LinkPasswordNote text={URL} />
+        </AppContext.Provider>
+      ));
+      fireEvent.click(screen.getByRole('button', { name: 'Show' }));
+      expect(screen.getByText('Corr3ct-horse!')).toBeInTheDocument();
+      vi.advanceTimersByTime(60_001);
+      expect(screen.queryByText(/Password for the Drive link/)).toBeNull();
+      expect(screen.queryByText('Corr3ct-horse!')).toBeNull();
+      // And the storage is asked again, which is what clears it there.
+      expect(recallIn.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

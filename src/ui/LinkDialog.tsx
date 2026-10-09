@@ -33,6 +33,8 @@ function Ask(props: { req: LinkRequest }) {
   const [tried, setTried] = createSignal(false);
   const [include, setInclude] = createSignal(true);
   const [expiry, setExpiry] = createSignal<number | null>(30);
+  /** From the press of the button until that try has ended: the first seconds show no progress yet. */
+  const [sending, setSending] = createSignal(false);
 
   const loadRules = async () => {
     setRulesError('');
@@ -61,8 +63,9 @@ function Ask(props: { req: LinkRequest }) {
   const send = (e: SubmitEvent) => {
     e.preventDefault();
     setTried(true);
-    if (busy() || !rules() || problem()) return;
-    void links.send({ password: password(), includePassword: include(), expiryDays: expiry() });
+    if (sending() || busy() || !rules() || problem()) return;
+    setSending(true);
+    void links.send({ password: password(), includePassword: include(), expiryDays: expiry() }).finally(() => setSending(false));
   };
 
   return (
@@ -170,7 +173,7 @@ function Ask(props: { req: LinkRequest }) {
             <button type="button" onClick={() => links.attachAnyway()}>Attach anyway</button>
           </Show>
           <Show when={!req.adding && !busy()}>
-            <button type="submit" class="primary" disabled={!rules() || !!problem()}>Send as a link</button>
+            <button type="submit" class="primary" disabled={!rules() || !!problem() || sending()}>Send as a link</button>
           </Show>
           <Show when={req.adding && !busy() && links.error()}>
             <button type="button" class="primary" onClick={() => void links.send()}>Retry</button>

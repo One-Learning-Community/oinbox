@@ -164,6 +164,18 @@ describe('LinkDialog', () => {
     expect(links.request()).toBeNull();
   });
 
+  it('makes one link however fast Send is pressed twice', async () => {
+    const { server, add, body } = setup();
+    const done = add(file('video.mp4', 3000));
+    await type('Corr3ct-horse!');
+    const form = sendButton().closest('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await done;
+    expect(server.links).toHaveLength(1);
+    expect(body().match(/Files for this message/g)).toHaveLength(1);
+  });
+
   it('says why it could not be done and lets the user try again', async () => {
     const { server, add } = setup();
     const done = add(file('video.mp4', 3000));

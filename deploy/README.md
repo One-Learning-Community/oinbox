@@ -71,7 +71,7 @@ Caddy also strips `WWW-Authenticate` from Stalwart's responses. Otherwise Stalwa
 
 ### Paths proxied to OpenCloud
 
-`/drive/graph/*`, `/drive/dav/spaces/*` and `/drive/ocs/*` go to OpenCloud with the prefix removed, and `/drive.json` tells the app whether there is one. Everything else under `/drive/` answers 404, OpenCloud's web UI included. Without `OINBOX_DRIVE_UPSTREAM`, `/drive.json` says `enabled: false` and all of `/drive/*` answers 404. Keep SPA routes clear of `/drive` too.
+`/drive/graph/*`, `/drive/dav/spaces/*` and `/drive/ocs/v1.php/cloud/capabilities` go to OpenCloud with the prefix removed, and `/drive.json` tells the app whether there is one. Everything else under `/drive/` answers 404, OpenCloud's web UI included. Without `OINBOX_DRIVE_UPSTREAM`, `/drive.json` says `enabled: false` and all of `/drive/*` answers 404. Keep SPA routes clear of `/drive` too.
 
 ### Settings that matter
 

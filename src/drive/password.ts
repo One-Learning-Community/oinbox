@@ -14,6 +14,8 @@ const plural = (n: number, one: string) => (n === 1 ? `1 ${one}` : `${n} ${one}s
 
 /** The first rule the password breaks, as a sentence, or '' when it breaks none. */
 export function checkPassword(password: string, p: PasswordPolicy): string {
+  // A space is lost or doubled when a password is written into a message and read out again.
+  if (/\s/.test(password)) return 'No spaces.';
   if (password.length < p.min) return `At least ${p.min} characters.`;
   if (password.length > p.max) return `At most ${p.max} characters.`;
   if (count(password, /[a-z]/g) < p.lower) return `At least ${plural(p.lower, 'lower-case letter')}.`;

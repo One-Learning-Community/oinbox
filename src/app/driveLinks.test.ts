@@ -269,6 +269,63 @@ describe('createDriveLinks', () => {
     expect(body()).toBe('<p>Hello</p>');
   });
 
+  it('makes one link however often Send is pressed', async () => {
+    const { server, links } = setup();
+    const { c, body } = composer();
+    void links.add(c, sources(file('video.mp4', 3000)));
+    const [first, second] = await Promise.all([links.send(CHOICE), links.send(CHOICE)]);
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect(server.links).toHaveLength(1);
+    expect(body().match(/Files for this message/g)).toHaveLength(1);
+    expect(server.requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+    expect(server.names(['Mail attachments'])).toEqual(['2026-10-09 Report']);
+  });
+
+  it('cancelled straight after Send, before anything has gone up, leaves no folder and no link', async () => {
+    const { server, links } = setup();
+    const { c, body } = composer();
+    const done = links.add(c, sources(file('video.mp4', 3000)));
+    const sending = links.send(CHOICE);
+    void links.send(CHOICE);
+    links.cancel();
+    expect(await sending).toBe(false);
+    await done;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(server.names(['Mail attachments'])).toEqual([]);
+    expect(server.links).toEqual([]);
+    expect(body()).toBe('<p>Hello</p>');
+  });
+
+  it('removes the folder when the user attaches after all, following a failed upload', async () => {
+    const { server, links } = setup();
+    const { c, attach } = composer();
+    const done = links.add(c, sources(file('a.bin', 600), file('b.bin', 600)));
+    await links.loadRules();
+    server.full = true;
+    expect(await links.send(CHOICE)).toBe(false);
+    expect(server.names(['Mail attachments'])).toEqual(['2026-10-09 Report']);
+    links.attachAnyway();
+    await done;
+    expect(attach).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(server.names(['Mail attachments'])).toEqual([]));
+  });
+
+  it('keeps its folder with a message that is reopened after an undone or failed send', async () => {
+    const { server, links } = setup();
+    const first = composer();
+    void links.add(first.c, sources(file('video.mp4', 3000)));
+    await links.send(CHOICE);
+    const reopened = composer({ bodyHtml: first.body() });
+    links.hooks.reopened(first.c, reopened.c);
+    expect(links.hooks.discardNote(first.c)).toBeNull();
+    expect(links.hooks.discardNote(reopened.c)).toBe('The files uploaded to Drive for it will be removed.');
+    const more = links.add(reopened.c, sources(file('more.mov', 4000)));
+    expect(links.request()).toMatchObject({ adding: true });
+    await more;
+    expect(server.names(FOLDER)).toEqual(['video.mp4', 'more.mov']);
+    expect(server.links).toHaveLength(1);
+  });
+
   describe('files chosen in Drive', () => {
     const ref = (name: string, size: number) => ({ path: ['Videos', name], name, size });
 

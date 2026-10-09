@@ -663,7 +663,7 @@ describe('a draft with files in Drive', () => {
     const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
     await engine.start();
     const confirm = vi.fn(async (_o: { message: string | (() => string) }) => true);
-    const hooks = { discardNote: vi.fn(() => note), discarded: vi.fn() };
+    const hooks = { discardNote: vi.fn(() => note), discarded: vi.fn(), reopened: vi.fn() };
     const composers = createRoot(() => createComposers(engine, vi.fn(), confirm as never, vi.fn(), undefined, hooks));
     return { composers, confirm, hooks };
   }
@@ -683,5 +683,28 @@ describe('a draft with files in Drive', () => {
     await composers.discard(c);
     expect(confirm.mock.calls[0]![0].message).toBe('This draft will be permanently deleted.');
     expect(hooks.discarded).not.toHaveBeenCalled();
+  });
+
+  it('tells Drive when a message comes back after its send was undone, so its files stay with it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const server = new FakeJmap();
+      server.addMailbox('D', 'Drafts', 'drafts');
+      server.addMailbox('S', 'Sent', 'sent');
+      const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+      await engine.start();
+      const toast = vi.fn();
+      const hooks = { discardNote: vi.fn(() => null), discarded: vi.fn(), reopened: vi.fn() };
+      const composers = createRoot(() => createComposers(engine, toast, vi.fn(async () => true), vi.fn(), undefined, hooks));
+      const c = composers.open('new');
+      c.update({ to: [{ name: 'Bob', email: 'bob@example.test' }], subject: 'Hello', bodyHtml: '<p>x</p>' });
+      await composers.send(c);
+      const undo = toast.mock.calls.find((call) => call[2]?.label === 'Undo')![2] as { run: () => void };
+      undo.run();
+      expect(composers.list()).toHaveLength(1);
+      expect(hooks.reopened).toHaveBeenCalledWith(c, composers.list()[0]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

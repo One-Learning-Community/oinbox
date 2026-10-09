@@ -94,7 +94,7 @@ Caddy writes the file from two variables and proxies `/drive/*` to OpenCloud wit
 | `OINBOX_DRIVE_UPSTREAM` | none | Where OpenCloud's HTTP listener is. Unset: no Drive. |
 | `OINBOX_DRIVE_LINK_OVER_MB` | `20` | The link threshold. |
 
-Only OpenCloud's two APIs are proxied, `/drive/graph/*` and `/drive/dav/spaces/*`, and their answers are given `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`. OpenCloud's web UI and public-link pages serve what users upload; on the origin that holds the mail token they must not be reachable (found in review, 2026-10-09: all of OpenCloud was at `/drive/`). Slice 3 added `/drive/ocs/*` for the sharing rules.
+Only OpenCloud's two APIs are proxied, `/drive/graph/*` and `/drive/dav/spaces/*`, and their answers are given `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`. OpenCloud's web UI and public-link pages serve what users upload; on the origin that holds the mail token they must not be reachable (found in review, 2026-10-09: all of OpenCloud was at `/drive/`). Slice 3 added the one path of OpenCloud's OCS API it needs, `/drive/ocs/v1.php/cloud/capabilities`, for the sharing rules.
 
 `deploy/routes.caddy` holds the route, so the dev stack and the production template share it. `deploy/examples/nginx.conf` gets the same route. `/drive` joins the list of prefixes the app's own routes must avoid.
 

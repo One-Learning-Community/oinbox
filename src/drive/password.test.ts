@@ -18,6 +18,10 @@ describe('checkPassword', () => {
     expect(checkPassword('A1!' + 'a'.repeat(80), DEFAULT)).toBe('At most 72 characters.');
     expect(checkPassword('Abcdefg1!', { ...DEFAULT, digits: 2 })).toBe('At least 2 digits.');
   });
+  it('refuses spaces: they do not survive being written into a message', () => {
+    for (const pw of ['Corr3ct horse!', ' Corr3ct-horse!', 'Corr3ct-horse! ', 'Corr3ct-\thorse!']) expect(checkPassword(pw, DEFAULT)).toBe('No spaces.');
+    expect(checkPassword('a b', NONE)).toBe('No spaces.');
+  });
   it('asks nothing of a password when there are no rules', () => {
     expect(checkPassword('a', NONE)).toBe('');
   });

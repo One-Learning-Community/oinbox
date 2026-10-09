@@ -136,12 +136,12 @@ oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as
   | `PROXY_ROLE_ASSIGNMENT_DRIVER` | `default` |
   | `GRAPH_USERNAME_MATCH` | `none` (user names are e-mail addresses) |
 
-- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends OpenCloud's three APIs, `/drive/graph/*`, `/drive/dav/spaces/*` and `/drive/ocs/*`, to it with the prefix removed, and tells the app Drive is on in `/drive.json`. Nothing else of OpenCloud is reachable through oinbox: its own web UI and its public-link pages stay on its own address.
+- `OINBOX_DRIVE_UPSTREAM` set to OpenCloud's listener. oinbox's Caddy then sends OpenCloud's three APIs, `/drive/graph/*`, `/drive/dav/spaces/*` and the sharing rules at `/drive/ocs/v1.php/cloud/capabilities`, to it with the prefix removed, and tells the app Drive is on in `/drive.json`. Nothing else of OpenCloud is reachable through oinbox: its own web UI and its public-link pages stay on its own address.
 - OpenCloud able to reach Stalwart at that public URL from where it runs.
 
 OpenCloud need not run beside oinbox. Any `host:port` the oinbox container reaches over plain HTTP on a private network will do: a separate service in the same VPC, for example. (Reaching it through its own public HTTPS address has not been tested.)
 
-Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/drive/graph/`, `/drive/dav/spaces/` and `/drive/ocs/` to OpenCloud with the prefix removed, answer 404 for anything else under `/drive/`, send OpenCloud `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, replace its `Content-Security-Policy` with `sandbox; default-src 'none'` and set `X-Content-Type-Options: nosniff`, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files. The two headers and the 404 matter: OpenCloud serves files its users uploaded, and on the mail origin a file that the browser ran as a page could read the mail sign-in.
+Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/drive/graph/`, `/drive/dav/spaces/` and `/drive/ocs/v1.php/cloud/capabilities` to OpenCloud with the prefix removed, answer 404 for anything else under `/drive/`, send OpenCloud `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, replace its `Content-Security-Policy` with `sandbox; default-src 'none'` and set `X-Content-Type-Options: nosniff`, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files. The two headers and the 404 matter: OpenCloud serves files its users uploaded, and on the mail origin a file that the browser ran as a page could read the mail sign-in.
 
 **Things to know before the first user signs in**
 

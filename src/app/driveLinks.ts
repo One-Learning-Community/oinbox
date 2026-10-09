@@ -133,14 +133,25 @@ export function createDriveLinks(deps: {
   const sessions = new WeakMap<ComposerLike, Folder>();
 
   /** The request on screen, beyond what the dialog shows of it. */
-  let open: {
+  interface Open {
     answer: (a: Answer) => void;
-    /** The folder made for this request, before it has a link. */
-    made?: Folder;
+    /** The path of the folder made for this request, from the moment it is asked for. */
+    made?: string[];
+    /** That folder, once it is known to be there. */
+    folder?: Folder;
     /** Files already in the folder, after a try that stopped part-way. */
     done: Set<LinkSource>;
-    stop?: AbortController;
-  } | null = null;
+    /** Stops whatever this request has under way. One for the request's whole life. */
+    stop: AbortController;
+    /** A try is running: a second press of the button does nothing. */
+    running: boolean;
+  }
+  let open: Open | null = null;
+
+  /** A folder made for a request that ended with no link has no reason to stay. */
+  const tidy = (was: Open, c: ComposerLike) => {
+    if (was.made && !sessions.has(c)) void client.remove(was.made).catch(() => {});
+  };
 
   const finish = (a: Answer) => {
     const was = open;
@@ -155,13 +166,18 @@ export function createDriveLinks(deps: {
   const run = async (choice?: LinkChoice): Promise<boolean> => {
     const req = request();
     const mine = open;
-    if (!req || !mine || progress()) return false;
+    if (!req || !mine || mine.running) return false;
+    mine.running = true;
     setError('');
-    const stop = (mine.stop = new AbortController());
     const c = req.composer;
-    const stopped = () => stop.signal.aborted;
+    const stopped = () => mine.stop.signal.aborted || open !== mine;
+    /** Cancelled part-way: cancel() tidied up, but a request that was in flight may have landed since. */
+    const bail = () => {
+      tidy(mine, c);
+      return false;
+    };
     try {
-      let folder = sessions.get(c) ?? mine.made;
+      let folder = sessions.get(c) ?? mine.folder;
       if (!folder) {
         await client.createFolder([MAIL_FOLDER]);
         const parent = (await client.children()).find((i) => i.folder && i.name === MAIL_FOLDER);
@@ -171,30 +187,32 @@ export function createDriveLinks(deps: {
         let name = wanted;
         for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${wanted} (${n})`;
         if (stopped()) return false;
-        await client.createFolder([MAIL_FOLDER, name]);
+        mine.made = [MAIL_FOLDER, name];
+        await client.createFolder(mine.made);
+        if (stopped()) return bail();
         const made = (await client.children(parent.id)).find((i) => i.folder && i.name === name);
         if (!made) throw new DriveError('missing', 404, 'The folder could not be made');
-        folder = mine.made = { path: [MAIL_FOLDER, name], id: made.id };
+        folder = mine.folder = { path: mine.made, id: made.id };
       }
       const taken = new Set((await client.children(folder.id)).map((i) => i.name.toLowerCase()));
       for (const [i, source] of req.sources.entries()) {
         if (mine.done.has(source)) continue;
-        if (stopped()) return false;
+        if (stopped()) return bail();
         const at = (fraction: number) => setProgress({ name: source.name, index: i + 1, count: req.sources.length, fraction });
         at(0);
         const name = freeName(safeName(source.name), taken);
         // From this computer the file goes straight to Drive, never through the mail server.
-        if (source.file) await client.upload([...folder.path, name], source.file, { signal: stop.signal, onProgress: (sent, total) => at(total ? sent / total : 0) });
+        if (source.file) await client.upload([...folder.path, name], source.file, { signal: mine.stop.signal, onProgress: (sent, total) => at(total ? sent / total : 0) });
         else await client.copy(source.drivePath!, [...folder.path, name]);
         taken.add(name.toLowerCase());
         mine.done.add(source);
       }
-      if (stopped()) return false;
+      if (stopped()) return bail();
       if (!sessions.has(c)) {
         const expires = choice?.expiryDays ? new Date(now().getTime() + choice.expiryDays * DAY_MS) : undefined;
         const password = choice?.password || undefined;
         const url = await client.createLink(folder.id, { ...(password ? { password } : {}), ...(expires ? { expires } : {}) });
-        if (stopped()) return false;
+        if (stopped()) return bail();
         if (password) passwords.remember(url, password);
         c.update({ bodyHtml: c.draft().bodyHtml + linkBlock({ url, password: choice?.includePassword ? password : undefined, expires }) });
         sessions.set(c, folder);
@@ -204,11 +222,13 @@ export function createDriveLinks(deps: {
       finish('linked');
       return true;
     } catch (e) {
-      // Cancelled: cancel() has tidied up, and nothing went wrong.
-      if (stopped()) return false;
+      // Cancelled: nothing went wrong.
+      if (stopped()) return bail();
       setProgress(null);
       setError(message(e));
       return false;
+    } finally {
+      mine.running = false;
     }
   };
 
@@ -226,7 +246,7 @@ export function createDriveLinks(deps: {
     if (open) return Promise.resolve('cancel');
     return new Promise<Answer>((answer) => {
       const adding = sessions.has(c);
-      open = { answer, done: new Set() };
+      open = { answer, done: new Set(), stop: new AbortController(), running: false };
       setError('');
       setRequest({ composer: c, sources, bytes: sources.reduce((n, s) => n + s.size, 0), canAttach: offer === 'offer', adding });
       // The message has its link and its password already: nothing to ask.
@@ -253,7 +273,11 @@ export function createDriveLinks(deps: {
       decide(c, refs.map((r) => ({ name: r.name, size: r.size, drivePath: r.path }))),
 
     attachAnyway: () => {
-      if (request()?.canAttach && !progress()) finish('attach');
+      const req = request();
+      if (!open || !req?.canAttach || open.running) return;
+      // After a try that failed part-way there is a folder with some of the files in it.
+      tidy(open, req.composer);
+      finish('attach');
     },
     /** Make the link (or try again after a failure). True when done; false leaves the dialog up with `error`. */
     send: (choice?: LinkChoice) => run(choice),
@@ -261,8 +285,8 @@ export function createDriveLinks(deps: {
     cancel: () => {
       const was = open;
       if (!was) return;
-      was.stop?.abort();
-      if (was.made && !sessions.has(request()!.composer)) void client.remove(was.made.path).catch(() => {});
+      was.stop.abort();
+      tidy(was, request()!.composer);
       finish('cancel');
     },
 
@@ -277,6 +301,13 @@ export function createDriveLinks(deps: {
         if (!folder) return;
         sessions.delete(c as ComposerLike);
         void client.remove(folder.path).catch(() => toast("The message's files could not be removed from Drive.", 'error'));
+      },
+      /** A message came back as a new composer (its send was undone, or failed): its files are still its own. */
+      reopened: (from: object, to: object): void => {
+        const folder = sessions.get(from as ComposerLike);
+        if (!folder) return;
+        sessions.delete(from as ComposerLike);
+        sessions.set(to as ComposerLike, folder);
       },
     },
   };

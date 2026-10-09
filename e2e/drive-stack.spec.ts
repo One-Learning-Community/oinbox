@@ -34,7 +34,7 @@ test("OpenCloud answers under /drive with the mail token and creates the user's 
 test('only the three APIs the app uses are reachable, and their answers can run nothing on this origin', async () => {
   test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
   // OpenCloud's web UI, its public-link pages and everything else stay off the mail origin.
-  for (const path of ['/drive/', '/drive/index.html', '/drive/s/anything', '/drive/dav/public-files/anything', '/drive/config.json', '/drive/status.php']) {
+  for (const path of ['/drive/', '/drive/index.html', '/drive/s/anything', '/drive/dav/public-files/anything', '/drive/config.json', '/drive/status.php', '/drive/ocs/v1.php/cloud/user', '/drive/ocs/v2.php/apps/files_sharing/api/v1/shares']) {
     expect((await fetch(`${BASE}${path}`, { redirect: 'manual' })).status, path).toBe(404);
   }
   for (const path of ['/drive/graph/v1.0/me/drive', '/drive/dav/spaces/x/y']) {

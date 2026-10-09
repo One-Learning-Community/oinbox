@@ -1,4 +1,4 @@
-import { createSignal, For } from 'solid-js';
+import { createMemo, createSignal, For, onCleanup } from 'solid-js';
 import { useApp } from '../app/context';
 
 /**
@@ -8,12 +8,18 @@ import { useApp } from '../app/context';
  */
 export function LinkPasswordNote(props: { text: string }) {
   const { driveLinks } = useApp();
-  return <For each={driveLinks.recallIn(props.text)}>{(found) => <Note password={found.password} until={found.until} />}</For>;
+  /** Bumped when a note's time is up: asking again is also what clears the password from the storage. */
+  const [turn, setTurn] = createSignal(0);
+  const found = createMemo(() => (turn(), driveLinks.recallIn(props.text).filter((f) => f.until > Date.now())));
+  return <For each={found()}>{(f) => <Note password={f.password} until={f.until} onGone={() => setTurn((n) => n + 1)} />}</For>;
 }
 
-function Note(props: { password: string; until: number }) {
+function Note(props: { password: string; until: number; onGone: () => void }) {
   const [shown, setShown] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
+  // The message may stay open past the half hour: the note must not.
+  const timer = setTimeout(() => props.onGone(), Math.max(0, props.until - Date.now()));
+  onCleanup(() => clearTimeout(timer));
   const copy = () => {
     void navigator.clipboard?.writeText(props.password);
     setCopied(true);

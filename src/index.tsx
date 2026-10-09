@@ -154,6 +154,8 @@ async function boot() {
     // What the server doesn't have yet comes back after signing in again (same account, within 7 days).
     rescueDrafts();
     auth.signOut();
+    // Whoever signs in next in this tab may be someone else.
+    linkPasswords.clear();
     each((s) => s.recipients.stop());
     push?.close();
     each((s) => s.engine.setOnline(false));
