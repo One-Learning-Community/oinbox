@@ -15,6 +15,7 @@ import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
 import { DrivePicker } from './DrivePicker';
 import { LabelDialog } from './LabelDialog';
+import { LinkDialog } from './LinkDialog';
 import { LabelMenu } from './LabelMenu';
 import { missingViewText } from './nav';
 import { PaneBoundary } from './PaneBoundary';
@@ -129,6 +130,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       <HelpDialog />
       <LabelDialog />
       <DrivePicker />
+      <LinkDialog />
       <props.confirmHost />
     </div>
   );

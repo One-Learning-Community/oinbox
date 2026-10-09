@@ -6,6 +6,8 @@ import { accountForPath, createSpaces, homePath, lostAccounts, mailAccounts, sta
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createDrive } from './app/drive';
+import { createDriveLinks } from './app/driveLinks';
+import { createLinkPasswords } from './app/linkPasswords';
 import { createErrorReporter } from './app/errors';
 import { startBranding } from './app/branding';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
@@ -113,18 +115,20 @@ async function boot() {
   const confirmDialog = createConfirmDialog();
   const errors = createErrorReporter(toasts.toast);
   // Drive shares the mail token. Its failures are its own: they never reach the connection banner.
-  const drive = createDrive({
-    client: new DriveClient({ getToken, onUnauthorized: renewSession }),
-    toast: toasts.toast,
-    // A file from Drive larger than Stalwart takes is refused before it is fetched.
-    maxUploadBytes: () => (client.hasSession ? (client.session.capabilities[CORE] as { maxSizeUpload?: number } | undefined)?.maxSizeUpload : undefined),
-  });
+  /** The largest attachment Stalwart takes, once the session says. */
+  const maxUploadBytes = () => (client.hasSession ? (client.session.capabilities[CORE] as { maxSizeUpload?: number } | undefined)?.maxSizeUpload : undefined);
+  // A file from Drive larger than that is refused before it is fetched, or offered as a link.
+  const drive = createDrive({ client: new DriveClient({ getToken, onUnauthorized: renewSession }), toast: toasts.toast, maxUploadBytes });
+  // A link's password is kept for half an hour in this tab, and nowhere else.
+  const linkPasswords = createLinkPasswords(sessionStorage);
+  const driveLinks = createDriveLinks({ drive, toast: toasts.toast, passwords: linkPasswords, maxUploadBytes });
   // Not awaited: mail does not wait to learn whether there is a Drive.
   void loadDriveConfig((url) => fetch(url, { cache: 'no-cache' })).then(drive.setConfig);
 
   /** Drop the session and go to the sign-in card. */
   const leave = () => {
     auth.signOut();
+    linkPasswords.clear();
     each((s) => s.recipients.stop());
     void clearCaches().finally(() => location.assign('/'));
   };
@@ -212,7 +216,7 @@ async function boot() {
         actions: createActions(engine, toasts.toast, confirmDialog.confirm),
         labels: createLabels(engine, toasts.toast, confirmDialog.confirm, () => (client.hasSession ? labelLimits(client.session, info.id) : DEFAULT_LIMITS)),
         settings: createSettings(engine, toasts.toast, confirmDialog.confirm),
-        composers: createComposers(engine, toasts.toast, confirmDialog.confirm, recipients.recordSent, (fn) => connection.onRecovered(fn)),
+        composers: createComposers(engine, toasts.toast, confirmDialog.confirm, recipients.recordSent, (fn) => connection.onRecovered(fn), driveLinks.hooks),
         nav: createNav(),
       };
     },
@@ -258,6 +262,7 @@ async function boot() {
     },
     password: createPassword(client, passwordChanged),
     drive,
+    driveLinks,
     calendar,
     // Calendars are the user's own: a shared mailbox has no Calendar link.
     hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS] && cur().info.personal,

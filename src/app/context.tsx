@@ -5,6 +5,7 @@ import type { Composers } from './composer';
 import type { ErrorReporter } from './errors';
 import type { Labels } from './labels';
 import type { Drive } from './drive';
+import type { DriveLinks } from './driveLinks';
 import type { Password } from './password';
 import type { Recipients } from './recipients';
 import type { Settings } from './settings';
@@ -40,6 +41,8 @@ export interface App {
   password: Password;
   /** OpenCloud as Drive, if this installation has one. The user's own, whichever mailbox is on screen. */
   drive: Drive;
+  /** Sending files too large for a message as a link to them in Drive. */
+  driveLinks: DriveLinks;
   nav: Nav;
   composers: Composers;
   recipients: Recipients;
