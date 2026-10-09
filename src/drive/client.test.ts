@@ -176,4 +176,107 @@ describe('DriveClient', () => {
     expect(server.requests.filter((r) => r.path.endsWith('/new.txt')).length).toBeLessThan(5);
   });
 
+
+  it('reads the sharing rules: whether a link needs a password, and what a password must be', async () => {
+    const server = new FakeDrive();
+    const c = server.client();
+    expect(await c.rules()).toEqual({ passwordRequired: true, policy: { min: 8, max: 72, lower: 1, upper: 1, digits: 1, special: 1 }, maxExpiryDays: null });
+    server.passwordRequired = false;
+    expect((await c.rules()).passwordRequired).toBe(false);
+  });
+
+  it('reads an expiry the server enforces, and is content with rules that say little', async () => {
+    const caps = (pub: object) => async () => new Response(JSON.stringify({ ocs: { data: { capabilities: { files_sharing: { public: pub } } } } }));
+    const strict = new DriveClient({ getToken: async () => 't', fetch: caps({ expire_date: { enabled: true, enforced: true, days: '14' } }) });
+    expect((await strict.rules()).maxExpiryDays).toBe(14);
+    const bare = new DriveClient({ getToken: async () => 't', fetch: caps({}) });
+    expect(await bare.rules()).toEqual({ passwordRequired: false, policy: { min: 0, max: 72, lower: 0, upper: 0, digits: 0, special: 0 }, maxExpiryDays: null });
+    const html = new DriveClient({ getToken: async () => 't', fetch: async () => new Response('<!doctype html>') });
+    expect(await kindOf(html.rules())).toBe('unavailable');
+  });
+
+  it("makes a folder's link with a password and an expiry, and returns its address", async () => {
+    const server = new FakeDrive();
+    const folder = server.mkdir(['Mail attachments', 'Report']);
+    const url = await server.client().createLink(folder, { password: 'Corr3ct-horse!', expires: new Date('2026-11-08T10:00:00Z') });
+    expect(url).toBe('https://files.test/s/link-1');
+    expect(server.links).toEqual([{ itemId: folder, password: 'Corr3ct-horse!', expires: '2026-11-08T10:00:00.000Z', url }]);
+  });
+
+  it("passes on the server's words when it refuses a link's password", async () => {
+    const server = new FakeDrive();
+    const folder = server.mkdir(['Report']);
+    const c = server.client();
+    const none = await c.createLink(folder, {}).catch((e: unknown) => e);
+    expect(none).toMatchObject({ kind: 'policy', message: 'password protection is enforced' });
+    const weak = await c.createLink(folder, { password: 'weak' }).catch((e: unknown) => e);
+    expect(weak).toMatchObject({ kind: 'policy' });
+    expect((weak as Error).message).toContain('at least 8 characters are required');
+    server.passwordRequired = false;
+    expect(await c.createLink(folder, {})).toBe('https://files.test/s/link-1');
+    expect(server.links[0]).toMatchObject({ password: undefined, expires: undefined });
+  });
+
+  it('copies a file inside the drive, and will not copy over another', async () => {
+    const server = new FakeDrive();
+    server.mkdir(['From']);
+    server.mkdir(['To here']);
+    const body = blob('copy me');
+    server.put(['From', 'a b.txt'], body);
+    const c = server.client();
+    await c.copy(['From', 'a b.txt'], ['To here', 'a b.txt']);
+    expect(server.read(['To here', 'a b.txt'])).toBe(body);
+    expect(server.names(['From'])).toEqual(['a b.txt']);
+    expect(await kindOf(c.copy(['From', 'a b.txt'], ['To here', 'a b.txt']))).toBe('exists');
+    expect(await kindOf(c.copy(['From', 'nope.txt'], ['To here', 'x.txt']))).toBe('missing');
+    expect(await kindOf(c.copy(['From', 'a b.txt'], ['No such', 'x.txt']))).toBe('missing');
+  });
+
+  it('removes a folder and what is in it, and is content if it is already gone', async () => {
+    const server = new FakeDrive();
+    server.mkdir(['Mail attachments', 'Report']);
+    server.put(['Mail attachments', 'Report', 'a.txt'], blob('a'));
+    const c = server.client();
+    await c.remove(['Mail attachments', 'Report']);
+    expect(server.names(['Mail attachments'])).toEqual([]);
+    await c.remove(['Mail attachments', 'Report']);
+  });
+
+  it('reports progress on an upload that asks for it', async () => {
+    const server = new FakeDrive();
+    const body = blob('twelve bytes');
+    const seen: number[] = [];
+    const id = await server.client().upload(['video.mp4'], body, { onProgress: (sent, total) => seen.push(sent / total) });
+    expect(id).toMatch(/!n\d+$/);
+    expect(server.read(['video.mp4'])).toBe(body);
+    expect(seen.at(-1)).toBe(1);
+    expect(seen.length).toBeGreaterThan(1);
+  });
+
+  it('renews the token once on an upload with progress, and maps its failures', async () => {
+    const server = new FakeDrive();
+    let token = 'old';
+    const c = server.client({ getToken: async () => token, onUnauthorized: async () => ((token = 't'), true) });
+    await c.upload(['a.bin'], blob('x'), { onProgress: () => {} });
+    expect(server.names([])).toEqual(['a.bin']);
+    server.full = true;
+    expect(await kindOf(c.upload(['b.bin'], blob('x'), { onProgress: () => {} }))).toBe('tooLarge');
+    server.full = false;
+    token = 'wrong-again';
+    expect(await kindOf(server.client({ getToken: async () => 'wrong' }).upload(['c.bin'], blob('x'), { onProgress: () => {} }))).toBe('refused');
+  });
+
+  it('stops an upload when asked', async () => {
+    const server = new FakeDrive();
+    const c = server.client();
+    await c.drive();
+    server.stall = true;
+    for (const opts of [{ onProgress: () => {} }, {}]) {
+      const stop = new AbortController();
+      const going = c.upload(['big.bin'], blob('x'), { ...opts, signal: stop.signal });
+      setTimeout(() => stop.abort(), 0);
+      await expect(going).rejects.toMatchObject({ name: 'AbortError' });
+    }
+    expect(server.names([])).toEqual([]);
+  });
 });

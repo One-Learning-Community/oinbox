@@ -31,10 +31,10 @@ test("OpenCloud answers under /drive with the mail token and creates the user's 
   expect(await res.json()).toMatchObject({ driveType: 'personal', driveAlias: 'personal/alice@example.test' });
 });
 
-test('only the two APIs the app uses are reachable, and their answers can run nothing on this origin', async () => {
+test('only the three APIs the app uses are reachable, and their answers can run nothing on this origin', async () => {
   test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
   // OpenCloud's web UI, its public-link pages and everything else stay off the mail origin.
-  for (const path of ['/drive/', '/drive/index.html', '/drive/s/anything', '/drive/dav/public-files/anything', '/drive/config.json', '/drive/ocs/v1.php/cloud/capabilities']) {
+  for (const path of ['/drive/', '/drive/index.html', '/drive/s/anything', '/drive/dav/public-files/anything', '/drive/config.json', '/drive/status.php']) {
     expect((await fetch(`${BASE}${path}`, { redirect: 'manual' })).status, path).toBe(404);
   }
   for (const path of ['/drive/graph/v1.0/me/drive', '/drive/dav/spaces/x/y']) {
@@ -43,6 +43,11 @@ test('only the two APIs the app uses are reachable, and their answers can run no
     expect(res.headers.get('content-security-policy'), path).toBe("sandbox; default-src 'none'");
     expect(res.headers.get('x-content-type-options'), path).toBe('nosniff');
   }
+  // The sharing rules: configuration, which OpenCloud gives to anyone.
+  const rules = await fetch(`${BASE}/drive/ocs/v1.php/cloud/capabilities?format=json`);
+  expect(rules.status).toBe(200);
+  expect(rules.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'");
+  expect(((await rules.json()) as { ocs: { data: { capabilities: { password_policy?: object } } } }).ocs.data.capabilities.password_policy).toBeTruthy();
 });
 
 test('without a token OpenCloud answers 401 and no browser login prompt', async () => {

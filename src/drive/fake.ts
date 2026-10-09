@@ -1,4 +1,4 @@
-import { DriveClient, type DriveClientOptions } from './client';
+import { DriveClient, type DriveClientOptions, type PutTransport } from './client';
 
 interface Node {
   id: string;
@@ -28,8 +28,12 @@ export class FakeDrive {
   full = false;
   /** The next this-many downloads answer 425, as OpenCloud does for a file it has not finished with. */
   early = 0;
-  /** Downloads never answer; they end only when the request is aborted. */
+  /** Downloads and uploads never answer; they end only when the request is aborted. */
   stall = false;
+  /** Whether a public link must have a password (OpenCloud's default). */
+  passwordRequired = true;
+  /** The links made, for tests to read. */
+  links: { itemId: string; password: string | undefined; expires: string | undefined; url: string }[] = [];
   requests: { method: string; path: string }[] = [];
   private seq = 0;
   private root: Node = { id: `${this.driveId}!root`, name: '', modified: '2026-10-09T12:00:00Z', children: new Map() };
@@ -101,6 +105,19 @@ export class FakeDrive {
     const path = url.pathname.replace(/^\/drive/, '');
     this.requests.push({ method, path });
     if (this.down) return empty(503);
+    // The sharing rules are given to anyone.
+    if (method === 'GET' && path === '/ocs/v1.php/cloud/capabilities') {
+      return json({
+        ocs: {
+          data: {
+            capabilities: {
+              password_policy: { min_characters: 8, max_characters: 72, min_lowercase_characters: 1, min_uppercase_characters: 1, min_digits: 1, min_special_characters: 1 },
+              files_sharing: { public: { enabled: true, password: { enforced: false, enforced_for: { read_only: this.passwordRequired } }, expire_date: { enabled: false } } },
+            },
+          },
+        },
+      });
+    }
     if (new Headers(init.headers).get('authorization') !== `Bearer ${this.validToken}`) return empty(401);
 
     if (method === 'GET' && path === '/graph/v1.0/me/drive') return json({ id: this.driveId, name: this.driveName, driveType: 'personal' });
@@ -109,6 +126,29 @@ export class FakeDrive {
     if (method === 'GET' && items) {
       const node = decodeURIComponent(items[1]!) === this.driveId ? this.byId(decodeURIComponent(items[2]!)) : undefined;
       return node?.children ? json(this.listing(node)) : json({ error: { code: 'itemNotFound' } }, 404);
+    }
+    const link = /^\/graph\/v1beta1\/drives\/([^/]+)\/items\/([^/]+)\/createLink$/.exec(path);
+    if (method === 'POST' && link) {
+      const itemId = decodeURIComponent(link[2]!);
+      if (!this.byId(itemId)) return json({ error: { code: 'itemNotFound' } }, 404);
+      const asked = JSON.parse(String(init.body)) as { password?: string; expirationDateTime?: string };
+      const refuse = (message: string) => json({ error: { code: 'invalidRequest', message } }, 400);
+      if (!asked.password && this.passwordRequired) return refuse('password protection is enforced');
+      if (asked.password) {
+        // The policy holds for any password that is given, required or not, and every broken rule is named.
+        const p = asked.password;
+        const broken = [
+          p.length < 8 ? 'at least 8 characters are required' : '',
+          /[a-z]/.test(p) ? '' : 'at least 1 lowercase letters are required',
+          /[A-Z]/.test(p) ? '' : 'at least 1 uppercase letters are required',
+          /[0-9]/.test(p) ? '' : 'at least 1 numbers are required',
+          /[^A-Za-z0-9]/.test(p) ? '' : 'at least 1 special characters are required',
+        ].filter(Boolean);
+        if (broken.length) return refuse(broken.join('\n'));
+      }
+      const url = `https://files.test/s/link-${this.links.length + 1}`;
+      this.links.push({ itemId, password: asked.password, expires: asked.expirationDateTime, url });
+      return json({ id: `perm-${this.links.length}`, hasPassword: !!asked.password, link: { type: 'view', webUrl: url } });
     }
     const dav = /^\/dav\/spaces\/([^/]+)\/(.+)$/.exec(path);
     if (dav && decodeURIComponent(dav[1]!) === this.driveId) {
@@ -133,6 +173,18 @@ export class FakeDrive {
         const data = node.data;
         return { ok: true, status: 200, headers: new Headers({ 'content-type': data.type }), blob: async () => data } as Response;
       }
+      if (method === 'DELETE') return parent?.children?.delete(name) ? empty(204) : empty(404);
+      if (method === 'COPY') {
+        const source = parent?.children?.get(name);
+        if (!source?.data) return empty(404);
+        const to = /^\/dav\/spaces\/[^/]+\/(.+)$/.exec(new Headers(init.headers).get('destination') ?? '');
+        const toNames = (to?.[1] ?? '').split('/').map(decodeURIComponent);
+        const target = this.at(toNames.slice(0, -1));
+        if (!to || !target?.children) return empty(409);
+        if (target.children.has(toNames.at(-1)!)) return empty(412);
+        target.children.set(toNames.at(-1)!, this.newNode(toNames.at(-1)!, false, source.data));
+        return empty(201);
+      }
       if (method === 'MKCOL') {
         if (!parent?.children) return empty(409);
         if (parent.children.has(name)) return empty(405);
@@ -141,6 +193,13 @@ export class FakeDrive {
       }
       if (method === 'PUT') {
         if (!parent?.children) return empty(409);
+        if (this.stall) {
+          return new Promise<Response>((_resolve, reject) => {
+            const fail = () => reject(new DOMException('The request was aborted', 'AbortError'));
+            if (init.signal?.aborted) fail();
+            else init.signal?.addEventListener('abort', fail);
+          });
+        }
         if (this.full) return empty(507);
         const old = parent.children.get(name);
         const node = this.newNode(name, false, init.body as Blob);
@@ -152,7 +211,15 @@ export class FakeDrive {
     return empty(404);
   };
 
+  /** An upload with progress, as the browser's would report it: half-way, then done. */
+  transport: PutTransport = async (url, body, headers, opts) => {
+    opts.onProgress?.(body.size / 2, body.size);
+    const res = await this.fetch(url, { method: 'PUT', headers, body, ...(opts.signal ? { signal: opts.signal } : {}) });
+    if (res.ok) opts.onProgress?.(body.size, body.size);
+    return { status: res.status, fileId: res.headers.get('oc-fileid') ?? '' };
+  };
+
   client(opts: Partial<DriveClientOptions> = {}): DriveClient {
-    return new DriveClient({ base: 'http://fake/drive', getToken: async () => this.validToken, fetch: this.fetch, ...opts });
+    return new DriveClient({ base: 'http://fake/drive', getToken: async () => this.validToken, fetch: this.fetch, put: this.transport, ...opts });
   }
 }
