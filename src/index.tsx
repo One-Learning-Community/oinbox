@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { accountForPath, createSpaces, homePath, lostAccounts, mailAccounts, startAll, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
+import { createDrive } from './app/drive';
 import { createErrorReporter } from './app/errors';
 import { startBranding } from './app/branding';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
@@ -16,6 +17,8 @@ import { createSettings } from './app/settings';
 import { NotSignedInError, OAuth } from './auth/oauth';
 import { CalendarStore } from './calendar/store';
 import { clearCache, clearSnapshots, loadCachedSession, loadSnapshot, saveCachedSession, saveSnapshot } from './cache/persist';
+import { DriveClient } from './drive/client';
+import { loadDriveConfig } from './drive/config';
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream, type PushStream } from './jmap/sse';
 import { CALENDARS, type Session } from './jmap/types';
@@ -69,28 +72,30 @@ async function boot() {
   }
 
   const connection = createConnection();
+  // A token refresh can fail on the network too, before any request is made.
+  const getToken = () =>
+    auth.getToken().catch((e) => {
+      // The usual way a session ends: the token is renewed ahead of expiry and the server refuses
+      // (password changed, refresh token expired, signed out in another tab). No request is made,
+      // so no 401 comes back to say so.
+      if (e instanceof NotSignedInError && !auth.isSignedIn()) {
+        if (rendered) sessionLost();
+        throw new UnauthorizedError();
+      }
+      connection.reportFailure('request', e);
+      throw e;
+    });
+  const renewSession = async () => {
+    const renewed = await auth.renew();
+    // A refresh the server refused drops the tokens: the session is over, whoever catches the error
+    // (an autosave swallows it). A refresh that failed on the network keeps them, and is not a sign-out.
+    if (!renewed && !auth.isSignedIn()) sessionLost();
+    return renewed;
+  };
   const client = new JmapClient({
     sessionUrl: `${origin}/.well-known/jmap`,
-    // A token refresh can fail on the network too, before any request is made.
-    getToken: () =>
-      auth.getToken().catch((e) => {
-        // The usual way a session ends: the token is renewed ahead of expiry and the server refuses
-        // (password changed, refresh token expired, signed out in another tab). No request is made,
-        // so no 401 comes back to say so.
-        if (e instanceof NotSignedInError && !auth.isSignedIn()) {
-          if (rendered) sessionLost();
-          throw new UnauthorizedError();
-        }
-        connection.reportFailure('request', e);
-        throw e;
-      }),
-    onUnauthorized: async () => {
-      const renewed = await auth.renew();
-      // A refresh the server refused drops the tokens: the session is over, whoever catches the error
-      // (an autosave swallows it). A refresh that failed on the network keeps them, and is not a sign-out.
-      if (!renewed && !auth.isSignedIn()) sessionLost();
-      return renewed;
-    },
+    getToken,
+    onUnauthorized: renewSession,
     onOutcome: (e) => (e === null ? connection.reportSuccess('request') : connection.reportFailure('request', e)),
   });
   let push: PushStream | undefined;
@@ -107,6 +112,10 @@ async function boot() {
   const toasts = createToasts();
   const confirmDialog = createConfirmDialog();
   const errors = createErrorReporter(toasts.toast);
+  // Drive shares the mail token. Its failures are its own: they never reach the connection banner.
+  const drive = createDrive({ client: new DriveClient({ getToken, onUnauthorized: renewSession }), toast: toasts.toast });
+  // Not awaited: mail does not wait to learn whether there is a Drive.
+  void loadDriveConfig((url) => fetch(url, { cache: 'no-cache' })).then(drive.setConfig);
 
   /** Drop the session and go to the sign-in card. */
   const leave = () => {
@@ -243,6 +252,7 @@ async function boot() {
       return cur().recipients;
     },
     password: createPassword(client, passwordChanged),
+    drive,
     calendar,
     // Calendars are the user's own: a shared mailbox has no Calendar link.
     hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS] && cur().info.personal,

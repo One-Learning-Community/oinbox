@@ -4,6 +4,7 @@ import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
 import type { ErrorReporter } from './errors';
 import type { Labels } from './labels';
+import type { Drive } from './drive';
 import type { Password } from './password';
 import type { Recipients } from './recipients';
 import type { Settings } from './settings';
@@ -37,6 +38,8 @@ export interface App {
   settings: Settings;
   /** The user's own password, whichever account is on screen. */
   password: Password;
+  /** OpenCloud as Drive, if this installation has one. The user's own, whichever mailbox is on screen. */
+  drive: Drive;
   nav: Nav;
   composers: Composers;
   recipients: Recipients;

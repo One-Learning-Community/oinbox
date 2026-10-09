@@ -13,6 +13,7 @@ import { ConnectionBanner } from './ConnectionBanner';
 import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
+import { DrivePicker } from './DrivePicker';
 import { LabelDialog } from './LabelDialog';
 import { LabelMenu } from './LabelMenu';
 import { missingViewText } from './nav';
@@ -127,6 +128,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       <MailboxPicker />
       <HelpDialog />
       <LabelDialog />
+      <DrivePicker />
       <props.confirmHost />
     </div>
   );
