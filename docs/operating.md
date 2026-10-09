@@ -119,7 +119,7 @@ The browser remembers the branding it last saw, so a change shows on the second 
 
 ### Drive
 
-oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as the user's Drive. In this version that means one thing: an attachment can be saved into a Drive folder from the message it came in. Users sign in once; OpenCloud accepts the sign-in Stalwart gave oinbox.
+oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as the user's Drive. In this version that means two things: an attachment can be saved into a Drive folder from the message it came in, and files can be attached to a message straight from Drive. Users sign in once; OpenCloud accepts the sign-in Stalwart gave oinbox.
 
 **What you need**
 

@@ -7,10 +7,11 @@ import { editorTakesDrop, formatAddress, fromEditorHtml, toEditorHtml } from '..
 import { fileSize } from '../mail/format';
 import { FormatToolbar } from './FormatToolbar';
 import { Icon } from './icons';
+import { MenuButton } from './MenuButton';
 import { closedSuggestions, pickedSuggestion, RecipientField } from './RecipientField';
 
 export function ComposerView(props: { composer: Composer; inline: boolean }) {
-  const { composers } = useApp();
+  const { composers, drive } = useApp();
   const c = props.composer;
   const [showCc, setShowCc] = createSignal(c.draft().cc.length > 0 || c.draft().bcc.length > 0);
   const [dragging, setDragging] = createSignal(false);
@@ -218,9 +219,29 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
           Send
         </button>
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => { void c.attach(e.currentTarget.files ?? []); e.currentTarget.value = ''; }} />
-        <button type="button" class="icon-btn" title="Attach files" onClick={() => fileInput?.click()}>
-          <Icon name="clip" />
-        </button>
+        <Show
+          when={drive.offered()}
+          fallback={
+            <button type="button" class="icon-btn" title="Attach files" onClick={() => fileInput?.click()}>
+              <Icon name="clip" />
+            </button>
+          }
+        >
+          {/* The actions sit at the bottom of the composer: the menu opens upwards. */}
+          <MenuButton
+            class="icon-btn"
+            title="Attach files"
+            menuLabel="Attach files"
+            placement="top-start"
+            items={[
+              { label: 'From this computer', run: () => fileInput?.click() },
+              // A file from Drive is attached like one from disk: the composer uploads it and reports on it.
+              { label: 'From Drive', run: () => drive.attachFromDrive((files) => c.attach(files)) },
+            ]}
+          >
+            <Icon name="clip" />
+          </MenuButton>
+        </Show>
         <span class="compose-status" aria-live="polite">
           {statusText()}
           <Show when={c.status() === 'error'}>
