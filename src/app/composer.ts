@@ -67,6 +67,8 @@ export function createComposers(
   onSent: (emailId: Id, recipients: EmailAddress[]) => void,
   /** Registers a callback for when the server can be reached again. */
   onRecovered?: (fn: () => void) => void,
+  /** What discarding a draft means for files it has in Drive (app/driveLinks.ts). */
+  drive?: { discardNote: (c: Composer) => string | null; discarded: (c: Composer) => void },
 ) {
   const [list, setList] = createSignal<Composer[]>([]);
   let seq = 0;
@@ -395,7 +397,8 @@ export function createComposers(
   };
 
   const discard = async (c: Composer) => {
-    const ok = await confirm({ title: 'Discard draft?', message: 'This draft will be permanently deleted.', confirmLabel: 'Discard' });
+    const note = drive?.discardNote(c);
+    const ok = await confirm({ title: 'Discard draft?', message: `This draft will be permanently deleted.${note ? ` ${note}` : ''}`, confirmLabel: 'Discard' });
     if (!ok) return;
     // After a send that may have gone through, the "draft" can be the copy in Sent: leave it be.
     const stale = internals(c).staleIds();
@@ -406,6 +409,8 @@ export function createComposers(
       return;
     }
     remove(c);
+    // Only here: a message that turned out to have been sent keeps its files.
+    drive?.discarded(c);
     const id = c.draftId();
     await dropStale(id ? [id, ...stale] : stale);
     toast('Draft discarded.');

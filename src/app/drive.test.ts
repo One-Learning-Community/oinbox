@@ -302,3 +302,52 @@ describe('attaching from Drive: what is refused, and stopping', () => {
     expect(deliver).not.toHaveBeenCalled();
   });
 });
+
+describe('attaching from Drive: asked first whether it should be a link', () => {
+  const item = (id: string, name: string, size: number): DriveItem => ({ id, name, size, folder: false, modified: '' });
+  const arrange = () => {
+    const made = setup();
+    const folder = made.server.mkdir(['Videos']);
+    const id = made.server.put(['Videos', 'talk.mp4'], blob('four'));
+    const trail: Trail = [{ name: 'Drive' }, { id: folder, name: 'Videos' }];
+    return { ...made, trail, items: [item(id, 'talk.mp4', 4)] };
+  };
+
+  it('tells whoever asks where each file is, and fetches nothing when it was made a link', async () => {
+    const { server, drive, trail, items } = arrange();
+    const deliver = vi.fn();
+    const intercept = vi.fn(async () => 'linked' as const);
+    drive.attachFromDrive(deliver, intercept);
+    expect(await drive.choose(trail, items)).toBe(true);
+    expect(intercept).toHaveBeenCalledWith([{ path: ['Videos', 'talk.mp4'], name: 'talk.mp4', size: 4 }]);
+    expect(deliver).not.toHaveBeenCalled();
+    expect(server.requests.filter((r) => r.path.startsWith('/dav/'))).toEqual([]);
+    expect(drive.request()).toBeNull();
+    expect(drive.lastTrail()).toEqual(trail);
+  });
+
+  it('fetches and hands over as usual when the answer is to attach', async () => {
+    const { drive, trail, items } = arrange();
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver, async () => 'attach');
+    expect(await drive.choose(trail, items)).toBe(true);
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it('stays open, with nothing fetched, when the answer is to cancel', async () => {
+    const { server, drive, trail, items } = arrange();
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver, async () => 'cancel');
+    expect(await drive.choose(trail, items)).toBe(false);
+    expect(deliver).not.toHaveBeenCalled();
+    expect(server.requests.filter((r) => r.path.startsWith('/dav/'))).toEqual([]);
+    expect(drive.request()?.kind).toBe('pick');
+  });
+
+  it('exposes the threshold it was configured with', () => {
+    const { drive } = arrange();
+    expect(drive.linkOverMb()).toBe(20);
+    drive.setConfig({ enabled: true, linkOverMb: 35 });
+    expect(drive.linkOverMb()).toBe(35);
+  });
+});

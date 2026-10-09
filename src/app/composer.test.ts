@@ -655,3 +655,33 @@ describe('composer images', () => {
     expect(revoked).toEqual([url]);
   });
 });
+
+describe('a draft with files in Drive', () => {
+  async function setup(note: string | null) {
+    const server = new FakeJmap();
+    server.addMailbox('D', 'Drafts', 'drafts');
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    const confirm = vi.fn(async (_o: { message: string | (() => string) }) => true);
+    const hooks = { discardNote: vi.fn(() => note), discarded: vi.fn() };
+    const composers = createRoot(() => createComposers(engine, vi.fn(), confirm as never, vi.fn(), undefined, hooks));
+    return { composers, confirm, hooks };
+  }
+
+  it('says in the discard question that the files will be removed, and has them removed', async () => {
+    const { composers, confirm, hooks } = await setup('The files uploaded to Drive for it will be removed.');
+    const c = composers.open('new');
+    await composers.discard(c);
+    expect(confirm.mock.calls[0]![0].message).toBe('This draft will be permanently deleted. The files uploaded to Drive for it will be removed.');
+    expect(hooks.discarded).toHaveBeenCalledWith(c);
+  });
+
+  it('asks the usual question for a draft with none, and removes nothing if the user keeps the draft', async () => {
+    const { composers, confirm, hooks } = await setup(null);
+    const c = composers.open('new');
+    confirm.mockResolvedValueOnce(false);
+    await composers.discard(c);
+    expect(confirm.mock.calls[0]![0].message).toBe('This draft will be permanently deleted.');
+    expect(hooks.discarded).not.toHaveBeenCalled();
+  });
+});

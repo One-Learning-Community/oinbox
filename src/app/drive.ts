@@ -27,6 +27,17 @@ export interface SaveRequest {
 export interface PickRequest {
   kind: 'pick';
   deliver: (files: File[]) => void | Promise<void>;
+  /**
+   * Asked before anything is fetched, with where each chosen file is: 'linked' means they were sent
+   * another way (as a Drive link) and need no fetching, 'cancel' that the user thought better of it.
+   */
+  intercept?: ((refs: DriveRef[]) => Promise<'linked' | 'attach' | 'cancel'>) | undefined;
+}
+/** A file in the drive: its path from the top, its name and its size. */
+export interface DriveRef {
+  path: string[];
+  name: string;
+  size: number;
 }
 export type DriveRequest = SaveRequest | PickRequest;
 
@@ -107,6 +118,16 @@ export function createDrive(deps: {
   const choose = async (trail: Trail, items: DriveItem[]): Promise<boolean> => {
     const req = request();
     if (req?.kind !== 'pick' || !items.length) return false;
+    if (req.intercept) {
+      const from = trail.slice(1).map((c) => c.name);
+      const answer = await req.intercept(items.map((i) => ({ path: [...from, i.name], name: i.name, size: i.size })));
+      if (answer === 'cancel' || request() !== req) return false;
+      if (answer === 'linked') {
+        last = trail;
+        setRequest(null);
+        return true;
+      }
+    }
     // What the mail server would refuse is refused here, before minutes are spent fetching it.
     const limit = deps.maxUploadBytes?.();
     const tooBig = limit ? items.find((i) => i.size > limit) : undefined;
@@ -145,6 +166,8 @@ export function createDrive(deps: {
     client,
     /** Whether this installation has a Drive at all. Nothing is asked of it until it is used. */
     offered: () => config().enabled,
+    /** Past this many megabytes of attachments, a message's files are offered as a link. */
+    linkOverMb: () => config().linkOverMb,
     setConfig,
     /** What the picker is open for, or null. */
     request,
@@ -153,7 +176,7 @@ export function createDrive(deps: {
       if (files.length) setRequest({ kind: 'save', files, saved: new Set() });
     },
     /** Open the picker to choose files; `deliver` gets them once fetched. */
-    attachFromDrive: (deliver: PickRequest['deliver']) => setRequest({ kind: 'pick', deliver }),
+    attachFromDrive: (deliver: PickRequest['deliver'], intercept?: PickRequest['intercept']) => setRequest({ kind: 'pick', deliver, intercept }),
     /** Close the picker, stopping a fetch of chosen files if one is running. */
     cancel: () => {
       fetching?.abort();
