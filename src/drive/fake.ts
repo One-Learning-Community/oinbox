@@ -28,6 +28,8 @@ export class FakeDrive {
   full = false;
   /** The next this-many downloads answer 425, as OpenCloud does for a file it has not finished with. */
   early = 0;
+  /** Downloads never answer; they end only when the request is aborted. */
+  stall = false;
   requests: { method: string; path: string }[] = [];
   private seq = 0;
   private root: Node = { id: `${this.driveId}!root`, name: '', modified: '2026-10-09T12:00:00Z', children: new Map() };
@@ -116,6 +118,13 @@ export class FakeDrive {
       if (method === 'GET') {
         const node = parent?.children?.get(name);
         if (!node?.data) return empty(404);
+        if (this.stall) {
+          return new Promise<Response>((_resolve, reject) => {
+            const fail = () => reject(new DOMException('The request was aborted', 'AbortError'));
+            if (init.signal?.aborted) fail();
+            else init.signal?.addEventListener('abort', fail);
+          });
+        }
         if (this.early > 0) {
           this.early--;
           return empty(425);

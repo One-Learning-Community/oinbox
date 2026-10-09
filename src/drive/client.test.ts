@@ -152,4 +152,28 @@ describe('DriveClient', () => {
     expect(await kindOf(c.download(['nope.txt']))).toBe('missing');
     expect(await kindOf(c.download(['No folder', 'a.txt']))).toBe('missing');
   });
+
+  it('stops a download when asked, without calling it a fault of Drive', async () => {
+    const server = new FakeDrive();
+    server.put(['big.bin'], blob('x'));
+    const c = server.client();
+    await c.drive();
+    server.stall = true;
+    const stop = new AbortController();
+    const going = c.download(['big.bin'], stop.signal);
+    setTimeout(() => stop.abort(), 0);
+    await expect(going).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('stops between tries too, while waiting out "too early"', async () => {
+    const server = new FakeDrive();
+    server.put(['new.txt'], blob('x'));
+    server.early = 99;
+    const stop = new AbortController();
+    const going = server.client({ retryMs: 5 }).download(['new.txt'], stop.signal);
+    setTimeout(() => stop.abort(), 8);
+    await expect(going).rejects.toMatchObject({ name: 'AbortError' });
+    expect(server.requests.filter((r) => r.path.endsWith('/new.txt')).length).toBeLessThan(5);
+  });
+
 });

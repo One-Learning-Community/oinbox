@@ -83,6 +83,8 @@ export class DriveClient {
     try {
       res = await this.fetchImpl(`${this.base}${path}`, { ...init, headers, ...(signal ? { signal } : {}) });
     } catch (e) {
+      // The caller stopped its own request: that is not Drive failing.
+      if ((e as Error).name === 'AbortError') throw e;
       throw new DriveError('unavailable', 0, (e as Error).name === 'TimeoutError' ? 'Drive did not respond in time' : 'Drive could not be reached');
     }
     if (res.status === 401) {
@@ -154,12 +156,14 @@ export class DriveClient {
 
   /**
    * A file's bytes. Straight after an upload OpenCloud can answer 425 while it finishes with the
-   * file (seen 2026-10-09): wait and ask again, five times in all.
+   * file (seen 2026-10-09): wait and ask again, five times in all. A download has no time limit, so
+   * the caller can stop it: aborting `signal` rejects with an AbortError, not a DriveError.
    */
-  async download(path: string[]): Promise<Blob> {
+  async download(path: string[], signal?: AbortSignal): Promise<Blob> {
     const url = await this.dav(path);
     for (let attempt = 1; ; attempt++) {
-      const res = await this.request(url, {}, true);
+      signal?.throwIfAborted();
+      const res = await this.request(url, signal ? { signal } : {}, true);
       if (res.status === 425 && attempt < 5) {
         await new Promise((r) => setTimeout(r, this.opts.retryMs ?? 400));
         continue;

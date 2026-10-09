@@ -1,6 +1,7 @@
 import { createSignal } from 'solid-js';
 import { DriveError, type DriveClient, type DriveItem } from '../drive/client';
 import { NO_DRIVE, type DriveConfig } from '../drive/config';
+import { fileSize } from '../mail/format';
 import type { ToastFn } from './actions';
 
 export interface Crumb {
@@ -60,11 +61,18 @@ export function driveMessage(e: unknown, doing: 'save' | 'attach' = 'save'): str
  * Drive as the app sees it: whether it is offered, what the picker is open for, saving into it and
  * attaching from it. It is the signed-in user's own drive, whichever mailbox is on screen.
  */
-export function createDrive(deps: { client: DriveClient; toast: ToastFn }) {
+export function createDrive(deps: {
+  client: DriveClient;
+  toast: ToastFn;
+  /** The largest file the mail server takes as an attachment, when that is known. */
+  maxUploadBytes?: () => number | undefined;
+}) {
   const { client, toast } = deps;
   const [config, setConfig] = createSignal<DriveConfig>(NO_DRIVE);
   const [request, setRequest] = createSignal<DriveRequest | null>(null);
   let last: Trail = [{ name: 'Drive' }];
+  /** The fetch of chosen files that is under way, so that Cancel can stop it. */
+  let fetching: AbortController | null = null;
 
   /** Save the waiting files into the folder. True when all are there; the picker then closes. */
   const confirm = async (trail: Trail): Promise<boolean> => {
@@ -99,21 +107,37 @@ export function createDrive(deps: { client: DriveClient; toast: ToastFn }) {
   const choose = async (trail: Trail, items: DriveItem[]): Promise<boolean> => {
     const req = request();
     if (req?.kind !== 'pick' || !items.length) return false;
+    // What the mail server would refuse is refused here, before minutes are spent fetching it.
+    const limit = deps.maxUploadBytes?.();
+    const tooBig = limit ? items.find((i) => i.size > limit) : undefined;
+    if (tooBig) {
+      toast(`${tooBig.name} is too large to attach (the limit is ${fileSize(limit!)}).`, 'error');
+      return false;
+    }
     const path = trail.slice(1).map((c) => c.name);
+    const stop = (fetching = new AbortController());
     try {
       const files: File[] = [];
       for (const item of items) {
-        const bytes = await client.download([...path, item.name]);
+        const bytes = await client.download([...path, item.name], stop.signal);
+        // Not the file that was listed: it was replaced meanwhile, or something other than Drive
+        // answered. Either way it must not be sent under this name.
+        if (bytes.size !== item.size) throw new Error(`${item.name} changed while it was being fetched. Try again.`);
         files.push(new File([bytes], item.name, { type: bytes.type || 'application/octet-stream' }));
       }
+      if (request() !== req) return false;
       last = trail;
       setRequest(null);
       // What happens to them next (the composer's upload) reports its own failures.
       void req.deliver(files);
       return true;
     } catch (e) {
+      // Cancelled: the user knows, and nothing went wrong.
+      if (stop.signal.aborted) return false;
       toast(driveMessage(e, 'attach'), 'error');
       return false;
+    } finally {
+      if (fetching === stop) fetching = null;
     }
   };
 
@@ -130,7 +154,12 @@ export function createDrive(deps: { client: DriveClient; toast: ToastFn }) {
     },
     /** Open the picker to choose files; `deliver` gets them once fetched. */
     attachFromDrive: (deliver: PickRequest['deliver']) => setRequest({ kind: 'pick', deliver }),
-    cancel: () => setRequest(null),
+    /** Close the picker, stopping a fetch of chosen files if one is running. */
+    cancel: () => {
+      fetching?.abort();
+      fetching = null;
+      setRequest(null);
+    },
     /** Where the picker opens: the folder last used in this tab, or the top. */
     lastTrail: (): Trail => last,
     confirm,

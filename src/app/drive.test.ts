@@ -172,7 +172,7 @@ describe('createDrive', () => {
 });
 
 describe('attaching from Drive', () => {
-  const item = (id: string, name: string): DriveItem => ({ id, name, size: 1, folder: false, modified: '' });
+  const item = (id: string, name: string, size = 1): DriveItem => ({ id, name, size, folder: false, modified: '' });
 
   it('opens a request for files and asks nothing of OpenCloud yet', () => {
     const { server, drive } = setup();
@@ -189,7 +189,7 @@ describe('attaching from Drive', () => {
     const deliver = vi.fn<(files: File[]) => void>();
     const trail: Trail = [{ name: 'Drive' }, { id: folder, name: 'Reports' }];
     drive.attachFromDrive(deliver);
-    expect(await drive.choose(trail, [item(a, 'q3.pdf'), item(b, 'empty.txt')])).toBe(true);
+    expect(await drive.choose(trail, [item(a, 'q3.pdf', 4), item(b, 'empty.txt', 0)])).toBe(true);
     const files = deliver.mock.calls[0]![0];
     expect(files.map((f) => ({ name: f.name, type: f.type, size: f.size }))).toEqual([
       { name: 'q3.pdf', type: 'application/pdf', size: 4 },
@@ -245,5 +245,60 @@ describe('attaching from Drive', () => {
     expect(await drive.choose(TOP, [item(a, 'a.txt')])).toBe(false);
     expect(deliver).not.toHaveBeenCalled();
     expect(server.names([])).toEqual(['a.txt']);
+  });
+});
+
+describe('attaching from Drive: what is refused, and stopping', () => {
+  const item = (id: string, name: string, size: number): DriveItem => ({ id, name, size, folder: false, modified: '' });
+
+  it('refuses a file the mail server would refuse, before fetching anything', async () => {
+    const server = new FakeDrive();
+    const toast = vi.fn();
+    const drive = createDrive({ client: server.client(), toast, maxUploadBytes: () => 2048 });
+    const small = server.put(['small.txt'], blob('ok'));
+    const big = server.put(['video.mp4'], blob('x'.repeat(3000)));
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    expect(await drive.choose(TOP, [item(small, 'small.txt', 2), item(big, 'video.mp4', 3000)])).toBe(false);
+    expect(toast).toHaveBeenCalledWith('video.mp4 is too large to attach (the limit is 2 KB).', 'error');
+    expect(server.requests.filter((r) => r.path.startsWith('/dav/'))).toEqual([]);
+    expect(deliver).not.toHaveBeenCalled();
+    expect(drive.request()?.kind).toBe('pick');
+  });
+
+  it('attaches a file of exactly the limit, and any size when the limit is not known', async () => {
+    const server = new FakeDrive();
+    const a = server.put(['a.bin'], blob('x'.repeat(2048)));
+    const limited = createDrive({ client: server.client(), toast: vi.fn(), maxUploadBytes: () => 2048 });
+    limited.attachFromDrive(() => {});
+    expect(await limited.choose(TOP, [item(a, 'a.bin', 2048)])).toBe(true);
+    const unknown = createDrive({ client: server.client(), toast: vi.fn(), maxUploadBytes: () => undefined });
+    unknown.attachFromDrive(() => {});
+    expect(await unknown.choose(TOP, [item(a, 'a.bin', 2048)])).toBe(true);
+  });
+
+  it('can be cancelled while a file is being fetched: nothing attached, nothing said', async () => {
+    const { server, toast, drive } = setup();
+    const a = server.put(['a.txt'], blob('a'));
+    await drive.client.drive();
+    server.stall = true;
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    const going = drive.choose(TOP, [item(a, 'a.txt', 1)]);
+    setTimeout(() => drive.cancel(), 0);
+    expect(await going).toBe(false);
+    expect(deliver).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    expect(drive.request()).toBeNull();
+  });
+
+  it('does not attach bytes that are not the file that was listed', async () => {
+    const { server, toast, drive } = setup();
+    const a = server.put(['a.txt'], blob('now much longer than it was'));
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    expect(await drive.choose(TOP, [item(a, 'a.txt', 3)])).toBe(false);
+    expect(toast).toHaveBeenCalledWith("Couldn't attach from Drive: a.txt changed while it was being fetched. Try again.", 'error');
+    expect(deliver).not.toHaveBeenCalled();
   });
 });

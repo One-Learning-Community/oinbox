@@ -21,7 +21,7 @@ import { DriveClient } from './drive/client';
 import { loadDriveConfig } from './drive/config';
 import { JmapClient, UnauthorizedError } from './jmap/client';
 import { openPushStream, type PushStream } from './jmap/sse';
-import { CALENDARS, type Session } from './jmap/types';
+import { CALENDARS, CORE, type Session } from './jmap/types';
 import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
 import { createConnection, isTransportFailure, logUnexpected } from './sync/connection';
 import { MailEngine } from './sync/engine';
@@ -113,7 +113,12 @@ async function boot() {
   const confirmDialog = createConfirmDialog();
   const errors = createErrorReporter(toasts.toast);
   // Drive shares the mail token. Its failures are its own: they never reach the connection banner.
-  const drive = createDrive({ client: new DriveClient({ getToken, onUnauthorized: renewSession }), toast: toasts.toast });
+  const drive = createDrive({
+    client: new DriveClient({ getToken, onUnauthorized: renewSession }),
+    toast: toasts.toast,
+    // A file from Drive larger than Stalwart takes is refused before it is fetched.
+    maxUploadBytes: () => (client.hasSession ? (client.session.capabilities[CORE] as { maxSizeUpload?: number } | undefined)?.maxSizeUpload : undefined),
+  });
   // Not awaited: mail does not wait to learn whether there is a Drive.
   void loadDriveConfig((url) => fetch(url, { cache: 'no-cache' })).then(drive.setConfig);
 

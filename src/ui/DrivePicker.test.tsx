@@ -324,3 +324,23 @@ describe('DrivePicker, choosing files', () => {
     expect(reports).toHaveFocus();
   });
 });
+
+describe('DrivePicker, stopping an attach', () => {
+  it('can be cancelled while files are being fetched', async () => {
+    const { server, drive, toast, pick, deliver } = setup((s) => {
+      s.put(['notes.txt'], blob('hello'));
+    });
+    await drive.client.drive();
+    pick();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /notes\.txt/ }));
+    server.stall = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+    expect(await screen.findByRole('button', { name: 'Attaching…' })).toBeDisabled();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(deliver).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+});

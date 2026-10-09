@@ -158,8 +158,9 @@ function Picker(props: { mode: 'save' | 'pick'; count: number }) {
     );
   };
 
+  // A save cannot be stopped half-way; a fetch of files to attach can.
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy() && drive.cancel()} ariaLabelledby="drive-picker-title">
+    <Dialog open onOpenChange={(open) => !open && (!busy() || picking) && drive.cancel()} ariaLabelledby="drive-picker-title">
       <div class="drive-picker">
         <h2 id="drive-picker-title">{title()}</h2>
         <nav class="drive-crumbs" aria-label="Folder path">
@@ -219,7 +220,7 @@ function Picker(props: { mode: 'save' | 'pick'; count: number }) {
                 <Icon name="add" /> New folder
               </button>
             </Show>
-            <button type="button" disabled={busy()} onClick={() => drive.cancel()}>Cancel</button>
+            <button type="button" disabled={busy() && !picking} onClick={() => drive.cancel()}>Cancel</button>
             <Show when={picking} fallback={
               <button type="button" class="primary" disabled={!ready()} onClick={() => void save()}>
                 {busy() ? 'Saving…' : 'Save here'}
