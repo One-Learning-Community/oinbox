@@ -7,11 +7,15 @@ describe('parseDriveConfig', () => {
   it('takes enabled and the link threshold', () => {
     expect(parseDriveConfig({ enabled: true, linkOverMb: 35 })).toEqual({ enabled: true, linkOverMb: 35 });
   });
+  it('takes the threshold as text too, which is how the server writes it', () => {
+    expect(parseDriveConfig({ enabled: true, linkOverMb: '35' })).toEqual({ enabled: true, linkOverMb: 35 });
+    expect(parseDriveConfig({ enabled: true, linkOverMb: '20MB' })).toEqual({ enabled: true, linkOverMb: 20 });
+  });
   it('is on only for a true boolean', () => {
     for (const enabled of ['true', 1, {}, null, undefined]) expect(parseDriveConfig({ enabled }).enabled).toBe(false);
   });
   it('keeps 20 MB for a threshold that is not a positive number', () => {
-    for (const linkOverMb of [0, -5, '35', NaN, Infinity, null]) expect(parseDriveConfig({ enabled: true, linkOverMb }).linkOverMb).toBe(20);
+    for (const linkOverMb of [0, -5, '20MB', '25,5', '', ' ', '-3', NaN, Infinity, null]) expect(parseDriveConfig({ enabled: true, linkOverMb }).linkOverMb).toBe(20);
   });
   it('is off for anything that is not an object', () => {
     for (const raw of [null, 'on', 7, []]) expect(parseDriveConfig(raw)).toEqual(NO_DRIVE);

@@ -12,7 +12,8 @@ type Fetcher = (url: string) => Promise<Response>;
 export function parseDriveConfig(raw: unknown): DriveConfig {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return NO_DRIVE;
   const o = raw as Record<string, unknown>;
-  const mb = o.linkOverMb;
+  // The server writes the operator's setting as text (deploy/routes.caddy), so that a slip in it costs the threshold and not Drive.
+  const mb = typeof o.linkOverMb === 'string' && o.linkOverMb.trim() ? Number(o.linkOverMb) : o.linkOverMb;
   return {
     enabled: o.enabled === true,
     linkOverMb: typeof mb === 'number' && Number.isFinite(mb) && mb > 0 ? mb : NO_DRIVE.linkOverMb,

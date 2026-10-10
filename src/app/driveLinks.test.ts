@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeDrive } from '../drive/fake';
 import { createDriveLinks, folderName, linkBlock, linkOffer, MB, type ComposerLike, type LinkChoice } from './driveLinks';
+import { createLinkFolders } from './linkFolders';
 import { createLinkPasswords } from './linkPasswords';
 
 const NOW = new Date(2026, 9, 9, 12, 0);
@@ -19,15 +20,18 @@ function setup(opts: { offered?: boolean } = {}) {
   const server = new FakeDrive();
   const toast = vi.fn();
   sessionStorage.clear();
+  localStorage.clear();
   const passwords = createLinkPasswords(sessionStorage, () => NOW.getTime());
+  const folders = createLinkFolders(localStorage, () => NOW.getTime());
   const links = createDriveLinks({
     drive: { offered: () => opts.offered ?? true, linkOverMb: () => 1000 / MB, client: server.client() },
     toast,
     passwords,
+    folders,
     maxUploadBytes: () => 5000,
     now: () => NOW,
   });
-  return { server, toast, passwords, links };
+  return { server, toast, passwords, folders, links };
 }
 const sources = (...files: File[]) => files.map((f) => ({ name: f.name, size: f.size, file: f }));
 const FOLDER = ['Mail attachments', '2026-10-09 Report'];
@@ -58,6 +62,12 @@ describe('folderName', () => {
   });
   it('cuts a long subject to 80 characters', () => {
     expect(folderName('x'.repeat(200), NOW)).toBe(`2026-10-09 ${'x'.repeat(80)}`);
+  });
+  it('never cuts a character in half, and has no half characters in it', () => {
+    const name = folderName(`${'x'.repeat(79)}\ud83d\ude00 and more`, NOW);
+    expect(name).toBe(`2026-10-09 ${'x'.repeat(79)}\ud83d\ude00`);
+    expect(() => encodeURIComponent(name)).not.toThrow();
+    expect(() => encodeURIComponent(folderName('half \ud83d of one', NOW))).not.toThrow();
   });
 });
 
@@ -317,7 +327,6 @@ describe('createDriveLinks', () => {
     await links.send(CHOICE);
     const reopened = composer({ bodyHtml: first.body() });
     links.hooks.reopened(first.c, reopened.c);
-    expect(links.hooks.discardNote(first.c)).toBeNull();
     expect(links.hooks.discardNote(reopened.c)).toBe('The files uploaded to Drive for it will be removed.');
     const more = links.add(reopened.c, sources(file('more.mov', 4000)));
     expect(links.request()).toMatchObject({ adding: true });
@@ -384,5 +393,84 @@ describe('createDriveLinks', () => {
       await vi.waitFor(() => expect(server.names(['Mail attachments'])).toEqual(['2026-10-09 Other']));
       expect(links.hooks.discardNote(mine.c)).toBeNull();
     });
+  });
+});
+
+describe('adding to a message that has its link', () => {
+  const linked = async () => {
+    const all = setup();
+    const msg = composer();
+    void all.links.add(msg.c, sources(file('video.mp4', 3000)));
+    await all.links.send(CHOICE);
+    return { ...all, ...msg };
+  };
+
+  it('cancelled part-way, takes back what it had added: nothing is left behind the link', async () => {
+    const { server, links, c, toast } = await linked();
+    const real = server.fetch;
+    // The first of the two goes up; the second never answers.
+    server.fetch = async (input, init = {}) => {
+      if (init.method === 'PUT' && String(input).includes('second')) server.stall = true;
+      return real(input, init);
+    };
+    const links2 = createDriveLinks({ drive: { offered: () => true, linkOverMb: () => 1000 / MB, client: server.client({ fetch: server.fetch, put: server.transport }) }, toast, passwords: createLinkPasswords(sessionStorage), folders: createLinkFolders(localStorage, () => NOW.getTime()), maxUploadBytes: () => 5000, now: () => NOW });
+    void links;
+    const done = links2.add(c, sources(file('first.mov', 3000), file('second.mov', 3000)));
+    expect(links2.request()).toMatchObject({ adding: true });
+    await vi.waitFor(() => expect(links2.progress()?.name).toBe('second.mov'));
+    expect(server.names(FOLDER)).toEqual(['video.mp4', 'first.mov']);
+    links2.cancel();
+    await done;
+    server.stall = false;
+    await vi.waitFor(() => expect(server.names(FOLDER)).toEqual(['video.mp4']));
+    expect(server.links).toHaveLength(1);
+  });
+
+  it('knows the folder of a draft that was closed and opened again, by the link in its text', async () => {
+    const { server, links, body } = await linked();
+    // A new composer with the saved text, as openDraft and a rescue make.
+    const again = composer({ bodyHtml: body() });
+    expect(links.hooks.discardNote(again.c)).toBe('The files uploaded to Drive for it will be removed.');
+    const more = links.add(again.c, sources(file('more.mov', 4000)));
+    expect(links.request()).toMatchObject({ adding: true });
+    await more;
+    expect(server.names(FOLDER)).toEqual(['video.mp4', 'more.mov']);
+    expect(server.links).toHaveLength(1);
+    links.hooks.discarded(again.c);
+    await vi.waitFor(() => expect(server.names(['Mail attachments'])).toEqual([]));
+  });
+
+  it('claims no folder for a message without the link in its own text, nor once the message is sent', async () => {
+    const { server, links, c, body } = await linked();
+    expect(links.hooks.discardNote(composer().c)).toBeNull();
+    links.hooks.sent(c);
+    const later = composer({ bodyHtml: body() });
+    expect(links.hooks.discardNote(later.c)).toBeNull();
+    links.hooks.discarded(later.c);
+    expect(server.names(['Mail attachments'])).toEqual(['2026-10-09 Report']);
+  });
+
+  it('puts the link back when it was taken out of the text', async () => {
+    const { server, links, c, body, toast } = await linked();
+    const url = server.links[0]!.url;
+    c.update({ bodyHtml: '<p>Hello</p>' });
+    await links.add(c, sources(file('more.mov', 4000)));
+    expect(body()).toContain(`<a href="${url}">${url}</a>`);
+    expect(body()).toContain('Available until 8 November 2026.');
+    expect(body()).not.toContain('Password');
+    expect(toast).toHaveBeenLastCalledWith("Added to this message's Drive link, and put the link back into the message.", 'success');
+  });
+
+  it('starts over with a new link when the folder has been removed in Drive', async () => {
+    const { server, links, c, body } = await linked();
+    server.remove(FOLDER);
+    void links.add(c, sources(file('more.mov', 4000)));
+    await vi.waitFor(() => expect(links.error()).toMatch(/no longer in Drive/));
+    // The password step is back, and with it the choice to attach.
+    expect(links.request()).toMatchObject({ adding: false, canAttach: true });
+    expect(await links.send(CHOICE)).toBe(true);
+    expect(server.names(FOLDER)).toEqual(['more.mov']);
+    expect(server.links).toHaveLength(2);
+    expect(body()).toContain(server.links[1]!.url);
   });
 });

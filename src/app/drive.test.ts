@@ -27,6 +27,14 @@ describe('safeName', () => {
   });
 });
 
+describe('safeName, with half a character in it', () => {
+  it('gives a name that can go into a URL', () => {
+    expect(safeName('report \ud83d.pdf')).toBe('report _.pdf');
+    expect(safeName('report \ud83d\ude00.pdf')).toBe('report \ud83d\ude00.pdf');
+    expect(() => encodeURIComponent(safeName('\ude00 notes'))).not.toThrow();
+  });
+});
+
 describe('freeName', () => {
   it('keeps a name nobody has', () => {
     expect(freeName('notes.txt', new Set(['other.txt']))).toBe('notes.txt');
@@ -164,6 +172,27 @@ describe('createDrive', () => {
     expect(toast).toHaveBeenLastCalledWith('3 files saved to Drive: Alice Example', 'success');
   });
 
+  it('can be cancelled while a file is going up, and says what was saved before that', async () => {
+    const { server, toast, drive } = setup();
+    await drive.client.drive();
+    const slow: SaveFile = {
+      name: 'b.txt',
+      fetch: async () => {
+        server.stall = true;
+        return blob('b');
+      },
+    };
+    drive.saveToDrive([file('a.txt'), slow]);
+    const going = drive.confirm(TOP);
+    await vi.waitFor(() => expect(server.requests.filter((r) => r.method === 'PUT')).toHaveLength(2));
+    drive.cancel();
+    expect(await going).toBe(false);
+    expect(drive.request()).toBeNull();
+    expect(server.names([])).toEqual(['a.txt']);
+    expect(toast).toHaveBeenCalledOnce();
+    expect(toast).toHaveBeenCalledWith('1 of 2 saved to Drive before you cancelled.', 'info');
+  });
+
   it('does nothing on confirm when nothing is waiting', async () => {
     const { server, drive } = setup();
     expect(await drive.confirm(TOP)).toBe(false);
@@ -298,8 +327,20 @@ describe('attaching from Drive: what is refused, and stopping', () => {
     const deliver = vi.fn();
     drive.attachFromDrive(deliver);
     expect(await drive.choose(TOP, [item(a, 'a.txt', 3)])).toBe(false);
-    expect(toast).toHaveBeenCalledWith("Couldn't attach from Drive: a.txt changed while it was being fetched. Try again.", 'error');
+    expect(toast).toHaveBeenCalledWith("Couldn't attach from Drive: a.txt changed while it was being fetched. Choose it again.", 'error');
     expect(deliver).not.toHaveBeenCalled();
+    // The listing on screen is out of date: the picker is told to make it again.
+    expect(drive.changed()).toBe(1);
+  });
+
+  it('attaches a file the listing gave no size for', async () => {
+    const { server, toast, drive } = setup();
+    const a = server.put(['a.txt'], blob('not yet measured'));
+    const deliver = vi.fn();
+    drive.attachFromDrive(deliver);
+    expect(await drive.choose(TOP, [item(a, 'a.txt', 0)])).toBe(true);
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(toast).not.toHaveBeenCalled();
   });
 });
 
@@ -349,5 +390,13 @@ describe('attaching from Drive: asked first whether it should be a link', () => 
     expect(drive.linkOverMb()).toBe(20);
     drive.setConfig({ enabled: true, linkOverMb: 35 });
     expect(drive.linkOverMb()).toBe(35);
+  });
+});
+
+describe('driveMessage, for a message\'s files', () => {
+  it("passes on the server's words about a link, and says what was being done", () => {
+    expect(driveMessage(new DriveError('policy', 400, 'password too short'), 'upload')).toBe('password too short');
+    expect(driveMessage(new DriveError('unavailable', 503, 'x'), 'upload')).toBe("Drive isn't available right now.");
+    expect(driveMessage(new DriveError('missing', 404, 'Copying: HTTP 404'), 'upload')).toBe("Couldn't upload to Drive: Copying: HTTP 404");
   });
 });

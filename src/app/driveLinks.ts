@@ -1,7 +1,9 @@
 import { createSignal } from 'solid-js';
 import { DriveError, type DriveClient, type SharingRules } from '../drive/client';
+import { escapeHtml } from '../mail/sanitize';
 import type { ToastFn } from './actions';
-import { freeName, safeName } from './drive';
+import { driveMessage, freeName, safeName, wellFormed } from './drive';
+import { mentions, type LinkFolder, type LinkFolders } from './linkFolders';
 import type { LinkPasswords } from './linkPasswords';
 
 /** A megabyte as sizes are shown: 1024 × 1024 bytes. */
@@ -25,11 +27,11 @@ export function linkOffer(o: { attachedBytes: number; sizes: number[]; linkOverM
 export function folderName(subject: string, today: Date): string {
   const two = (n: number) => String(n).padStart(2, '0');
   const day = `${today.getFullYear()}-${two(today.getMonth() + 1)}-${two(today.getDate())}`;
-  const clean = subject.replace(/[/\\\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80).trim();
+  // Cut by characters, not UTF-16 units: half an emoji is not a name Drive can be asked for.
+  const clean = [...wellFormed(subject).replace(/[/\\\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()].slice(0, 80).join('').trim();
   return `${day} ${clean || 'No subject'}`;
 }
 
-const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const dayText = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
 /**
@@ -100,15 +102,7 @@ export interface LinkProgress {
   fraction: number;
 }
 
-const message = (e: unknown): string => {
-  if (e instanceof DriveError) {
-    if (e.kind === 'unavailable' || e.kind === 'refused') return "Drive isn't available right now.";
-    if (e.kind === 'tooLarge') return 'Not enough space in Drive.';
-    // A password or expiry the server will not have: it says which rule.
-    if (e.kind === 'policy') return e.message;
-  }
-  return `Couldn't upload to Drive: ${e instanceof Error ? e.message : String(e)}`;
-};
+const FOLDER_GONE = "This message's folder is no longer in Drive, so its link has stopped working. Make a new link, and take the old one out of the message.";
 
 /**
  * Sending files as a Drive link instead of attaching them: one folder and one link per message.
@@ -119,18 +113,35 @@ export function createDriveLinks(deps: {
   drive: { offered: () => boolean; linkOverMb: () => number; client: DriveClient };
   toast: ToastFn;
   passwords: LinkPasswords;
+  /** Which folder belongs to which unsent message, for a draft that comes back as a new composer. */
+  folders?: LinkFolders;
   /** The largest file the mail server takes as an attachment, when that is known. */
   maxUploadBytes?: () => number | undefined;
   now?: () => Date;
 }) {
-  const { drive, toast, passwords } = deps;
+  const { drive, toast, passwords, folders } = deps;
   const client = drive.client;
   const now = deps.now ?? (() => new Date());
   const [request, setRequest] = createSignal<LinkRequest | null>(null);
   const [progress, setProgress] = createSignal<LinkProgress | null>(null);
   const [error, setError] = createSignal('');
   /** The folder and link of each message that has them, for as long as its composer lives. */
-  const sessions = new WeakMap<ComposerLike, Folder>();
+  const sessions = new WeakMap<ComposerLike, LinkFolder>();
+  /** A composer's folder and link: its own, or those of the link its text has in it (a draft opened again). */
+  const sessionOf = (c: ComposerLike): LinkFolder | undefined => {
+    const known = sessions.get(c);
+    if (known) return known;
+    const found = folders?.findIn(c.draft().bodyHtml);
+    if (found) sessions.set(c, found);
+    return found ?? undefined;
+  };
+  const forget = (c: ComposerLike): LinkFolder | undefined => {
+    const was = sessionOf(c);
+    if (!was) return undefined;
+    sessions.delete(c);
+    folders?.forget(was.url);
+    return was;
+  };
 
   /** The request on screen, beyond what the dialog shows of it. */
   interface Open {
@@ -141,6 +152,8 @@ export function createDriveLinks(deps: {
     folder?: Folder;
     /** Files already in the folder, after a try that stopped part-way. */
     done: Set<LinkSource>;
+    /** Where this request has put files, or begun to. */
+    put: string[][];
     /** Stops whatever this request has under way. One for the request's whole life. */
     stop: AbortController;
     /** A try is running: a second press of the button does nothing. */
@@ -148,9 +161,17 @@ export function createDriveLinks(deps: {
   }
   let open: Open | null = null;
 
-  /** A folder made for a request that ended with no link has no reason to stay. */
+  /**
+   * What a request that came to nothing put into Drive has no reason to stay: the folder made for
+   * it, or, in the folder of a message that has its link already, the files it added. Those would
+   * otherwise be there for whoever has the link.
+   */
   const tidy = (was: Open, c: ComposerLike) => {
-    if (was.made && !sessions.has(c)) void client.remove(was.made).catch(() => {});
+    if (!sessionOf(c)) {
+      if (was.made) void client.remove(was.made).catch(() => {});
+      return;
+    }
+    for (const path of was.put) void client.remove(path).catch(() => {});
   };
 
   const finish = (a: Answer) => {
@@ -177,7 +198,8 @@ export function createDriveLinks(deps: {
       return false;
     };
     try {
-      let folder = sessions.get(c) ?? mine.folder;
+      const linked = sessionOf(c);
+      let folder: Folder | undefined = linked ?? mine.folder;
       if (!folder) {
         await client.createFolder([MAIL_FOLDER]);
         const parent = (await client.children()).find((i) => i.folder && i.name === MAIL_FOLDER);
@@ -194,13 +216,30 @@ export function createDriveLinks(deps: {
         if (!made) throw new DriveError('missing', 404, 'The folder could not be made');
         folder = mine.folder = { path: mine.made, id: made.id };
       }
-      const taken = new Set((await client.children(folder.id)).map((i) => i.name.toLowerCase()));
+      const held = await client.children(folder.id).catch((e) => {
+        // Removed in Drive since the link was made: adding to it can never work, a new link can.
+        if (linked && e instanceof DriveError && e.kind === 'missing') return null;
+        throw e;
+      });
+      if (stopped()) return bail();
+      if (!held) {
+        forget(c);
+        mine.done.clear();
+        mine.put = [];
+        setProgress(null);
+        // The dialog starts over, with the password step a new link needs.
+        setRequest({ ...req, adding: false });
+        setError(FOLDER_GONE);
+        return false;
+      }
+      const taken = new Set(held.map((i) => i.name.toLowerCase()));
       for (const [i, source] of req.sources.entries()) {
         if (mine.done.has(source)) continue;
         if (stopped()) return bail();
         const at = (fraction: number) => setProgress({ name: source.name, index: i + 1, count: req.sources.length, fraction });
         at(0);
         const name = freeName(safeName(source.name), taken);
+        mine.put.push([...folder.path, name]);
         // From this computer the file goes straight to Drive, never through the mail server.
         if (source.file) await client.upload([...folder.path, name], source.file, { signal: mine.stop.signal, onProgress: (sent, total) => at(total ? sent / total : 0) });
         else await client.copy(source.drivePath!, [...folder.path, name]);
@@ -208,16 +247,22 @@ export function createDriveLinks(deps: {
         mine.done.add(source);
       }
       if (stopped()) return bail();
-      if (!sessions.has(c)) {
+      if (!linked) {
         const expires = choice?.expiryDays ? new Date(now().getTime() + choice.expiryDays * DAY_MS) : undefined;
         const password = choice?.password || undefined;
         const url = await client.createLink(folder.id, { ...(password ? { password } : {}), ...(expires ? { expires } : {}) });
         if (stopped()) return bail();
         if (password) passwords.remember(url, password);
         c.update({ bodyHtml: c.draft().bodyHtml + linkBlock({ url, password: choice?.includePassword ? password : undefined, expires }) });
-        sessions.set(c, folder);
-      } else {
+        const session: LinkFolder = { ...folder, url, expires: expires?.getTime(), madeAt: now().getTime() };
+        sessions.set(c, session);
+        folders?.remember(session);
+      } else if (mentions(c.draft().bodyHtml, linked.url)) {
         toast("Added to this message's Drive link.", 'success');
+      } else {
+        // The link was taken out of the text: without it the files would reach nobody.
+        c.update({ bodyHtml: c.draft().bodyHtml + linkBlock({ url: linked.url, expires: linked.expires ? new Date(linked.expires) : undefined }) });
+        toast("Added to this message's Drive link, and put the link back into the message.", 'success');
       }
       finish('linked');
       return true;
@@ -225,7 +270,7 @@ export function createDriveLinks(deps: {
       // Cancelled: nothing went wrong.
       if (stopped()) return bail();
       setProgress(null);
-      setError(message(e));
+      setError(driveMessage(e, 'upload'));
       return false;
     } finally {
       mine.running = false;
@@ -245,8 +290,8 @@ export function createDriveLinks(deps: {
     // One question at a time: a second lot of files while the dialog is up is not taken.
     if (open) return Promise.resolve('cancel');
     return new Promise<Answer>((answer) => {
-      const adding = sessions.has(c);
-      open = { answer, done: new Set(), stop: new AbortController(), running: false };
+      const adding = !!sessionOf(c);
+      open = { answer, done: new Set(), put: [], stop: new AbortController(), running: false };
       setError('');
       setRequest({ composer: c, sources, bytes: sources.reduce((n, s) => n + s.size, 0), canAttach: offer === 'offer', adding });
       // The message has its link and its password already: nothing to ask.
@@ -275,13 +320,13 @@ export function createDriveLinks(deps: {
     attachAnyway: () => {
       const req = request();
       if (!open || !req?.canAttach || open.running) return;
-      // After a try that failed part-way there is a folder with some of the files in it.
+      // After a try that failed part-way some of the files are in Drive.
       tidy(open, req.composer);
       finish('attach');
     },
     /** Make the link (or try again after a failure). True when done; false leaves the dialog up with `error`. */
     send: (choice?: LinkChoice) => run(choice),
-    /** Close the dialog. An upload under way is stopped, and a folder made for it and not yet linked is removed. */
+    /** Close the dialog. An upload under way is stopped, and what it put into Drive is removed. */
     cancel: () => {
       const was = open;
       if (!was) return;
@@ -295,11 +340,10 @@ export function createDriveLinks(deps: {
 
     /** For the composer (createComposers): what discarding a draft means for its files in Drive. */
     hooks: {
-      discardNote: (c: object): string | null => (sessions.has(c as ComposerLike) ? 'The files uploaded to Drive for it will be removed.' : null),
+      discardNote: (c: object): string | null => (sessionOf(c as ComposerLike) ? 'The files uploaded to Drive for it will be removed.' : null),
       discarded: (c: object): void => {
-        const folder = sessions.get(c as ComposerLike);
+        const folder = forget(c as ComposerLike);
         if (!folder) return;
-        sessions.delete(c as ComposerLike);
         void client.remove(folder.path).catch(() => toast("The message's files could not be removed from Drive.", 'error'));
       },
       /** A message came back as a new composer (its send was undone, or failed): its files are still its own. */
@@ -309,6 +353,8 @@ export function createDriveLinks(deps: {
         sessions.delete(from as ComposerLike);
         sessions.set(to as ComposerLike, folder);
       },
+      /** The message went out: its files are the recipients' now, and no later draft may claim them. */
+      sent: (c: object): void => void forget(c as ComposerLike),
     },
   };
 }

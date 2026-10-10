@@ -1,9 +1,11 @@
 /**
  * Keys for a popover menu of `[role="menuitem"]` buttons: the arrows wrap, Home and End jump,
  * Escape and Tab close. Tab is not prevented, so the browser carries it on from the menu's button.
+ * Escape goes no further: it closed the menu, and must not close what the menu is in as well.
  */
 export function menuKeys(items: () => HTMLElement[], close: () => void): (e: KeyboardEvent) => void {
   return (e) => {
+    if (e.key === 'Escape') e.stopPropagation();
     if (e.key === 'Escape' || e.key === 'Tab') return close();
     const list = items();
     const at = list.indexOf(document.activeElement as HTMLElement);

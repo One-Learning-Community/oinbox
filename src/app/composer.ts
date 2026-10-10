@@ -68,7 +68,7 @@ export function createComposers(
   /** Registers a callback for when the server can be reached again. */
   onRecovered?: (fn: () => void) => void,
   /** What discarding a draft means for files it has in Drive (app/driveLinks.ts). */
-  drive?: { discardNote: (c: Composer) => string | null; discarded: (c: Composer) => void; reopened?: (from: Composer, to: Composer) => void },
+  drive?: { discardNote: (c: Composer) => string | null; discarded: (c: Composer) => void; reopened?: (from: Composer, to: Composer) => void; sent?: (c: Composer) => void },
 ) {
   const [list, setList] = createSignal<Composer[]>([]);
   let seq = 0;
@@ -127,6 +127,7 @@ export function createComposers(
   /** An autosave found that the message went out after all: edits made since then have nowhere to go. */
   const sentMeanwhile = (c: Composer) => {
     remove(c);
+    drive?.sent?.(c);
     const d = c.draft();
     if (c.draftId()) onSent(c.draftId()!, [...d.to, ...d.cc, ...d.bcc]);
     toast('This message had already been sent, so your latest changes were not included.', 'info');
@@ -437,6 +438,7 @@ export function createComposers(
     } catch (e) {
       if (e instanceof AlreadySentError) {
         remove(c);
+        drive?.sent?.(c);
         toast('Message sent.', 'success');
         return;
       }
@@ -457,12 +459,14 @@ export function createComposers(
       if (cancelled) return;
       try {
         await engine.sendDraft(draftId, identityId);
+        drive?.sent?.(c);
         onSent(draftId, [...saved.to, ...saved.cc, ...saved.bcc]);
         toast('Message sent.', 'success');
       } catch {
         // The request may have reached the server even though we saw it fail.
         const state = await engine.draftState(draftId).catch(() => null);
         if (state === 'sent') {
+          drive?.sent?.(c);
           onSent(draftId, [...saved.to, ...saved.cc, ...saved.bcc]);
           toast('Message sent.', 'success');
           return;

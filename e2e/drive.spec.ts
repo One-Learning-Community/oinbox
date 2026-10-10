@@ -168,6 +168,12 @@ test('with a Drive the paperclip offers both sources, and "From this computer" a
     await expect(paperclip(c)).toHaveAttribute('aria-haspopup', 'menu');
     await paperclip(c).click();
     await expect(page.getByRole('menuitem')).toHaveText(['From this computer', 'From Drive']);
+    // Escape closes the menu and stops there: the composer, which closes on Escape, stays.
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menuitem')).toHaveCount(0);
+    await expect(c).toBeVisible();
+    await expect(paperclip(c)).toBeFocused();
+    await paperclip(c).click();
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('menuitem', { name: 'From this computer' }).click();
     await (await chooser).setFiles({ name: 'local.txt', mimeType: 'text/plain', buffer: Buffer.from('local') });

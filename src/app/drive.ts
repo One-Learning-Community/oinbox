@@ -41,9 +41,12 @@ export interface DriveRef {
 }
 export type DriveRequest = SaveRequest | PickRequest;
 
+/** The text with any half of a surrogate pair that stands alone replaced: such a string cannot be put in a URL. */
+export const wellFormed = (s: string): string => s.replace(/\p{Cs}/gu, '_');
+
 /** A name a folder can hold: no slashes or control characters, and never empty or a dot name. */
 export function safeName(name: string | null | undefined): string {
-  const clean = (name ?? '').replace(/[/\\\u0000-\u001f\u007f]/g, '_').trim();
+  const clean = wellFormed(name ?? '').replace(/[/\\\u0000-\u001f\u007f]/g, '_').trim();
   return clean === '' || clean === '.' || clean === '..' ? 'attachment' : clean;
 }
 
@@ -58,14 +61,19 @@ export function freeName(name: string, taken: Set<string>): string {
   }
 }
 
-/** What to tell the user when saving to Drive, or attaching from it, failed. */
-export function driveMessage(e: unknown, doing: 'save' | 'attach' = 'save'): string {
+const DOING = { save: 'save to', attach: 'attach from', upload: 'upload to' };
+
+/** What to tell the user when saving to Drive, attaching from it, or uploading a message's files to it, failed. */
+export function driveMessage(e: unknown, doing: keyof typeof DOING = 'save'): string {
   if (e instanceof DriveError) {
     if (e.kind === 'unavailable' || e.kind === 'refused') return "Drive isn't available right now.";
-    if (e.kind === 'missing') return doing === 'save' ? 'That folder is no longer in Drive.' : 'That file is no longer in Drive.';
+    // An upload has a folder and perhaps a file to copy: which of them went, the server's words say.
+    if (e.kind === 'missing' && doing !== 'upload') return doing === 'save' ? 'That folder is no longer in Drive.' : 'That file is no longer in Drive.';
     if (e.kind === 'tooLarge') return 'Not enough space in Drive.';
+    // A link's password or expiry the server will not have: it says which rule.
+    if (e.kind === 'policy') return e.message;
   }
-  return `Couldn't ${doing === 'save' ? 'save to' : 'attach from'} Drive: ${e instanceof Error ? e.message : String(e)}`;
+  return `Couldn't ${DOING[doing]} Drive: ${e instanceof Error ? e.message : String(e)}`;
 }
 
 /**
@@ -82,32 +90,42 @@ export function createDrive(deps: {
   const [config, setConfig] = createSignal<DriveConfig>(NO_DRIVE);
   const [request, setRequest] = createSignal<DriveRequest | null>(null);
   let last: Trail = [{ name: 'Drive' }];
-  /** The fetch of chosen files that is under way, so that Cancel can stop it. */
+  /** The fetch of chosen files, or the save, that is under way, so that Cancel can stop it. */
   let fetching: AbortController | null = null;
+  /** Counts the times a chosen file turned out not to be the one listed: the picker lists the folder again. */
+  const [changed, setChanged] = createSignal(0);
 
   /** Save the waiting files into the folder. True when all are there; the picker then closes. */
   const confirm = async (trail: Trail): Promise<boolean> => {
     const req = request();
     if (req?.kind !== 'save') return false;
     const path = trail.slice(1).map((c) => c.name);
+    const stop = (fetching = new AbortController());
     try {
       // OpenCloud replaces a file of the same name without a word, so look first.
       const taken = new Set((await client.children(trail.at(-1)!.id)).map((i) => i.name.toLowerCase()));
       for (const f of req.files) {
         if (req.saved.has(f)) continue;
         const name = freeName(safeName(f.name), taken);
-        await client.upload([...path, name], await f.fetch());
+        const bytes = await f.fetch();
+        if (stop.signal.aborted) return false;
+        await client.upload([...path, name], bytes, { signal: stop.signal });
         taken.add(name.toLowerCase());
         req.saved.add(f);
       }
+      if (stop.signal.aborted) return false;
       const where = path.at(-1) ?? (await client.drive()).name;
       toast(req.files.length === 1 ? `Saved to Drive: ${where}` : `${req.files.length} files saved to Drive: ${where}`, 'success');
       last = trail;
       setRequest(null);
       return true;
     } catch (e) {
+      // Cancelled: cancel() has said how far it got.
+      if (stop.signal.aborted) return false;
       toast(`${driveMessage(e)}${req.saved.size ? ` ${req.saved.size} of ${req.files.length} saved.` : ''}`, 'error');
       return false;
+    } finally {
+      if (fetching === stop) fetching = null;
     }
   };
 
@@ -142,8 +160,12 @@ export function createDrive(deps: {
       for (const item of items) {
         const bytes = await client.download([...path, item.name], stop.signal);
         // Not the file that was listed: it was replaced meanwhile, or something other than Drive
-        // answered. Either way it must not be sent under this name.
-        if (bytes.size !== item.size) throw new Error(`${item.name} changed while it was being fetched. Try again.`);
+        // answered. Either way it must not be sent under this name. A size of 0 is also what a
+        // listing gives for a file it has no size for yet, and proves nothing.
+        if (item.size && bytes.size !== item.size) {
+          setChanged((n) => n + 1);
+          throw new Error(`${item.name} changed while it was being fetched. Choose it again.`);
+        }
         files.push(new File([bytes], item.name, { type: bytes.type || 'application/octet-stream' }));
       }
       if (request() !== req) return false;
@@ -177,12 +199,18 @@ export function createDrive(deps: {
     },
     /** Open the picker to choose files; `deliver` gets them once fetched. */
     attachFromDrive: (deliver: PickRequest['deliver'], intercept?: PickRequest['intercept']) => setRequest({ kind: 'pick', deliver, intercept }),
-    /** Close the picker, stopping a fetch of chosen files if one is running. */
+    /** Close the picker, stopping a fetch of chosen files, or a save, if one is running. */
     cancel: () => {
+      const req = request();
+      const stopped = !!fetching;
       fetching?.abort();
       fetching = null;
       setRequest(null);
+      // A save stopped part-way: what is in Drive already stays there, and the user should know.
+      if (stopped && req?.kind === 'save' && req.saved.size) toast(`${req.saved.size} of ${req.files.length} saved to Drive before you cancelled.`, 'info');
     },
+    /** Goes up when a chosen file was not the one listed, so the listing on screen is out of date. */
+    changed,
     /** Where the picker opens: the folder last used in this tab, or the top. */
     lastTrail: (): Trail => last,
     confirm,

@@ -242,6 +242,28 @@ describe('DriveClient', () => {
     await c.remove(['Mail attachments', 'Report']);
   });
 
+  it('does not renew again for a token Drive refused when it was new', async () => {
+    const server = new FakeDrive();
+    // OpenCloud turning a good token away for reasons of its own: every renewal gives a token it refuses too.
+    let n = 0;
+    let token = 't';
+    const onUnauthorized = vi.fn(async () => ((token = `refused-${++n}`), true));
+    const c = server.client({ getToken: async () => token, onUnauthorized });
+    await c.drive();
+    token = 'refused-0';
+    expect(await kindOf(c.children())).toBe('refused');
+    expect(await kindOf(c.children())).toBe('refused');
+    expect(await kindOf(c.upload(['a.bin'], blob('x'), { onProgress: () => {} }))).toBe('refused');
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    // One PUT, not two: the file is not sent again for a token already known to be refused.
+    expect(server.requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+    // A token that has changed since is worth a renewal again.
+    token = 'expired';
+    onUnauthorized.mockImplementation(async () => ((token = 't'), true));
+    expect((await c.children()).length).toBe(0);
+    expect(onUnauthorized).toHaveBeenCalledTimes(2);
+  });
+
   it('reports progress on an upload that asks for it', async () => {
     const server = new FakeDrive();
     const body = blob('twelve bytes');

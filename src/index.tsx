@@ -7,6 +7,7 @@ import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createDrive } from './app/drive';
 import { createDriveLinks } from './app/driveLinks';
+import { createLinkFolders } from './app/linkFolders';
 import { createLinkPasswords } from './app/linkPasswords';
 import { createErrorReporter } from './app/errors';
 import { startBranding } from './app/branding';
@@ -121,7 +122,9 @@ async function boot() {
   const drive = createDrive({ client: new DriveClient({ getToken, onUnauthorized: renewSession }), toast: toasts.toast, maxUploadBytes });
   // A link's password is kept for half an hour in this tab, and nowhere else.
   const linkPasswords = createLinkPasswords(sessionStorage);
-  const driveLinks = createDriveLinks({ drive, toast: toasts.toast, passwords: linkPasswords, maxUploadBytes });
+  // Which Drive folder belongs to which unsent message: a draft can be opened again days later.
+  const linkFolders = createLinkFolders(localStorage);
+  const driveLinks = createDriveLinks({ drive, toast: toasts.toast, passwords: linkPasswords, folders: linkFolders, maxUploadBytes });
   // Not awaited: mail does not wait to learn whether there is a Drive.
   void loadDriveConfig((url) => fetch(url, { cache: 'no-cache' })).then(drive.setConfig);
 
@@ -129,6 +132,7 @@ async function boot() {
   const leave = () => {
     auth.signOut();
     linkPasswords.clear();
+    linkFolders.clear();
     each((s) => s.recipients.stop());
     void clearCaches().finally(() => location.assign('/'));
   };

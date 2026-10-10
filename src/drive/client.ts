@@ -101,6 +101,12 @@ export class DriveClient {
   private readonly base: string;
   private readonly fetchImpl: typeof fetch;
   private found: Promise<{ id: string; name: string }> | null = null;
+  /**
+   * A token OpenCloud refused though it was fresh from a renewal. It answers 401 for reasons of its
+   * own too (it cannot ask Stalwart who the user is, or will not have them), and renewing again for
+   * the same token would only send every request, and every upload, twice.
+   */
+  private refused: string | null = null;
 
   constructor(private opts: DriveClientOptions) {
     this.base = opts.base ?? '/drive';
@@ -110,7 +116,8 @@ export class DriveClient {
   /** An authenticated request. Resolves with any answer but a 401; rejects with a DriveError when there is none. */
   private async request(path: string, init: RequestInit = {}, noTimeout = false, retried = false): Promise<Response> {
     const headers = new Headers(init.headers);
-    headers.set('authorization', `Bearer ${await this.opts.getToken()}`);
+    const token = await this.opts.getToken();
+    headers.set('authorization', `Bearer ${token}`);
     const signal = noTimeout ? undefined : AbortSignal.timeout(this.opts.timeoutMs ?? 30_000);
     let res: Response;
     try {
@@ -121,10 +128,17 @@ export class DriveClient {
       throw new DriveError('unavailable', 0, (e as Error).name === 'TimeoutError' ? 'Drive did not respond in time' : 'Drive could not be reached');
     }
     if (res.status === 401) {
-      if (!retried && (await this.opts.onUnauthorized?.())) return this.request(path, init, noTimeout, true);
+      if (!retried && (await this.renewed(token))) return this.request(path, init, noTimeout, true);
+      if (retried) this.refused = token;
       throw new DriveError('refused', 401, 'Drive refused the sign-in');
     }
     return res;
+  }
+
+  /** After a 401 for `token`: whether the token was renewed and the request is worth one more try. */
+  private async renewed(token: string): Promise<boolean> {
+    if (token === this.refused) return false;
+    return (await this.opts.onUnauthorized?.()) ?? false;
   }
 
   private fail(res: Response, what: string): never {
@@ -191,8 +205,10 @@ export class DriveClient {
     }
     const url = `${this.base}${await this.dav(path)}`;
     const put = this.opts.put ?? xhrPut;
+    let token = '';
     const send = async () => {
-      const headers = { authorization: `Bearer ${await this.opts.getToken()}`, 'content-type': type };
+      token = await this.opts.getToken();
+      const headers = { authorization: `Bearer ${token}`, 'content-type': type };
       try {
         return await put(url, body, headers, opts);
       } catch (e) {
@@ -201,7 +217,10 @@ export class DriveClient {
       }
     };
     let sent = await send();
-    if (sent.status === 401 && (await this.opts.onUnauthorized?.())) sent = await send();
+    if (sent.status === 401 && (await this.renewed(token))) {
+      sent = await send();
+      if (sent.status === 401) this.refused = token;
+    }
     if (sent.status === 401) throw new DriveError('refused', 401, 'Drive refused the sign-in');
     if (sent.status < 200 || sent.status > 299) throw new DriveError(kindOf(sent.status), sent.status, `Uploading: HTTP ${sent.status}`);
     return sent.fileId;

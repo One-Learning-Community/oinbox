@@ -5,13 +5,17 @@ import { MenuButton } from './MenuButton';
 function setup() {
   const first = vi.fn();
   const second = vi.fn();
+  const around = vi.fn<(key: string) => void>();
   render(() => (
-    <MenuButton class="icon-btn" title="Attach files" menuLabel="Attach files" items={[{ label: 'From this computer', run: first }, { label: 'From Drive', run: second }]}>
-      {/* As in the app: an icon with no text, so the title is the name. */}
-      <svg aria-hidden="true" />
-    </MenuButton>
+    // As in the composer, which closes on an Escape that reaches it.
+    <div onKeyDown={(e) => around(e.key)}>
+      <MenuButton class="icon-btn" title="Attach files" menuLabel="Attach files" items={[{ label: 'From this computer', run: first }, { label: 'From Drive', run: second }]}>
+        {/* As in the app: an icon with no text, so the title is the name. */}
+        <svg aria-hidden="true" />
+      </MenuButton>
+    </div>
   ));
-  return { first, second, button: screen.getByRole('button', { name: 'Attach files' }) };
+  return { first, second, around, button: screen.getByRole('button', { name: 'Attach files' }) };
 }
 
 describe('MenuButton', () => {
@@ -54,5 +58,15 @@ describe('MenuButton', () => {
     expect(button).toHaveFocus();
     expect(first).not.toHaveBeenCalled();
     expect(second).not.toHaveBeenCalled();
+  });
+
+  it('keeps that Escape to itself, and lets other keys through', async () => {
+    const { button, around } = setup();
+    fireEvent.click(button);
+    const [one] = await screen.findAllByRole('menuitem');
+    fireEvent.keyDown(one!, { key: 'ArrowDown' });
+    expect(around).toHaveBeenCalledWith('ArrowDown');
+    fireEvent.keyDown(one!, { key: 'Escape' });
+    expect(around).not.toHaveBeenCalledWith('Escape');
   });
 });

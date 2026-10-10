@@ -52,7 +52,8 @@
 
 	# --- Drive (OpenCloud), optional -------------------------------------------
 	# OINBOX_DRIVE_UPSTREAM is where OpenCloud's HTTP listener is. Unset: no Drive, and the app shows
-	# none (src/drive/config.ts). The values are put in as text, so the expressions below compare constants.
+	# none (src/drive/config.ts). The values are put in as text, so the expressions below compare constants,
+	# and the threshold is a JSON string: a value that is no number must not make the file unreadable.
 	handle /drive.json {
 		header {
 			Content-Type "application/json"
@@ -60,8 +61,8 @@
 			X-Content-Type-Options "nosniff"
 		}
 		@drive_on expression `"{$OINBOX_DRIVE_UPSTREAM:}" != ""`
-		respond @drive_on `{"enabled":true,"linkOverMb":{$OINBOX_DRIVE_LINK_OVER_MB:20}}`
-		respond `{"enabled":false,"linkOverMb":{$OINBOX_DRIVE_LINK_OVER_MB:20}}`
+		respond @drive_on `{"enabled":true,"linkOverMb":"{$OINBOX_DRIVE_LINK_OVER_MB:20}"}`
+		respond `{"enabled":false,"linkOverMb":"{$OINBOX_DRIVE_LINK_OVER_MB:20}"}`
 	}
 	# Only the three APIs the app uses (files, folders and links, and the sharing rules). OpenCloud's web UI and its public-link pages serve what users
 	# upload; on this origin, where the mail token is kept, they must not be reachable at all.

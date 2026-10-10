@@ -107,7 +107,7 @@ The release image is configured by environment variables. All are optional.
 | `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
 | `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
 | `OINBOX_DRIVE_UPSTREAM` | none | Where an OpenCloud's HTTP listener is, as `host:port`. Set, the app offers Drive; unset, it shows none. See "Drive". |
-| `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Past this many megabytes of attachments, a message's files are offered as a Drive link instead. A file larger than Stalwart's own upload limit is always offered as one. A number. |
+| `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Past this many megabytes of attachments, a message's files are offered as a Drive link instead. A file larger than Stalwart's own upload limit is always offered as one. A number; anything else counts as 20. |
 
 ### Branding
 
@@ -149,7 +149,7 @@ Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/
 - *What a user is known by.* With the settings above the OpenCloud user is the e-mail address, so a renamed mailbox gets a new, empty drive. Setting `PROXY_USER_OIDC_CLAIM=sub` and `PROXY_AUTOPROVISION_CLAIM_USERNAME=sub` keeps the drive across a rename; the user is then known by Stalwart's account number. Choose before anyone signs in: changing it afterwards makes new users. oinbox works with either.
 - *Links are opened at OpenCloud's own address.* A link in a sent message is whatever OpenCloud makes from its `OC_URL`, so that address has to be reachable by the people your users write to, even though oinbox itself reaches OpenCloud privately.
 - *Link passwords.* OpenCloud requires a password on every public link unless `OC_SHARING_PUBLIC_SHARE_MUST_HAVE_PASSWORD=false`. oinbox follows whichever you choose: required, the sender types or generates one; not required, the step is optional. The sender decides whether the password goes in the message or is passed on another way. oinbox never stores it, beyond half an hour in the sender's own browser tab.
-- *Where the files go.* Each message's files are in `Mail attachments/<date> <subject>` in the sender's drive, and stay there after sending; discarding the draft removes them. They count against the sender's Drive quota, not Stalwart's.
+- *Where the files go.* Each message's files are in `Mail attachments/<date> <subject>` in the sender's drive, and stay there after sending; discarding the draft removes them. Which folder is a draft's is remembered in the browser that made the link (for 90 days, until the message is sent or the user signs out): a draft discarded from another browser leaves its folder and link in Drive, to be removed there by hand. They count against the sender's Drive quota, not Stalwart's.
 - *Trust.* Every Drive request carries the user's mail token to OpenCloud. Run only an OpenCloud you would trust with the mail.
 - *Signing out.* A token Stalwart has revoked (a changed password, say) stops working in OpenCloud within a second.
 

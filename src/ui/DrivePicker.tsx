@@ -62,6 +62,8 @@ function Picker(props: { mode: 'save' | 'pick'; count: number }) {
     }
   };
   createEffect(on(trail, () => void load()));
+  // A ticked file was not what this listing said it was: show the folder as it is now.
+  createEffect(on(drive.changed, () => void load(), { defer: true }));
   void drive.client.drive().then((d) => setRootName(d.name), () => {});
 
   const enter = (item: DriveItem) => setTrail([...trail(), { id: item.id, name: item.name }]);
@@ -158,9 +160,9 @@ function Picker(props: { mode: 'save' | 'pick'; count: number }) {
     );
   };
 
-  // A save cannot be stopped half-way; a fetch of files to attach can.
+  // Cancel works at any time: it stops a save or a fetch that is under way.
   return (
-    <Dialog open onOpenChange={(open) => !open && (!busy() || picking) && drive.cancel()} ariaLabelledby="drive-picker-title">
+    <Dialog open onOpenChange={(open) => !open && drive.cancel()} ariaLabelledby="drive-picker-title">
       <div class="drive-picker">
         <h2 id="drive-picker-title">{title()}</h2>
         <nav class="drive-crumbs" aria-label="Folder path">
@@ -220,7 +222,7 @@ function Picker(props: { mode: 'save' | 'pick'; count: number }) {
                 <Icon name="add" /> New folder
               </button>
             </Show>
-            <button type="button" disabled={busy() && !picking} onClick={() => drive.cancel()}>Cancel</button>
+            <button type="button" onClick={() => drive.cancel()}>Cancel</button>
             <Show when={picking} fallback={
               <button type="button" class="primary" disabled={!ready()} onClick={() => void save()}>
                 {busy() ? 'Saving…' : 'Save here'}

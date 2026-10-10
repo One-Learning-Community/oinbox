@@ -344,3 +344,39 @@ describe('DrivePicker, stopping an attach', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 });
+
+describe('DrivePicker, stopping a save', () => {
+  it('can be cancelled while a file is going up', async () => {
+    const { server, drive, open } = setup();
+    await drive.client.drive();
+    open();
+    await screen.findByText('This folder is empty.');
+    server.stall = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Save here' }));
+    expect(await screen.findByRole('button', { name: 'Saving…' })).toBeDisabled();
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(server.names([])).toEqual([]);
+  });
+});
+
+describe('DrivePicker, a file that is not what the listing said', () => {
+  it('lists the folder again, so the next try is of the file as it is', async () => {
+    const { server, toast, pick, deliver } = setup((s) => {
+      s.put(['notes.txt'], blob('hello'));
+    });
+    pick();
+    const box = await screen.findByRole('checkbox', { name: /notes\.txt/ });
+    server.put(['notes.txt'], blob('hello, and more since'));
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Couldn't attach from Drive: notes.txt changed while it was being fetched. Choose it again.", 'error'));
+    // The new listing has the new size, and nothing ticked.
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /notes\.txt/ })).not.toBeChecked());
+    fireEvent.click(screen.getByRole('checkbox', { name: /notes\.txt/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+    await waitFor(() => expect(deliver).toHaveBeenCalledOnce());
+  });
+});
