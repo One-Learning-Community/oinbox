@@ -2,7 +2,9 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.0-beta.3
+
+Tested against Stalwart 0.16.23 with Meilisearch 1.54, and OpenCloud 7.2.4 and 8.1.0 for Drive.
 
 ### Added
 

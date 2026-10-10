@@ -13,7 +13,7 @@ describe('errorMessage', () => {
 
 describe('errorDetails', () => {
   it('ends with the version label', () => {
-    expect(errorDetails(new Error('boom'))).toMatch(/^boom\n[\s\S]*oinbox 0\.1\.0-beta\.2 \(/);
+    expect(errorDetails(new Error('boom'))).toMatch(/^boom\n[\s\S]*oinbox 0\.1\.0-beta\.3 \(/);
   });
 });
 

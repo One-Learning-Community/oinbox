@@ -189,7 +189,7 @@ If it does not work:
 | New mail appears only after a reload | The proxy is buffering the push connection (job 3). |
 | Search finds nothing, or misses recent mail | No search store, or its index is behind: Stalwart indexes shortly after delivery, not at once. |
 
-The version is shown at the bottom of Settings (`oinbox 0.1.0-beta.2 (abc1234)`); quote it in bug reports.
+The version is shown at the bottom of Settings (`oinbox 0.1.0-beta.3 (abc1234)`); quote it in bug reports.
 
 ## Upgrading
 
