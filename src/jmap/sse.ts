@@ -83,7 +83,7 @@ const STALE_MS = 75_000;
 const ASSUME_OPEN_MS = 2000;
 
 /** Data types oinbox wants StateChange pushes for. */
-export const PUSH_TYPES = 'Email,Mailbox,Thread,EmailDelivery,Calendar,CalendarEvent';
+export const PUSH_TYPES = 'Email,Mailbox,Thread,EmailDelivery,Calendar,CalendarEvent,ContactCard,AddressBook';
 
 /**
  * Keep a JMAP push connection open, reconnecting with capped exponential backoff.

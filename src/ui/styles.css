@@ -743,6 +743,8 @@ a { color: var(--accent); }
 .rozie-dialog.contact-dialog { --rozie-dialog-max-width: 600px; }
 .contact-form { display: flex; flex-direction: column; width: min(552px, calc(100vw - 80px)); max-height: calc(100dvh - 120px); }
 .contact-form-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px 4px 2px 2px; }
+/* The body scrolls: its rows keep their height and are never squeezed to fit. */
+.contact-form-body > * { flex: none; }
 .contact-form label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .contact-form label > span, .contact-form legend { color: var(--text-2); font-size: 13px; }
 .contact-form fieldset { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }

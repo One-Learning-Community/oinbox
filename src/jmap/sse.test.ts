@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { JmapClient, UnauthorizedError } from './client';
-import { openPushStream, SseParser } from './sse';
+import { openPushStream, PUSH_TYPES, SseParser } from './sse';
 import type { Session } from './types';
 
 function fakeSession(): Session {
@@ -209,5 +209,11 @@ describe('openPushStream', () => {
     push.wake();
     await vi.waitFor(() => expect(calls).toBeGreaterThanOrEqual(2));
     push.close();
+  });
+});
+
+describe('PUSH_TYPES', () => {
+  it('asks for the address book, so a card changed on another device arrives', () => {
+    expect(PUSH_TYPES.split(',')).toEqual(expect.arrayContaining(['ContactCard', 'AddressBook']));
   });
 });

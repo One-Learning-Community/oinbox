@@ -121,6 +121,15 @@ describe('ContactsView', () => {
     expect(names()).toEqual(['Adam Zeller', 'Mia Mid']);
   });
 
+  it('follows a change made to the open card elsewhere, in the card and in the list', async () => {
+    const { show, adam, contacts, fake } = await seeded();
+    show(`/contacts/${adam.id}`, routes);
+    fake.handle('ContactCard/set', { accountId: 'a1', update: { [adam.id]: { name: { components: [{ kind: 'given', value: 'Adam' }, { kind: 'surname', value: 'After' }], isOrdered: true, full: 'Adam After' } } } }, [CONTACTS]);
+    contacts.onStateChange({ '@type': 'StateChange', changed: { a1: { ContactCard: `k${fake.cardState}` } } });
+    expect(await screen.findByRole('heading', { name: 'Adam After' })).toBeInTheDocument();
+    expect(names()).toEqual(['Adam After', 'Mia Mid', 'Zoë Probe']);
+  });
+
   it('goes back to the list, saying why, when the open card is deleted elsewhere', async () => {
     const { show, zoe, contacts, fake, toast, path } = await seeded();
     show(`/contacts/${zoe.id}`, routes);
