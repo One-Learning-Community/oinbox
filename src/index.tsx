@@ -221,7 +221,7 @@ async function boot() {
     (info) => {
       const engine = new MailEngine(client, { accountId: info.id });
       // Before the warm-start snapshot is applied, so it sees every email.
-      const recipients = createRecipients(engine, { directory });
+      const recipients = createRecipients(engine, { directory, contacts });
       return {
         engine,
         recipients,

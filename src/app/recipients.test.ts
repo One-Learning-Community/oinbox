@@ -1,6 +1,7 @@
-import { createRoot } from 'solid-js';
+import { createRoot, createSignal } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadRecipients, saveRecipients } from '../cache/persist';
+import type { ContactCard } from '../jmap/types';
 import { DEFAULT_SORT, MailEngine } from '../sync/engine';
 import { FakeJmap } from '../sync/fake-jmap';
 import { createRecipients } from './recipients';
@@ -202,5 +203,17 @@ describe('createRecipients with the organisation directory', () => {
     const store = createRecipients(engine, { saveDelayMs: 0 });
     await store.start(ME);
     expect(store.suggest('ali', nobody).map((r) => r.email)).toEqual([ME]);
+  });
+});
+
+describe('createRecipients with saved contacts', () => {
+  it('offers saved people, and follows the address book as it changes', () => {
+    const { engine } = setup();
+    const zoe: ContactCard = { id: 'c1', addressBookIds: { b: true }, name: { components: [{ kind: 'given', value: 'Zoë' }, { kind: 'surname', value: 'Probe' }] }, emails: { e: { address: 'zoe@saved.example' } } };
+    const [people, setPeople] = createSignal<ContactCard[]>([zoe]);
+    const store = createRoot(() => createRecipients(engine, { saveDelayMs: 0, contacts: { people } }));
+    expect(store.suggest('zo', nobody)).toEqual([expect.objectContaining({ email: 'zoe@saved.example', name: 'Zoë Probe', saved: true, contactId: 'c1' })]);
+    setPeople([]);
+    expect(store.suggest('zo', nobody)).toEqual([]);
   });
 });

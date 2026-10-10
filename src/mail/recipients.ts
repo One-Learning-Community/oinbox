@@ -1,6 +1,8 @@
-// Recipient suggestions from mail history: a per-address contact count and its ranking.
+// Recipient suggestions: a per-address count of contact from mail history, and the ranking that puts
+// it together with saved contacts and the organisation's directory.
 // Pure: no Solid, no JMAP.
-import type { EmailAddress } from '../jmap/types';
+import type { SavedEntry } from '../contacts/saved';
+import type { EmailAddress, Id } from '../jmap/types';
 import { parseAddressList } from './compose';
 import type { DirectoryEntry } from './directory';
 
@@ -17,6 +19,12 @@ export interface Recipient {
   last: string;
   /** Set on a suggestion from the organisation's directory: whether it is a group. Never stored. */
   group?: boolean;
+  /** Set on a suggestion for a saved contact. Never stored. */
+  saved?: boolean;
+  /** The saved contact's card. Never stored. */
+  contactId?: Id;
+  /** Set on a saved contact's preferred address. Never stored. */
+  preferred?: boolean;
 }
 
 /** Keyed by the lower-cased address. */
@@ -68,12 +76,15 @@ export function compareRecipients(a: Recipient, b: Recipient): number {
   );
 }
 
+/** Lower case, without accents: "zoe" finds Zoë, as it does on the Contacts page. */
+const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
 function tokens(r: Recipient): string[] {
   const email = r.email.toLowerCase();
   const local = mailbox(email);
   const labels = domain(email).split('.');
   return [
-    ...r.name.toLowerCase().split(/[^\p{L}\p{N}]+/u),
+    ...fold(r.name).split(/[^\p{L}\p{N}]+/u),
     local,
     ...local.split(/[._+-]/),
     ...labels.map((_, i) => labels.slice(i).join('.')),
@@ -81,38 +92,64 @@ function tokens(r: Recipient): string[] {
   ].filter(Boolean);
 }
 
-/** A suggestion's rank: people written to, then the organisation, then everyone else. */
-const tier = (r: Recipient) => (r.sent > 0 ? 0 : r.group !== undefined ? 1 : 2);
+/** A suggestion's rank: people written to, then saved contacts, then the organisation, then everyone else. */
 const sortName = (r: Recipient) => (r.name || r.email).toLowerCase();
+const tier = (r: Recipient) => (r.sent > 0 ? 0 : r.saved ? 1 : r.group !== undefined ? 2 : 3);
 
-/** As `compareRecipients`, with colleagues not yet written to ahead of strangers, by name. */
+/** As `compareRecipients`, with saved people and colleagues not yet written to ahead of strangers, by name. */
 function compareSuggestions(a: Recipient, b: Recipient): number {
   const rank = tier(a) - tier(b);
   if (rank) return rank;
-  if (tier(a) === 1) return sortName(a) < sortName(b) ? -1 : sortName(a) > sortName(b) ? 1 : 0;
+  if (tier(a) === 1 || tier(a) === 2) {
+    const byName = sortName(a) < sortName(b) ? -1 : sortName(a) > sortName(b) ? 1 : 0;
+    return byName || Number(!!b.preferred) - Number(!!a.preferred) || (a.email < b.email ? -1 : a.email > b.email ? 1 : 0);
+  }
   return compareRecipients(a, b);
 }
 
 /**
  * People matching `query`: every query word must be a prefix of one of the person's tokens.
- * With a `directory`, the organisation's people and groups are offered too, under the names it gives them.
+ * With a `directory`, the organisation's people and groups are offered too, under the names it gives them;
+ * with `saved`, so are saved contacts, under the names they were saved with, whatever else knows the address.
  */
 export function suggest(
   index: RecipientIndex,
   query: string,
-  opts: { exclude: Set<string>; limit: number; directory?: DirectoryEntry[] },
+  opts: { exclude: Set<string>; limit: number; directory?: DirectoryEntry[]; saved?: SavedEntry[] },
 ): Recipient[] {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const words = fold(query.trim()).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const out: Recipient[] = [];
-  const offer = (key: string, r: Recipient) => {
+  const offer = (key: string, r: Recipient, more: string[] = []) => {
     if (opts.exclude.has(key)) return;
-    const t = tokens(r);
+    const t = more.length ? [...tokens(r), ...more] : tokens(r);
     if (words.every((w) => t.some((x) => x.startsWith(w)))) out.push(r);
   };
   const listed = new Set<string>();
+  const inDirectory = new Map((opts.directory ?? []).map((d) => [d.email.toLowerCase(), d]));
+  for (const entry of opts.saved ?? []) {
+    const key = entry.email.toLowerCase();
+    if (listed.has(key)) continue;
+    listed.add(key);
+    const known = index[key];
+    const colleague = inDirectory.get(key);
+    offer(
+      key,
+      {
+        ...(known ?? { sent: 0, received: 0, last: '' }),
+        email: entry.email,
+        name: entry.name || colleague?.name || known?.name || '',
+        saved: true,
+        contactId: entry.contactId,
+        preferred: entry.preferred,
+        ...(colleague ? { group: colleague.group } : {}),
+      },
+      entry.words.flatMap((w) => fold(w).split(/[^\p{L}\p{N}]+/u)).filter(Boolean),
+    );
+  }
   for (const entry of opts.directory ?? []) {
     const key = entry.email.toLowerCase();
+    if (listed.has(key)) continue;
     listed.add(key);
     const known = index[key];
     offer(key, known ? { ...known, name: entry.name || known.name, group: entry.group } : { email: entry.email, name: entry.name, sent: 0, received: 0, last: '', group: entry.group });

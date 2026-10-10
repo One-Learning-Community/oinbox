@@ -158,6 +158,9 @@ export function RecipientField(props: {
                 <Show when={r().group}>
                   <span class="rcpt-group">Group</span>
                 </Show>
+                <Show when={r().saved}>
+                  <span class="rcpt-group">Contact</span>
+                </Show>
               </span>
             );
           }}

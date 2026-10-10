@@ -368,6 +368,7 @@ a { color: var(--accent); }
 .rcpt-email { color: var(--text-3); font-size: 12px; white-space: nowrap; }
 /* A group account among the suggestions, such as a shared mailbox: not a person. */
 .rcpt-group { flex: none; margin-left: auto; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-2); font-size: 11px; }
+.rcpt-group + .rcpt-group { margin-left: 4px; }
 .compose-cc-toggle { align-self: flex-end; margin: -28px 16px 8px 0; position: relative; }
 .compose-body { flex: 1; overflow: auto; padding: 8px 16px; min-height: 160px; }
 .compose-editor { outline: none; min-height: 120px; font-size: 14px; }

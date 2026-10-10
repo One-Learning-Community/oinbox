@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { SavedEntry } from '../contacts/saved';
 import {
   add,
   addUnique,
@@ -235,5 +236,37 @@ describe('suggest with the organisation directory', () => {
     const before = JSON.stringify(index);
     suggest(index, 'e', withDirectory);
     expect(JSON.stringify(index)).toBe(before);
+  });
+});
+
+describe('suggest with saved contacts', () => {
+  const opts = { exclude: new Set<string>(), limit: 6 };
+  const entry = (email: string, name: string, more: Partial<SavedEntry> = {}): SavedEntry => ({ email, name, preferred: true, words: [], contactId: 'c1', ...more });
+  it('ranks written-to, then saved, then the organisation, then strangers', () => {
+    const index = add(add({}, [{ name: 'Sam Sent', email: 'sam@x.example' }], 'sent', '2026-01-02T00:00:00Z'), [{ name: 'Sal Stranger', email: 'sal@x.example' }], 'received', '2026-01-03T00:00:00Z');
+    const out = suggest(index, 's', { ...opts, saved: [entry('sue@x.example', 'Sue Saved')], directory: [{ email: 'sid@x.example', name: 'Sid Staff', group: false }] });
+    expect(out.map((r) => r.email)).toEqual(['sam@x.example', 'sue@x.example', 'sid@x.example', 'sal@x.example']);
+    expect(out[1]).toMatchObject({ saved: true, contactId: 'c1', name: 'Sue Saved' });
+  });
+  it('shows the saved name over the directory\'s and the mail history\'s, in one row', () => {
+    const index = add({}, [{ name: 'zoe (work)', email: 'Zoe@x.example' }], 'sent', '2026-01-02T00:00:00Z');
+    const out = suggest(index, 'zo', { ...opts, saved: [entry('zoe@x.example', 'Dr Zoë Probe')], directory: [{ email: 'zoe@x.example', name: 'Zoe P', group: false }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ name: 'Dr Zoë Probe', saved: true, sent: 1, group: false });
+  });
+  it('finds a saved person by organisation or nickname', () => {
+    const saved = [entry('zoe@x.example', 'Zoë Probe', { words: ['Acme Ltd', 'Research', 'Zed'] })];
+    expect(suggest({}, 'acm', { ...opts, saved }).map((r) => r.email)).toEqual(['zoe@x.example']);
+    expect(suggest({}, 'zed', { ...opts, saved })).toHaveLength(1);
+    expect(suggest({}, 'beta', { ...opts, saved })).toHaveLength(0);
+  });
+  it('offers each address of a person, the preferred first', () => {
+    const saved = [entry('home@x.example', 'Zoë Probe', { preferred: false }), entry('work@x.example', 'Zoë Probe')];
+    expect(suggest({}, 'zoe', { ...opts, saved }).map((r) => r.email)).toEqual(['work@x.example', 'home@x.example']);
+  });
+  it('offers a saved address even if it looks like a robot, and honours exclude', () => {
+    const saved = [entry('noreply@shop.example', 'The Shop')];
+    expect(suggest({}, 'shop', { ...opts, saved })).toHaveLength(1);
+    expect(suggest({}, 'shop', { ...opts, exclude: new Set(['noreply@shop.example']), saved })).toHaveLength(0);
   });
 });

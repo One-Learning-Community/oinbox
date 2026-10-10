@@ -1,6 +1,7 @@
-import { batch, createSignal } from 'solid-js';
+import { batch, createMemo, createSignal } from 'solid-js';
 import { loadRecipients, saveRecipients } from '../cache/persist';
-import type { EmailAddress } from '../jmap/types';
+import { savedEntries } from '../contacts/saved';
+import type { ContactCard, EmailAddress } from '../jmap/types';
 import { add, compareRecipients, suggest as rank, type ContactKind, type Recipient, type RecipientCache, type RecipientIndex } from '../mail/recipients';
 import type { MailEngine } from '../sync/engine';
 import type { Directory } from './directory';
@@ -25,9 +26,9 @@ export interface Recipients {
 
 /**
  * Recipient suggestions from mail history (Sent recipients, senders of synced mail, messages just sent)
- * and, where the server lists one, from the organisation's `directory`.
+ * from the address book (`contacts`) and, where the server lists one, from the organisation's `directory`.
  */
-export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: number; directory?: Directory } = {}): Recipients {
+export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: number; directory?: Directory; contacts?: { people: () => ContactCard[] } } = {}): Recipients {
   const index: RecipientIndex = {};
   /** Ids of emails already counted, oldest first. */
   const counted = new Set<string>();
@@ -38,6 +39,7 @@ export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: numbe
   let pending: (() => void)[] | null = [];
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  const saved = createMemo(() => (opts.contacts ? savedEntries(opts.contacts.people()) : []));
 
   const snapshot = (): RecipientCache => ({
     index: Object.fromEntries(
@@ -95,7 +97,7 @@ export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: numbe
       const mine = engine.state.identities
         .filter((i) => !known.has(i.email.toLowerCase()) && (known.add(i.email.toLowerCase()), true))
         .map((i) => ({ email: i.email, name: i.name ?? '', group: false }));
-      return rank(index, query, { exclude, limit: SUGGESTIONS, directory: [...listed, ...mine] });
+      return rank(index, query, { exclude, limit: SUGGESTIONS, directory: [...listed, ...mine], saved: saved() });
     },
     recordSent: (emailId, addresses) => whenLoaded(() => count(emailId, addresses, 'sent', new Date().toISOString())),
     start: async (user) => {
