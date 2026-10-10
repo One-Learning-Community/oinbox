@@ -296,4 +296,18 @@ test('@phone the list fills the screen, a tap opens the card, and the dialog fil
 
   await page.getByRole('link', { name: 'Back to contacts' }).tap();
   await expect(rowNames(page)).toHaveCount(2);
+
+  // A recipient's name is a button now: on a touch screen it must be big enough to hit.
+  await page.goto('/inbox');
+  await page.getByRole('button', { name: 'Menu' }).tap();
+  await page.getByRole('button', { name: 'Compose' }).tap();
+  const c = floatingComposer(page);
+  await recipientInput(c).fill('zoe.probe-smith@a-rather-long-domain-name.example');
+  await recipientInput(c).press('Enter');
+  const chip = recipientChips(c).locator('button.person');
+  const size = (await chip.boundingBox())!;
+  expect(size.height).toBeGreaterThanOrEqual(43.5);
+  await chip.tap();
+  await expect(page.getByRole('dialog', { name: 'Zoë Probe-Smith' }).getByRole('button', { name: 'Edit contact' })).toBeVisible();
+  await noSidewaysScroll(page, 'composer with the person card open');
 });

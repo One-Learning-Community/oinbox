@@ -808,4 +808,7 @@ a { color: var(--accent); }
 .person-actions button:hover, .person-actions a:hover { background: var(--hover); }
 @media (pointer: coarse) {
   .person-actions button, .person-actions a { display: inline-flex; align-items: center; min-height: 44px; }
+  /* A name is a small thing to hit with a finger: the button is taller than its text. */
+  .person { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+  .msg-meta .to { overflow: visible; white-space: normal; }
 }
