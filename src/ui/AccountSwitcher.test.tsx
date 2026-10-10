@@ -15,6 +15,7 @@ function setup(list: AccountSpace[], unread: Record<string, number>, start = 'b'
     unread: (s) => unread[s.info.id] ?? 0,
     totalUnread: () => Object.values(unread).reduce((a, b) => a + b, 0),
     show: setCur,
+    hide: () => {},
   };
   const switched: string[] = [];
   const view = render(() => <AccountSwitcher spaces={spaces} onSwitch={(s) => switched.push(s.info.id)} />);
