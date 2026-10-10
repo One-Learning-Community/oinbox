@@ -19,6 +19,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Shared mailboxes**: a Stalwart group you belong to (`support@`, say) appears in a switcher above Compose. Work its inbox and send from it; unread counts for every mailbox are always in view.
 - **Notifications**: the unread count in the tab title, and desktop notifications for new Inbox mail while oinbox is open in a tab you're not looking at (switched on in Settings).
 - **Branding**: your own name and logo in place of "oinbox", set by the operator.
+- **Pictures**: image attachments show as thumbnails and open in a full-screen viewer.
 - **Drive**: where an [OpenCloud](https://opencloud.eu) runs beside Stalwart, save a message's attachments into a Drive folder, attach files from Drive when writing, and send files too large for mail as a Drive link with a password and an expiry, all with no second sign-in.
 - **Calendar**: month, week and day views of your Stalwart calendars; create, move, resize, rename and delete single events; invitations shown in the message with Accept, Maybe and Decline, and updates and cancellations followed.
 - **Safety**: message HTML is sanitized and shown in a sandboxed frame that runs no scripts, under its own Content-Security-Policy; remote images are blocked until you allow them, per message or per sender.

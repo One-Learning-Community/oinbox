@@ -199,10 +199,47 @@ a { color: var(--accent); }
 .quote-toggle { display: inline-block; margin: 6px 0; padding: 0 8px; border: 0; border-radius: 8px; background: var(--chip); cursor: pointer; font-weight: 700; letter-spacing: 1px; }
 .images-banner { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface-2); font-size: 13px; color: var(--text-2); }
 .images-banner button { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; }
-.attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.attachments { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: 16px; }
 .attachment { display: flex; align-items: center; gap: 8px; max-width: 240px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
 .attachment span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .attachment small { color: var(--text-3); }
+/* A picture among the attachments: the image over its name, size and one action. */
+.attachment-tile { display: flex; flex-direction: column; width: 180px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.attachment-thumb { display: grid; place-items: center; height: 120px; padding: 0; border: 0; background: var(--surface-2); color: var(--text-3); cursor: zoom-in; }
+.attachment-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.attachment-thumb img { width: 100%; height: 120px; object-fit: cover; display: block; }
+.attachment-thumb svg { width: 32px; height: 32px; }
+.attachment-tile-foot { display: flex; align-items: center; gap: 4px; padding: 4px 2px 4px 10px; min-width: 0; }
+.attachment-tile-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.attachment-tile-name span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-tile-name small { color: var(--text-3); }
+.attachment-tile-foot .icon-btn { width: 36px; height: 36px; }
+@media (pointer: coarse) { .attachment-tile-foot .icon-btn { width: 44px; height: 44px; } }
+
+/* The picture viewer: the whole window, dark in either theme so the picture is what shows. */
+.rozie-dialog.image-viewer {
+  --rozie-dialog-max-width: 100vw; --rozie-dialog-max-height: 100dvh; --rozie-dialog-radius: 0; --rozie-dialog-padding: 0;
+  --rozie-dialog-bg: #16181b; --rozie-dialog-color: #f1f3f4; --rozie-dialog-shadow: none;
+  --text-2: #dadce0; --hover: rgb(255 255 255 / 12%); --accent: #8ab4f8;
+  width: 100vw; height: 100dvh;
+}
+.image-viewer .rozie-dialog-panel { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+.image-viewer-bar { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 20px; flex: none; }
+.image-viewer-name { flex: 1; min-width: 0; }
+.rozie-dialog.image-viewer h2 { margin: 0; font-size: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.image-viewer-name small { color: #bdc1c6; }
+.image-viewer-save { border: 1px solid #5f6368; border-radius: 18px; background: none; padding: 6px 14px; margin-right: 4px; cursor: pointer; white-space: nowrap; }
+.image-viewer-save:hover { background: var(--hover); }
+.image-viewer-stage { flex: 1; min-height: 0; display: flex; align-items: center; gap: 4px; padding: 0 4px 12px; }
+.image-viewer-frame { flex: 1; min-width: 0; height: 100%; display: grid; place-items: center; }
+.image-viewer-frame img { max-width: 100%; max-height: 100%; object-fit: contain; min-height: 0; }
+.rozie-dialog.image-viewer .image-viewer-frame p { margin: 0; color: #dadce0; text-align: center; padding: 0 16px; }
+.image-viewer-step:disabled { opacity: 0.3; cursor: default; }
+.image-viewer-step:disabled:hover { background: transparent; }
+@media (pointer: coarse) {
+  .image-viewer .icon-btn { width: 44px; height: 44px; }
+  .image-viewer-save { min-height: 44px; }
+}
 .older-pill { display: flex; align-items: center; gap: 12px; padding: 4px 16px; cursor: pointer; border-bottom: 1px solid var(--border); }
 .older-pill span { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); font-size: 13px; }
 .deleted-link { padding: 8px 16px 8px 68px; color: var(--text-3); font-size: 13px; }
