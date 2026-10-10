@@ -284,6 +284,8 @@ test('@phone the list fills the screen, a tap opens the card, and the dialog fil
   await card(page).getByRole('button', { name: 'Edit' }).tap();
   const d = dialog(page);
   await expect(d.getByLabel('Given name')).toBeVisible();
+  // The dialog grows into place: measure it once it has.
+  await page.waitForFunction(() => document.getAnimations().every((x) => x.playState !== 'running'));
   const box = (await d.boundingBox())!;
   expect(box.width).toBeGreaterThanOrEqual(388);
   await noSidewaysScroll(page, 'contact dialog');

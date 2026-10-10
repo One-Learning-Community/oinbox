@@ -11,10 +11,11 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Conversations**: server threads with every message, including your own replies, oldest to newest. Read messages collapse; quoted text folds behind "•••".
 - **Thread list**: one row per conversation, virtualized and paged from the server, kept live over push.
 - **Search**: Gmail operators (`from: to: cc: bcc: subject: has:attachment is: in: label: before: after: older_than: newer_than: larger: smaller:`, `-`, `OR`, `{…}`, `(…)`) with highlighted snippets.
-- **Compose**: inline reply, reply-all and forward; recipient suggestions from your mail history and the organisation's people and groups; identities and signatures; draft autosave; attachments; 10-second undo send.
+- **Compose**: inline reply, reply-all and forward; recipient suggestions from your mail history, your contacts and the organisation's people and groups; identities and signatures; draft autosave; attachments; 10-second undo send.
+- **Contacts**: an address book kept in Stalwart (JMAP Contacts), so a phone syncing over CardDAV sees the same people. View, search, add, edit and delete, with photos; live across devices; save someone straight from a message; saved people are suggested when you write.
 - **Triage**: archive, delete, spam, read/unread, star, move, label; optimistic, with rollback and Undo.
 - **Labels**: create, rename, nest and delete; label from the list or an open thread.
-- **Keyboard**: Gmail's shortcuts (`j k o u x e # ! s I U v l c r a f / g+i ?`).
+- **Keyboard**: Gmail's shortcuts (`j k o u x e # ! s I U v l c r a f / g+i ?`), and `g` then `p` for Contacts.
 - **Settings**: identities and signatures, vacation responder, notifications, changing your password.
 - **Shared mailboxes**: a Stalwart group you belong to (`support@`, say) appears in a switcher above Compose. Work its inbox and send from it; unread counts for every mailbox are always in view.
 - **Notifications**: the unread count in the tab title, and desktop notifications for new Inbox mail while oinbox is open in a tab you're not looking at (switched on in Settings).
@@ -27,7 +28,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 
 ### Not in v1
 
-Contacts and an address book, a filter (Sieve) editor, accounts on more than one server, a combined inbox across mailboxes, offline use, PGP and S/MIME, editing recurring events or answering one occurrence of a series, free/busy, an installable app, and translations.
+Contact groups and vCard import and export, shared and team address books, a filter (Sieve) editor, accounts on more than one server, a combined inbox across mailboxes, offline use, PGP and S/MIME, editing recurring events or answering one occurrence of a series, free/busy, an installable app, and translations.
 
 ## Install
 
@@ -49,6 +50,7 @@ From the beta audit ([docs/beta-audit.md](docs/beta-audit.md) has the detail and
 - **Safari: keyboard shortcuts stop working after you click inside a message** until you click outside it again (E5).
 - **Events cannot be moved or resized from the keyboard.** They can be created with "New event" and renamed, re-filed and deleted from their card (A9).
 - An event's card can cover a neighbouring event in Firefox and Safari until it is closed (E2). In Safari the label name is not pre-selected in the Rename dialog (E3). Closing the label picker with Escape leaves focus on the page (A10). In a long thread on a phone, Send can be below the fold while you type a reply (P1). At 360px the calendar toolbar wraps unevenly and message dates wrap onto three lines (P5, P6).
+- **Contacts** go into your default address book; other address books you already have are shown and edited where they are, but oinbox does not create or manage address books. The whole address book is held in the browser and searched there. A postal address edited in oinbox is stored as one block of text, without its separate parts.
 - Attachments are bounded by Stalwart's upload quota: 50 MB per account per hour by default. Where there is a Drive, larger files are sent as a link instead.
 
 ## Develop
@@ -83,7 +85,8 @@ GitHub Actions runs the unit tests, the build, the four browser projects (each a
 | `src/sync/` | Normalized cache and live query windows; `/changes` catch-up; optimistic mutations; connection status |
 | `src/mail/` | Pure mail logic: search parser, sanitizer, quote folding, compose, participants |
 | `src/calendar/` | Calendar store, recurrence expansion, invitations |
-| `src/app/` | Actions, composers, labels, settings, error reporting, draft rescue |
+| `src/contacts/` | Pure contact logic: reading and writing a JSContact card, the form and its patch, sort and search |
+| `src/app/` | Actions, composers, labels, settings, the address book, error reporting, draft rescue |
 | `src/cache/` | IndexedDB warm-start snapshot |
 | `src/auth/` | OAuth 2 authorization code with PKCE (public client) |
 | `src/ui/` | Solid components, built on [rozie.js](docs/rozie-feedback.md) (Toast, CommandPalette, TipTap, Combobox, Dialog, FullCalendar, Popover, DatePicker, Switch) |

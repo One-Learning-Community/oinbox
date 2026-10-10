@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { openInbox, rows } from './support/app';
+import { createCards, destroyCards, named } from './support/contacts';
 
 // WCAG 2.1 A and AA. Only serious and critical violations fail a test; the rest are read in audits.
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
@@ -30,6 +31,27 @@ const openThread = async (page: Page) => {
 const openCalendar = async (page: Page) => {
   await page.goto('/calendar');
   await page.locator('.calendar-view .fc-event').first().waitFor();
+};
+
+// The contact screens need someone in alice's address book: one card, there for the length of a test.
+const made: string[] = [];
+test.afterEach(async () => destroyCards(made.splice(0)));
+const openContact = async (page: Page) => {
+  const [id] = await createCards([
+    named('E2e', 'Axe', {
+      emails: { e1: { address: 'e2e-axe@work.example', contexts: { work: true }, pref: 1 }, e2: { address: 'e2e-axe@home.example' } },
+      phones: { p1: { number: '+1 555 0100', features: { mobile: true } } },
+      organizations: { o1: { name: 'Acme Ltd', units: [{ name: 'Research' }] } },
+      titles: { t1: { name: 'Head of Research', kind: 'title' } },
+      addresses: { a1: { full: '12 High St\nLeeds' } },
+      anniversaries: { b1: { kind: 'birth', date: { '@type': 'PartialDate', month: 3, day: 14 } } },
+      notes: { n1: { note: 'Likes tea.' } },
+      nicknames: { k1: { name: 'Axey' } },
+    }),
+  ]);
+  made.push(id!);
+  await page.goto(`/contacts/${id}`);
+  await page.locator('.contact-card').getByRole('heading', { name: 'E2e Axe' }).waitFor();
 };
 
 const screens: Record<string, (page: Page) => Promise<void>> = {
@@ -76,6 +98,30 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
     await openInbox(page);
     await page.getByRole('button', { name: 'New label' }).click();
     await page.getByRole('dialog').waitFor();
+  },
+  'contacts, empty': async (page) => {
+    await page.goto('/contacts');
+    await page.locator('.contacts-count').waitFor();
+  },
+  'contact list and card': openContact,
+  'contact dialog': async (page) => {
+    await openContact(page);
+    await page.locator('.contact-card').getByRole('button', { name: 'Edit' }).click();
+    await page.locator('.contact-dialog').getByLabel('Given name').waitFor();
+  },
+  'contact dialog with errors': async (page) => {
+    await page.goto('/contacts');
+    await page.locator('.contacts-count').waitFor();
+    await page.getByRole('button', { name: 'New contact' }).first().click();
+    const d = page.locator('.contact-dialog');
+    await d.getByLabel('Email 1', { exact: true }).fill('not an address');
+    await d.getByRole('button', { name: 'Save' }).click();
+    await d.getByText('This is not an email address.').waitFor();
+  },
+  'person popover': async (page) => {
+    await openThread(page);
+    await page.locator('article.msg .person.addr').last().click();
+    await page.locator('.person-card').waitFor();
   },
   'shortcuts dialog': async (page) => {
     await openInbox(page);

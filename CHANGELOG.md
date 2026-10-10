@@ -6,9 +6,17 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 ### Added
 
+- Contacts: an address book of your own, kept in Stalwart where your phone and other clients see the same cards. Open it from the sidebar (or `g` then `p`), search by name, organisation, address or phone number, and add, edit and delete people; a delete can be undone. A card holds names, a photo, several email addresses and phone numbers, organisation and job title, postal addresses, a birthday and notes. What another client stored that oinbox does not edit (nicknames, links, keywords) is shown and left alone.
+- A card changed on another device, or by a phone over CardDAV, changes on screen without a reload.
+- Add someone to your contacts from a message or from a recipient chip: click their address, or their name among a message's recipients, for a small card of who they are and what you can do.
+- Saved contacts are offered when you address a message, under the names you saved them with, and are found by organisation and nickname too. People you have written to still come first; then your contacts, then the organisation, then everyone else. Typing without accents finds names with them.
 - Recipient suggestions include everyone in the organisation: the people and groups Stalwart lists, under the names their administrator gave them, whether or not you have written to them before. Groups are marked. Your own address is offered too, for a note to yourself. People you have written to still come first. The list is fetched once an hour at most and kept for the next start; mailing lists and aliases are not in it, because Stalwart does not list them.
 - Picture attachments (JPEG, PNG, GIF, WebP, AVIF) show as thumbnails in the message, and open in a full-screen viewer that steps through the message's pictures with the arrow keys. A picture over 5 MB is fetched only when you open it. SVG and formats a browser cannot draw are shown as files.
 - Every attachment in a message is a tile of one size: a picture shows itself, any other file shows its kind (PDF, DOCX) and downloads on a click.
+
+### Fixed
+
+- Someone who shares only an address book or a calendar with you is no longer offered as a shared mailbox that then fails to open.
 
 ## 0.1.0-beta.3
 

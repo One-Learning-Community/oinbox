@@ -120,7 +120,7 @@ a { color: var(--accent); }
 .nav-row .nav-item { padding-right: 40px; }
 .nav-menu { position: absolute; top: 2px; right: 6px; }
 /* A popover menu takes its colours from its wrapper; without these it is rozie's white in either theme. */
-.nav-menu, .menu-anchor {
+.nav-menu, .menu-anchor, .person-anchor {
   --rozie-popover-bg: var(--surface); --rozie-popover-color: var(--text); --rozie-popover-border: 1px solid var(--border);
   --rozie-popover-shadow: var(--shadow); --rozie-popover-padding: 4px;
 }
@@ -267,6 +267,8 @@ a { color: var(--accent); }
   .topbar .hide-mobile { display: none; }
   .msg-head .msg-date { font-size: 11px; max-width: 30%; white-space: normal; text-align: right; }
   .msg-head .addr { display: none; }
+  /* The sender's address is the way to their card, so it stays, cut short if it must be. */
+  .msg-head .person.addr { display: inline-block; max-width: 100%; margin-left: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
   .brand { display: none; }
   .topbar .status-dot { display: none; }
   .row .line { padding-right: 36px; }
@@ -741,7 +743,7 @@ a { color: var(--accent); }
 
 /* The contact dialog: a long form whose body scrolls while the title and the buttons stay put. */
 .rozie-dialog.contact-dialog { --rozie-dialog-max-width: 600px; }
-.contact-form { display: flex; flex-direction: column; width: min(552px, calc(100vw - 80px)); max-height: calc(100dvh - 120px); }
+.contact-form { display: flex; flex-direction: column; width: min(552px, calc(100vw - 80px)); max-height: calc(80vh - 40px); }
 .contact-form-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px 4px 2px 2px; }
 /* The body scrolls: its rows keep their height and are never squeezed to fit. */
 .contact-form-body > * { flex: none; }
@@ -753,6 +755,8 @@ a { color: var(--accent); }
   min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit;
 }
 .contact-form textarea { resize: vertical; }
+/* WebKit draws a menulist at its own height whatever it is told; as a button it takes ours. */
+.contact-form select { -webkit-appearance: menulist-button; appearance: menulist-button; }
 .contact-form input:focus-visible, .contact-form textarea:focus-visible, .contact-form select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .contact-form [aria-invalid='true'] { border-color: var(--danger); }
 .contact-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -787,7 +791,7 @@ a { color: var(--accent); }
 }
 
 /* A name that opens the person's card (PersonButton). It looks like the text it replaces. */
-.person-anchor { display: inline; }
+.person-anchor { display: inline; --rozie-popover-padding: 12px; }
 .person { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-align: inherit; border-radius: 4px; }
 .person:hover { text-decoration: underline; }
 .person:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

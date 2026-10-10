@@ -217,6 +217,15 @@ A shared mailbox is a Stalwart **group** account. In Stalwart's WebUI, create a 
 
 With the command line, add a member with `update Account <user id> --field 'memberGroupIds/<group id>=true'`. (Passing `--json '{"memberGroupIds":{…}}'` instead replaces the user's whole list of groups.) Unlike setting a password, changing membership does not sign the user out.
 
+## Contacts
+
+oinbox keeps each person's address book in Stalwart as JMAP Contacts, in their default address book. Nothing needs setting up.
+
+- The same cards are served over CardDAV, so a phone or a desktop client can sync them. The bundled Caddy does not proxy `/dav`: point such a client at Stalwart's own address, or add `/dav/*` to your proxy's routes.
+- A card, its photo included, is limited by Stalwart to 524,288 bytes. oinbox scales a chosen photo down to about 20 kB.
+- oinbox loads the whole address book into the browser, 500 cards a request, and keeps a copy there for the next start. Signing out removes it.
+- Someone who shares only an address book or a calendar with a colleague (from another client) appears in that colleague's session as an account. oinbox does not offer it as a shared mailbox.
+
 ## Limits worth knowing
 
 These are Stalwart defaults that users of a web client run into:
