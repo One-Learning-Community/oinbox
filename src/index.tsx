@@ -13,6 +13,7 @@ import { createErrorReporter } from './app/errors';
 import { startBranding } from './app/branding';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { createLabels } from './app/labels';
+import { createDirectory } from './app/directory';
 import { createRecipients } from './app/recipients';
 import { clearRescue, saveRescue, takeRescue } from './app/rescue';
 import { createPassword, notePasswordChanged, takePasswordNotice } from './app/password';
@@ -210,12 +211,14 @@ async function boot() {
     if (home) history.replaceState(null, '', home);
   };
   goHomeIfLost();
+  // One list for every mailbox: the organisation is the same whichever of them a message is written from.
+  const directory = createDirectory(() => client.principals());
   const all = createSpaces(
     accounts,
     (info) => {
       const engine = new MailEngine(client, { accountId: info.id });
       // Before the warm-start snapshot is applied, so it sees every email.
-      const recipients = createRecipients(engine);
+      const recipients = createRecipients(engine, { directory });
       return {
         engine,
         recipients,
@@ -315,6 +318,7 @@ async function boot() {
     void calendar.loadCalendars().catch((e) => onAuthError(e));
     // Suggestions are a convenience: a failed scan is dropped unless it is an auth failure.
     for (const s of all.list()) void s.recipients.scanSent().catch((e) => onAuthError(e));
+    void directory.start(key(accounts[0]!)).catch((e) => onAuthError(e));
     push?.close();
     push = openPushStream(client, {
       onStateChange: (c) => {

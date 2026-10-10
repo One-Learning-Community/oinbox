@@ -3,6 +3,7 @@ import { loadRecipients, saveRecipients } from '../cache/persist';
 import type { EmailAddress } from '../jmap/types';
 import { add, compareRecipients, suggest as rank, type ContactKind, type Recipient, type RecipientCache, type RecipientIndex } from '../mail/recipients';
 import type { MailEngine } from '../sync/engine';
+import type { Directory } from './directory';
 
 const SUGGESTIONS = 6;
 const SCAN_LIMIT = 500;
@@ -22,8 +23,11 @@ export interface Recipients {
   stop(): void;
 }
 
-/** Recipient suggestions from mail history: Sent recipients, senders of synced mail, and messages just sent. */
-export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: number } = {}): Recipients {
+/**
+ * Recipient suggestions from mail history (Sent recipients, senders of synced mail, messages just sent)
+ * and, where the server lists one, from the organisation's `directory`.
+ */
+export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: number; directory?: Directory } = {}): Recipients {
   const index: RecipientIndex = {};
   /** Ids of emails already counted, oldest first. */
   const counted = new Set<string>();
@@ -82,7 +86,16 @@ export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: numbe
     suggest: (query, exclude) => {
       version();
       if (!query.trim()) return [];
-      return rank(index, query, { exclude: new Set([...exclude, ...engine.myAddresses()]), limit: SUGGESTIONS });
+      // Someone is addressing a message: the moment a list over an hour old is worth fetching again.
+      opts.directory?.refresh();
+      // People write to themselves, for a reminder or a file: the user's own addresses are offered with
+      // the organisation's, under the directory's name where it has one.
+      const listed = opts.directory?.entries() ?? [];
+      const known = new Set(listed.map((d) => d.email.toLowerCase()));
+      const mine = engine.state.identities
+        .filter((i) => !known.has(i.email.toLowerCase()) && (known.add(i.email.toLowerCase()), true))
+        .map((i) => ({ email: i.email, name: i.name ?? '', group: false }));
+      return rank(index, query, { exclude, limit: SUGGESTIONS, directory: [...listed, ...mine] });
     },
     recordSent: (emailId, addresses) => whenLoaded(() => count(emailId, addresses, 'sent', new Date().toISOString())),
     start: async (user) => {

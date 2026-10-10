@@ -2,7 +2,7 @@
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import { CALENDARS_PARSE, STALWART, VACATION, type Calendar, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Session, type VacationResponse } from '../jmap/types';
+import { CALENDARS_PARSE, PRINCIPALS, STALWART, VACATION, type Calendar, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Principal, type Session, type VacationResponse } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
@@ -61,6 +61,8 @@ export class FakeJmap {
   password = 'oinbox-dev-pass';
   /** Whether the account advertises urn:stalwart:jmap. */
   passwordSupported = true;
+  /** The people and groups the server lists; null for a server with no directory. */
+  principals: Principal[] | null = null;
   /** False for a shared account (a Stalwart group): it has no password object. */
   personal = true;
   /** Set once the password is: Stalwart derives token keys from its hash, so every token dies. */
@@ -170,7 +172,19 @@ export class FakeJmap {
       if (!props) return structuredClone(e);
       return Object.fromEntries(['id', ...props].filter((p) => p in e).map((p) => [p, structuredClone((e as Record<string, unknown>)[p])]));
     };
+    if (name.startsWith('Principal/') && !(using.includes(PRINCIPALS) && this.principals)) {
+      return ['error', { type: 'unknownMethod', description: `Method ${name} requires capability ${PRINCIPALS}.` }];
+    }
     switch (name) {
+      case 'Principal/query': {
+        const position = (args.position as number | undefined) ?? 0;
+        const all = this.principals!.map((p) => p.id);
+        return [name, { accountId: args.accountId, queryState: 'n', canCalculateChanges: true, position, ids: all.slice(position, position + ((args.limit as number | undefined) ?? all.length)) }];
+      }
+      case 'Principal/get': {
+        const all = this.principals!;
+        return [name, { accountId: args.accountId, state: 'n', list: (ids ? all.filter((p) => ids.includes(p.id)) : all).map((p) => structuredClone(p)), notFound: [] }];
+      }
       case 'Mailbox/get': {
         const all = [...this.mailboxes.values()];
         const list = (ids ? all.filter((m) => ids.includes(m.id)) : all).map((m) => this.withCounts(m));
@@ -645,7 +659,10 @@ export class FakeJmap {
         return fake.parseSupported ? { [CALENDARS_PARSE]: {} } : {};
       },
       accounts: { a1: { name: 'alice@example.test', isPersonal: true, isReadOnly: false, accountCapabilities: { ...(this.vacationSupported ? { [VACATION]: {} } : {}), ...(this.passwordSupported ? { [STALWART]: {} } : {}) } } },
-      primaryAccounts: { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1' }, username: 'alice@example.test',
+      get primaryAccounts() {
+        return { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1', ...(fake.principals ? { [PRINCIPALS]: 'a1' } : {}) };
+      },
+      username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
     };
     const fetchImpl = async (_url: string, init?: RequestInit) => {

@@ -6,6 +6,7 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 ### Added
 
+- Recipient suggestions include everyone in the organisation: the people and groups Stalwart lists, under the names their administrator gave them, whether or not you have written to them before. Groups are marked. Your own address is offered too, for a note to yourself. People you have written to still come first. The list is fetched once an hour at most and kept for the next start; mailing lists and aliases are not in it, because Stalwart does not list them.
 - Picture attachments (JPEG, PNG, GIF, WebP, AVIF) show as thumbnails in the message, and open in a full-screen viewer that steps through the message's pictures with the arrow keys. A picture over 5 MB is fetched only when you open it. SVG and formats a browser cannot draw are shown as files.
 - Every attachment in a message is a tile of one size: a picture shows itself, any other file shows its kind (PDF, DOCX) and downloads on a click.
 

@@ -185,3 +185,55 @@ describe('offer', () => {
     expect(offer([anna, ann], 'ANN@corp.com')).toEqual([ann, anna]);
   });
 });
+
+describe('suggest with the organisation directory', () => {
+  const index = indexOf(
+    person('bob@example.test', 'Bobby', 2, 2, '2026-09-10T00:00:00Z'),
+    person('stranger@elsewhere.test', 'Sam Stranger', 0, 3, '2026-09-20T00:00:00Z'),
+    person('support@example.test', 'Help Desk', 0, 9, '2026-09-21T00:00:00Z'),
+  );
+  const directory = [
+    { email: 'Bob@example.test', name: 'Bob Example', group: false },
+    { email: 'carol@example.test', name: 'Carol Example', group: false },
+    { email: 'sales@example.test', name: 'Sales', group: true },
+    { email: 'support@example.test', name: 'Support', group: true },
+    { email: 'sven@example.test', name: '', group: false },
+  ];
+  const withDirectory = { ...none, directory };
+
+  it('offers a colleague who has never been written to', () => {
+    expect(suggest(index, 'car', withDirectory)).toEqual([{ email: 'carol@example.test', name: 'Carol Example', sent: 0, received: 0, last: '', group: false }]);
+    expect(emails(suggest(index, 'example carol', withDirectory))).toEqual(['carol@example.test']);
+    expect(suggest(index, 'car', none)).toEqual([]);
+  });
+
+  it('puts people written to first, then the organisation by name, then strangers', () => {
+    // Sent to Bob; Sales, Support and sven are colleagues; the stranger has only written in.
+    expect(emails(suggest(index, 's', { ...withDirectory, directory: [...directory, { email: 'bob.s@example.test', name: 'Stu', group: false }] }))).toEqual([
+      'sales@example.test', 'bob.s@example.test', 'support@example.test', 'sven@example.test', 'stranger@elsewhere.test',
+    ]);
+    expect(emails(suggest(index, 'e', { ...withDirectory, limit: 2 }))).toEqual(['bob@example.test', 'carol@example.test']);
+  });
+
+  it("shows the directory's name and whether it is a group, keeping the history's counts and spelling", () => {
+    expect(suggest(index, 'bob', withDirectory)).toEqual([{ email: 'bob@example.test', name: 'Bob Example', sent: 2, received: 2, last: '2026-09-10T00:00:00Z', group: false }]);
+    expect(suggest(index, 'supp', withDirectory)[0]).toMatchObject({ name: 'Support', group: true, received: 9 });
+    // Found by the directory's name, no longer by the one mail gave it.
+    expect(suggest(index, 'help', withDirectory)).toEqual([]);
+  });
+
+  it('keeps the name mail gave an account the directory has none for', () => {
+    const named = indexOf(person('sven@example.test', 'Sven Olsen', 1, 0, '2026-09-10T00:00:00Z'));
+    expect(suggest(named, 'olsen', withDirectory)[0]).toMatchObject({ email: 'sven@example.test', name: 'Sven Olsen' });
+  });
+
+  it('leaves out addresses already taken', () => {
+    expect(suggest(index, 'car', { ...withDirectory, exclude: new Set(['carol@example.test']) })).toEqual([]);
+  });
+
+  it('does not change the index', () => {
+    const before = JSON.stringify(index);
+    suggest(index, 'e', withDirectory);
+    expect(JSON.stringify(index)).toBe(before);
+  });
+});

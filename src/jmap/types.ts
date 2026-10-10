@@ -9,6 +9,7 @@ export const SUBMISSION = 'urn:ietf:params:jmap:submission';
 export const CALENDARS = 'urn:ietf:params:jmap:calendars';
 export const CALENDARS_PARSE = 'urn:ietf:params:jmap:calendars:parse';
 export const VACATION = 'urn:ietf:params:jmap:vacationresponse';
+export const PRINCIPALS = 'urn:ietf:params:jmap:principals';
 /** Stalwart's own objects, the account's password among them. */
 export const STALWART = 'urn:stalwart:jmap';
 
@@ -388,6 +389,8 @@ export interface CalendarEventQueryArgs extends QueryArgs<CalendarEventFilter> {
 /** Method name → argument and result types. The request builder is typed off this map. */
 export interface Methods {
   'Mailbox/get': { args: GetArgs; result: GetResult<Mailbox> };
+  'Principal/get': { args: GetArgs; result: GetResult<Principal> };
+  'Principal/query': { args: QueryArgs<Record<string, never>>; result: QueryResult };
   'Mailbox/changes': { args: ChangesArgs; result: MailboxChangesResult };
   'Mailbox/set': { args: MailboxSetArgs; result: SetResult<Mailbox> };
   'Email/get': { args: EmailGetArgs; result: GetResult<Email> };
@@ -437,4 +440,13 @@ export interface StateChange {
 export interface MethodErrorBody {
   type: string;
   description?: string;
+}
+
+/** A person or group on the server (RFC 9670). Stalwart keeps the display name in `description`. */
+export interface Principal {
+  id: Id;
+  type: string;
+  name: string;
+  description: string | null;
+  email: string | null;
 }

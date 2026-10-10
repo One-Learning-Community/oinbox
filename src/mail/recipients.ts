@@ -2,6 +2,7 @@
 // Pure: no Solid, no JMAP.
 import type { EmailAddress } from '../jmap/types';
 import { parseAddressList } from './compose';
+import type { DirectoryEntry } from './directory';
 
 export interface Recipient {
   /** As first seen, original case. */
@@ -14,6 +15,8 @@ export interface Recipient {
   received: number;
   /** ISO time of the most recent contact in either direction. */
   last: string;
+  /** Set on a suggestion from the organisation's directory: whether it is a group. Never stored. */
+  group?: boolean;
 }
 
 /** Keyed by the lower-cased address. */
@@ -78,17 +81,44 @@ function tokens(r: Recipient): string[] {
   ].filter(Boolean);
 }
 
-/** People matching `query`: every query word must be a prefix of one of the person's tokens. */
-export function suggest(index: RecipientIndex, query: string, opts: { exclude: Set<string>; limit: number }): Recipient[] {
+/** A suggestion's rank: people written to, then the organisation, then everyone else. */
+const tier = (r: Recipient) => (r.sent > 0 ? 0 : r.group !== undefined ? 1 : 2);
+const sortName = (r: Recipient) => (r.name || r.email).toLowerCase();
+
+/** As `compareRecipients`, with colleagues not yet written to ahead of strangers, by name. */
+function compareSuggestions(a: Recipient, b: Recipient): number {
+  const rank = tier(a) - tier(b);
+  if (rank) return rank;
+  if (tier(a) === 1) return sortName(a) < sortName(b) ? -1 : sortName(a) > sortName(b) ? 1 : 0;
+  return compareRecipients(a, b);
+}
+
+/**
+ * People matching `query`: every query word must be a prefix of one of the person's tokens.
+ * With a `directory`, the organisation's people and groups are offered too, under the names it gives them.
+ */
+export function suggest(
+  index: RecipientIndex,
+  query: string,
+  opts: { exclude: Set<string>; limit: number; directory?: DirectoryEntry[] },
+): Recipient[] {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const out: Recipient[] = [];
-  for (const [key, r] of Object.entries(index)) {
-    if (opts.exclude.has(key)) continue;
+  const offer = (key: string, r: Recipient) => {
+    if (opts.exclude.has(key)) return;
     const t = tokens(r);
     if (words.every((w) => t.some((x) => x.startsWith(w)))) out.push(r);
+  };
+  const listed = new Set<string>();
+  for (const entry of opts.directory ?? []) {
+    const key = entry.email.toLowerCase();
+    listed.add(key);
+    const known = index[key];
+    offer(key, known ? { ...known, name: entry.name || known.name, group: entry.group } : { email: entry.email, name: entry.name, sent: 0, received: 0, last: '', group: entry.group });
   }
-  return out.sort(compareRecipients).slice(0, opts.limit);
+  for (const [key, r] of Object.entries(index)) if (!listed.has(key)) offer(key, r);
+  return out.sort(compareSuggestions).slice(0, opts.limit);
 }
 
 /** A stored cache, if it has the shape this version writes; anything else is ignored. */

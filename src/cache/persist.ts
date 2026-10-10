@@ -1,5 +1,6 @@
 import { createStore as createIdbStore, del, get, set, type UseStore } from 'idb-keyval';
 import type { Session } from '../jmap/types';
+import { parseDirectoryCache, type DirectoryCache } from '../mail/directory';
 import { parseRecipientCache, type RecipientCache } from '../mail/recipients';
 import type { Snapshot } from '../sync/engine';
 
@@ -60,13 +61,14 @@ export async function clearCache(key: string): Promise<void> {
   await clearSnapshots(key);
 }
 
-/** Drop one mailbox's snapshot and recipient cache, and nothing else: the session stays. */
+/** Drop one mailbox's snapshot, recipient cache and directory, and nothing else: the session stays. */
 export async function clearSnapshots(key: string): Promise<void> {
   const s = idb();
   if (!s) return;
   try {
     await del(`snap:${key}`, s);
     await del(`recipients:${key}`, s);
+    await del(`directory:${key}`, s);
   } catch {
     // Ignore: best effort.
   }
@@ -87,6 +89,27 @@ export async function saveRecipients(username: string, cache: RecipientCache): P
   if (!s) return;
   try {
     await set(`recipients:${username}`, cache, s);
+  } catch {
+    // Ignore: best effort.
+  }
+}
+
+/** The organisation's directory as last fetched, kept under the user's own mailbox key. */
+export async function loadDirectory(key: string): Promise<DirectoryCache | undefined> {
+  const s = idb();
+  if (!s) return undefined;
+  try {
+    return parseDirectoryCache(await get<unknown>(`directory:${key}`, s));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveDirectory(key: string, cache: DirectoryCache): Promise<void> {
+  const s = idb();
+  if (!s) return;
+  try {
+    await set(`directory:${key}`, cache, s);
   } catch {
     // Ignore: best effort.
   }

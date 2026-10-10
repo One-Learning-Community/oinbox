@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { emailsBySubject, mailboxByRole, sendMail, threadEmails, waitFor, ALICE, BOB, uniqueTag } from './support/mail';
+import { createAccount, deleteAccount } from './support/accounts';
 import { openInbox, rows, waitLive } from './support/app';
 import {
   addRecipient,
@@ -391,4 +392,33 @@ test('a new message takes the keyboard: focus goes to To, and closing gives it b
   await page.keyboard.press('Escape');
   await expect(c).toHaveCount(0);
   await expect(compose).toBeFocused();
+});
+
+test('a colleague never written to, a group, and alice herself are suggested from the organisation', async ({ page }) => {
+  // An account of this test's own: nobody has mail from it, so only the server's directory can offer it.
+  const name = uniqueTag('newhire');
+  createAccount(name, 'e2e-Directory-pass-7Kq');
+  try {
+    const c = await openComposer(page, newSubject());
+    const to = recipientInput(c);
+    await to.pressSequentially(name.slice(0, 12));
+    const colleague = suggestions(c).filter({ hasText: `${name}@example.test` });
+    await expect(colleague).toBeVisible();
+    // Under the name the administrator gave the account, and not marked as a group.
+    await expect(colleague.locator('.rcpt-name')).toHaveText('e2e throwaway');
+    await expect(colleague.locator('.rcpt-group')).toHaveCount(0);
+    await to.press('Enter');
+    await expect(recipientChips(c)).toContainText(`e2e throwaway <${name}@example.test>`);
+
+    await to.pressSequentially('supp');
+    const group = suggestions(c).filter({ hasText: 'support@example.test' });
+    await expect(group.locator('.rcpt-group')).toHaveText('Group');
+    await to.press('Enter');
+
+    // People write to themselves: alice is offered her own address.
+    await to.pressSequentially('alice');
+    await expect(suggestions(c).filter({ hasText: ALICE }).locator('.rcpt-name')).toHaveText('Alice Example');
+  } finally {
+    deleteAccount(name);
+  }
 });

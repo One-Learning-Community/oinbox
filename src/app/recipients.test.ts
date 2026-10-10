@@ -73,7 +73,7 @@ describe('createRecipients', () => {
     expect(store.suggest('car', nobody)[0]!.received).toBe(1);
   });
 
-  it('skips the user\'s own addresses and drafts', async () => {
+  it('does not count mail between the user\'s own addresses, or drafts', async () => {
     const { server, engine, store } = setup();
     server.addEmail({ id: 'm1', threadId: 't3', receivedAt: '2026-09-04T10:00:00Z', mailboxIds: { I: true }, from: [{ name: 'Alice', email: ME }] }, false);
     server.addEmail({ id: 'd1', threadId: 't4', receivedAt: '2026-09-04T11:00:00Z', mailboxIds: { I: true }, keywords: { $draft: true }, from: [{ name: 'Dave', email: 'dave@partner.test' }] }, false);
@@ -81,7 +81,8 @@ describe('createRecipients', () => {
     await store.start(ME);
     await openInbox(engine);
     store.recordSent('x1', [{ name: 'Alice', email: ME }]);
-    expect(store.suggest('ali', nobody)).toEqual([]);
+    // Offered, since people write to themselves, but with no history to rank by.
+    expect(store.suggest('ali', nobody)).toEqual([{ email: ME, name: 'Alice', sent: 0, received: 0, last: '', group: false }]);
     expect(store.suggest('dav', nobody)).toEqual([]);
   });
 
@@ -144,5 +145,62 @@ describe('createRecipients', () => {
     store.recordSent('n1', [bob]);
     await new Promise((r) => setTimeout(r, 20));
     expect(saveRecipients).not.toHaveBeenCalled();
+  });
+});
+
+describe('createRecipients with the organisation directory', () => {
+  const quietDirectory = (entries: { email: string; name: string; group: boolean }[]) => ({ entries: () => entries, start: vi.fn(async () => {}), refresh: vi.fn() });
+
+  it('offers colleagues and groups from the directory, and asks it to refresh when someone types', async () => {
+    const server = new FakeJmap();
+    server.addMailbox('I', 'Inbox', 'inbox');
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    const directory = quietDirectory([
+      { email: 'carol@example.test', name: 'Carol Example', group: false },
+      { email: 'support@example.test', name: 'Support', group: true },
+    ]);
+    const store = createRecipients(engine, { saveDelayMs: 0, directory });
+    await store.start(ME);
+
+    expect(store.suggest('', nobody)).toEqual([]);
+    expect(directory.refresh).not.toHaveBeenCalled();
+    expect(store.suggest('example', nobody).map((r) => [r.email, r.group])).toEqual([['carol@example.test', false], ['support@example.test', true]]);
+    expect(directory.refresh).toHaveBeenCalledTimes(1);
+    expect(store.suggest('car', new Set(['carol@example.test']))).toEqual([]);
+  });
+
+  it("offers the user's own addresses: people write to themselves", async () => {
+    const server = new FakeJmap();
+    server.addMailbox('I', 'Inbox', 'inbox');
+    const own = server.identities.get('id1')!;
+    server.identities.set('i2', { ...own, id: 'i2', email: 'support@example.test' });
+    server.identities.set('i3', { ...own, id: 'i3', name: 'Alice (billing)', email: 'billing@example.test' });
+    server.identities.set('i4', { ...own, id: 'i4', name: 'Alice again', email: 'BILLING@example.test' });
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    const directory = quietDirectory([
+      { email: ME, name: 'Alice Example', group: false },
+      { email: 'support@example.test', name: 'Support', group: true },
+    ]);
+    const store = createRecipients(engine, { saveDelayMs: 0, directory });
+    await store.start(ME);
+    // The directory's names where it has the address; an alias it does not list goes by its identity, once.
+    expect(store.suggest('example', nobody).map((r) => [r.email, r.name, r.group])).toEqual([
+      ['billing@example.test', 'Alice (billing)', false],
+      [ME, 'Alice Example', false],
+      ['support@example.test', 'Support', true],
+    ]);
+    // Still left out once it is in the field.
+    expect(store.suggest('ali', new Set([ME])).map((r) => r.email)).toEqual(['billing@example.test']);
+  });
+
+  it("offers the user's own address where the server has no directory", async () => {
+    const server = new FakeJmap();
+    server.addMailbox('I', 'Inbox', 'inbox');
+    const engine = createRoot(() => new MailEngine(server.client(), { settleDelayMs: 0 }));
+    await engine.start();
+    const store = createRecipients(engine, { saveDelayMs: 0 });
+    await store.start(ME);
+    expect(store.suggest('ali', nobody).map((r) => r.email)).toEqual([ME]);
   });
 });

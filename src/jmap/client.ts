@@ -1,5 +1,5 @@
 import { CallHandle, RequestBuilder, type Invocation } from './request';
-import { CORE, MAIL, SUBMISSION, type MethodErrorBody, type MethodName, type Session } from './types';
+import { CORE, MAIL, PRINCIPALS, SUBMISSION, type MethodErrorBody, type MethodName, type Principal, type Session } from './types';
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -58,6 +58,9 @@ export class BatchResult {
 }
 
 const MAX_BUSY_RETRIES = 3;
+/** Stalwart returns at most 500 objects to one get. */
+const PRINCIPALS_PAGE = 500;
+const PRINCIPALS_MAX = 10_000;
 
 /** RFC 8620 §3.6.1 `limit` error for `maxConcurrentRequests`: the request was refused, not run. */
 function isBusy(status: number, detail: string): boolean {
@@ -210,6 +213,25 @@ export class JmapClient {
     const res = await this.authFetch(this.downloadUrl(blobId, name, type, accountId), {}, false, true);
     if (!res.ok) throw new RequestError(res.status, await res.text());
     return res.blob();
+  }
+
+  /**
+   * Every person and group the server lists, or none where it keeps no directory. Stalwart shows them
+   * all to any user; its text filter matches whole words only, so searching is left to the caller.
+   */
+  async principals(): Promise<Principal[]> {
+    const accountId = this.session.primaryAccounts[PRINCIPALS];
+    if (!accountId) return [];
+    const out: Principal[] = [];
+    for (let position = 0; position < PRINCIPALS_MAX; position += PRINCIPALS_PAGE) {
+      const b = this.batch();
+      const q = b.call('Principal/query', { accountId, position, limit: PRINCIPALS_PAGE });
+      const g = b.call('Principal/get', { accountId, '#ids': q.ref('/ids'), properties: ['type', 'name', 'description', 'email'] });
+      const r = await this.send(b, [CORE, PRINCIPALS]);
+      out.push(...r.get(g).list);
+      if (r.get(q).ids.length < PRINCIPALS_PAGE) break;
+    }
+    return out;
   }
 
   eventSourceUrl(types = '*'): string {
