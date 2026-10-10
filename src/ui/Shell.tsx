@@ -14,6 +14,7 @@ import { Conversation } from './Conversation';
 import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
 import { DrivePicker } from './DrivePicker';
+import { ContactDialog } from './ContactDialog';
 import { LabelDialog } from './LabelDialog';
 import { LinkDialog } from './LinkDialog';
 import { LabelMenu } from './LabelMenu';
@@ -139,6 +140,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       <MailboxPicker />
       <HelpDialog />
       <LabelDialog />
+      <ContactDialog />
       <DrivePicker />
       <LinkDialog />
       <props.confirmHost />

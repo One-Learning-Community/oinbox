@@ -16,6 +16,7 @@ import { loadImageAllowList, saveImageAllowList } from '../cache/persist';
 import type { JmapClient } from '../jmap/client';
 import type { Connection } from '../sync/connection';
 import type { MailEngine } from '../sync/engine';
+import type { ConfirmFn } from '../ui/ConfirmDialog';
 import type { Nav } from '../ui/nav';
 
 export type Theme = 'system' | 'light' | 'dark';
@@ -34,6 +35,8 @@ export interface App {
   hasContacts: () => boolean;
   auth: OAuth;
   toast: ToastFn;
+  /** The one blocking confirm dialog. */
+  confirm: ConfirmFn;
   /** Where a caught error goes: the console and one toast. */
   errors: ErrorReporter;
   connection: Connection;

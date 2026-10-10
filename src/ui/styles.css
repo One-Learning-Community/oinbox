@@ -738,3 +738,48 @@ a { color: var(--accent); }
   .contacts-table td, .contacts-name { height: 56px; }
   .contact-row a { display: inline-flex; align-items: center; min-height: 44px; }
 }
+
+/* The contact dialog: a long form whose body scrolls while the title and the buttons stay put. */
+.rozie-dialog.contact-dialog { --rozie-dialog-max-width: 600px; }
+.contact-form { display: flex; flex-direction: column; width: min(552px, calc(100vw - 80px)); max-height: calc(100dvh - 120px); }
+.contact-form-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px 4px 2px 2px; }
+.contact-form label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.contact-form label > span, .contact-form legend { color: var(--text-2); font-size: 13px; }
+.contact-form fieldset { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.contact-form legend { padding: 0; margin-bottom: 4px; }
+.contact-form input[type='text'], .contact-form input[type='email'], .contact-form input[type='tel'], .contact-form textarea, .contact-form select {
+  min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit;
+}
+.contact-form textarea { resize: vertical; }
+.contact-form input:focus-visible, .contact-form textarea:focus-visible, .contact-form select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.contact-form [aria-invalid='true'] { border-color: var(--danger); }
+.contact-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.contact-form-row { display: flex; align-items: center; gap: 8px; }
+.contact-form-row.top { align-items: flex-start; }
+.contact-form-row > input, .contact-form-row > textarea { flex: 1; }
+.contact-form-row.birthday > input:first-child { flex: 0 0 72px; }
+.contact-form-row.birthday > select { flex: 1; }
+.contact-form label.contact-form-preferred { flex-direction: row; align-items: center; gap: 4px; flex: none; }
+.contact-form label.contact-form-preferred > span { color: var(--text); }
+.contact-form-add { align-self: flex-start; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 500; cursor: pointer; padding: 4px 0; }
+.contact-form-add:disabled { opacity: 0.6; cursor: default; }
+.contact-form-photo { display: flex; align-items: center; gap: 16px; }
+.contact-form-photo-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.contact-form-photo-actions button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
+.rozie-dialog .contact-error { margin: 0; min-height: 0; color: var(--danger-text); font-size: 13px; }
+.rozie-dialog .contact-error:empty { display: none; }
+.rozie-dialog .contact-form-foot { margin: 12px 0 0; }
+.contact-form .dialog-actions { margin-top: 16px; }
+@media (max-width: 800px) {
+  .rozie-dialog.contact-dialog { --rozie-dialog-max-width: 100vw; --rozie-dialog-max-height: 100dvh; --rozie-dialog-radius: 0; }
+  .contact-dialog .rozie-dialog-panel { height: 100%; box-sizing: border-box; }
+  .contact-form { width: auto; height: 100%; max-height: none; }
+  .contact-form-pair { grid-template-columns: 1fr; }
+  .contact-form-row { flex-wrap: wrap; }
+  .contact-form-row > input, .contact-form-row > textarea { flex: 1 1 100%; }
+  .contact-form-row > select { flex: 1; }
+}
+@media (pointer: coarse) {
+  .contact-form input[type='text'], .contact-form input[type='email'], .contact-form input[type='tel'], .contact-form select, .contact-form-add, .contact-form-photo-actions button { min-height: 44px; }
+  .contact-form label.contact-form-preferred { min-height: 44px; }
+}

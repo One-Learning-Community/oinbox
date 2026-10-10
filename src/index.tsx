@@ -284,6 +284,7 @@ async function boot() {
     hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS] && cur().info.personal,
     auth,
     toast: toasts.toast,
+    confirm: confirmDialog.confirm,
     errors,
     connection,
     signIn,
