@@ -1,4 +1,5 @@
 import { createMemo, createSignal, type Accessor } from 'solid-js';
+import { MethodError } from '../jmap/client';
 import { MAIL, type Id, type Session } from '../jmap/types';
 import type { MailEngine } from '../sync/engine';
 import type { Nav } from '../ui/nav';
@@ -76,19 +77,28 @@ export interface Spaces {
   totalUnread: Accessor<number>;
   /** Change which space is on screen; the caller sees to the address. */
   show: (id: Id) => void;
+  /** Take a shared account out of the list: it turned out not to be a mailbox. */
+  hide: (id: Id) => void;
 }
 
 export function createSpaces(accounts: AccountInfo[], build: (info: AccountInfo) => Omit<AccountSpace, 'info'>, initial: Id): Spaces {
-  const spaces = accounts.map((info) => ({ info, ...build(info) }));
-  const [currentId, setCurrentId] = createSignal(spaces.some((s) => s.info.id === initial) ? initial : spaces[0]!.info.id);
+  const built = accounts.map((info) => ({ info, ...build(info) }));
+  const [hidden, setHidden] = createSignal<ReadonlySet<Id>>(new Set());
+  const spaces = createMemo(() => built.filter((s) => !hidden().has(s.info.id)));
+  const [currentId, setCurrentId] = createSignal(built.some((s) => s.info.id === initial) ? initial : built[0]!.info.id);
   const unread = (space: AccountSpace) => Object.values(space.engine.state.mailboxes).find((m) => m.role === 'inbox')?.unreadThreads ?? 0;
   return {
-    list: () => spaces,
-    current: createMemo(() => spaces.find((s) => s.info.id === currentId())!),
+    list: spaces,
+    current: createMemo(() => spaces().find((s) => s.info.id === currentId()) ?? built[0]!),
     unread,
-    totalUnread: createMemo(() => spaces.reduce((n, s) => n + unread(s), 0)),
+    totalUnread: createMemo(() => spaces().reduce((n, s) => n + unread(s), 0)),
     show: (id) => {
-      if (spaces.some((s) => s.info.id === id)) setCurrentId(id);
+      if (spaces().some((s) => s.info.id === id)) setCurrentId(id);
+    },
+    hide: (id) => {
+      const space = built.find((s) => s.info.id === id);
+      if (!space || space.info.personal) return;
+      setHidden(new Set(hidden()).add(id));
     },
   };
 }
@@ -107,6 +117,15 @@ export async function startAll(spaces: AccountSpace[], onFailed: (space: Account
     if (spaces[i]!.info.personal) throw r.reason;
     onFailed(spaces[i]!, r.reason);
   });
+}
+
+/**
+ * Whether a shared account failed to start because it is no mailbox at all. Someone who shares only
+ * an address book or a calendar appears in the session as an account that lists the mail capability
+ * (Stalwart lists every capability for every account) and then refuses every mail method.
+ */
+export function isNotAMailbox(e: unknown): boolean {
+  return e instanceof MethodError && e.type === 'forbidden';
 }
 
 /** Accounts the app was built with (from the remembered session) that the server no longer offers. */

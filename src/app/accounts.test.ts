@@ -1,7 +1,8 @@
 import { createRoot } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
+import { MethodError, RequestError } from '../jmap/client';
 import type { Session } from '../jmap/types';
-import { accountForPath, createSpaces, homePath, lostAccounts, mailAccounts, startAll, storageKey, withinAccount, type AccountSpace } from './accounts';
+import { accountForPath, createSpaces, isNotAMailbox, homePath, lostAccounts, mailAccounts, startAll, storageKey, withinAccount, type AccountSpace } from './accounts';
 
 const MAIL = 'urn:ietf:params:jmap:mail';
 const session = (accounts: Record<string, { name: string; isPersonal: boolean; mail?: boolean }>, primary = 'b') =>
@@ -82,6 +83,24 @@ describe('createSpaces', () => {
       expect(spaces.current().info.id).toBe('b');
       dispose();
     }));
+  it('leaves a hidden account out of the list and the count, and off the screen', () =>
+    createRoot((dispose) => {
+      const spaces = createSpaces(list, (info) => fakeSpace(info.personal ? 2 : 3), 's');
+      spaces.hide('s');
+      expect(spaces.list().map((s) => s.info.id)).toEqual(['b']);
+      expect(spaces.totalUnread()).toBe(2);
+      expect(spaces.current().info.id).toBe('b');
+      spaces.show('s');
+      expect(spaces.current().info.id).toBe('b');
+      dispose();
+    }));
+  it("never hides the user's own account", () =>
+    createRoot((dispose) => {
+      const spaces = createSpaces(list, () => fakeSpace(0), 'b');
+      spaces.hide('b');
+      expect(spaces.list().map((s) => s.info.id)).toEqual(['b', 's']);
+      dispose();
+    }));
   it("starts on the user's own account when the one asked for is not there", () =>
     createRoot((dispose) => {
       expect(createSpaces(list, () => fakeSpace(0), 'gone').current().info.id).toBe('b');
@@ -147,5 +166,17 @@ describe('lostAccounts', () => {
     const now = session({ b: { name: 'alice@example.test', isPersonal: true } });
     expect(lostAccounts(before, now).map((a: { id: string }) => a.id)).toEqual(['s']);
     expect(lostAccounts(before, session({ b: { name: 'alice@example.test', isPersonal: true }, s: { name: 'support@example.test', isPersonal: false } }))).toEqual([]);
+  });
+});
+
+describe('isNotAMailbox', () => {
+  it('knows an account whose mail is refused: one that only shares an address book or a calendar', () => {
+    expect(isNotAMailbox(new MethodError('Mailbox/get', 'forbidden', 'You do not have access to account be'))).toBe(true);
+  });
+  it('is not fooled by a failure of another kind', () => {
+    expect(isNotAMailbox(new MethodError('Mailbox/get', 'serverFail', 'boom'))).toBe(false);
+    expect(isNotAMailbox(new RequestError(503, 'unavailable'))).toBe(false);
+    expect(isNotAMailbox(new TypeError('Failed to fetch'))).toBe(false);
+    expect(isNotAMailbox(undefined)).toBe(false);
   });
 });

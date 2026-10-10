@@ -2,7 +2,7 @@
 import { Navigate, Route, Router } from '@solidjs/router';
 import { ErrorBoundary, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { accountForPath, createSpaces, homePath, lostAccounts, mailAccounts, startAll, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
+import { accountForPath, createSpaces, homePath, isNotAMailbox, lostAccounts, mailAccounts, startAll, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createDrive } from './app/drive';
@@ -313,6 +313,13 @@ async function boot() {
     await startAll(all.list(), (s, e) => {
       // The network, not this mailbox: fail the whole start, which is tried again.
       if (isTransportFailure(e)) throw e;
+      // Someone sharing an address book, not a mailbox: nothing to open, and nothing to complain of.
+      if (isNotAMailbox(e)) {
+        const onIt = accountForPath(location.pathname, accounts).id === s.info.id;
+        all.hide(s.info.id);
+        if (onIt) history.replaceState(null, '', '/inbox');
+        return;
+      }
       console.error(`Couldn't open ${s.info.address}`, e);
       app.toast(`Couldn't open ${s.info.label} (${s.info.address}).`, 'error');
     });
