@@ -41,6 +41,7 @@ import { createToasts } from './ui/Toasts';
 import './ui/styles.css';
 
 // FullCalendar is large: load it on first visit to /calendar.
+const ContactsView = lazy(() => import('./ui/ContactsView').then((m) => ({ default: m.ContactsView })));
 const CalendarView = lazy(() => import('./ui/CalendarView').then((m) => ({ default: m.CalendarView })));
 
 const root = document.getElementById('root')!;
@@ -412,6 +413,13 @@ async function boot() {
     goHomeIfLost();
     all.show(accountForPath(location.pathname, accounts).id);
   });
+  const ContactsRoute = () => (
+    <PaneBoundary name="contacts">
+      <Suspense fallback={<div class="list-empty" role="status">Loading contacts…</div>}>
+        {app.hasContacts() ? <ContactsView /> : <Navigate href="/inbox" />}
+      </Suspense>
+    </PaneBoundary>
+  );
   mount(
     () => (
       <ErrorBoundary
@@ -438,6 +446,8 @@ async function boot() {
                 </PaneBoundary>
               )}
             />
+            <Route path="/contacts" component={ContactsRoute} />
+            <Route path="/contacts/:id" component={ContactsRoute} />
             <Route path="/search/:q" component={MailView} />
             <Route path="/search/:q/t/:threadId" component={MailView} />
             <Route path="/label/:id" component={MailView} />

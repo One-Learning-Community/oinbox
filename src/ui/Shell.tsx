@@ -37,6 +37,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
   const [navOpen, setNavOpen] = createSignal(false);
   const path = useAccountPath();
   const navigate = useNavigate();
+  const onContacts = () => path() === '/contacts' || path().startsWith('/contacts/');
   createEffect(() => (document.title = tabTitle(app.spaces.totalUnread(), branding().name)));
   for (const space of app.spaces.list()) {
     space.engine.onArrived = createNotifier({
@@ -106,9 +107,18 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
             app.spaces.show(space.info.id);
           }}
         />
-        <button class="compose-fab" onClick={() => app.composers.open('new')} title="Compose (c)">
-          <Icon name="edit" /> Compose
-        </button>
+        <Show
+          when={onContacts()}
+          fallback={
+            <button class="compose-fab" onClick={() => app.composers.open('new')} title="Compose (c)">
+              <Icon name="edit" /> Compose
+            </button>
+          }
+        >
+          <button class="compose-fab" onClick={() => app.contacts.openDialog({ kind: 'new' })}>
+            <Icon name="add" /> New contact
+          </button>
+        </Show>
         <PaneBoundary name="sidebar">
           <Sidebar current={path()} />
         </PaneBoundary>
@@ -179,7 +189,7 @@ function SearchBox() {
 }
 
 function Sidebar(props: { current: string }) {
-  const { engine, hasCalendars, nav } = useApp();
+  const { engine, hasCalendars, hasContacts, nav } = useApp();
   const groups = createMemo(() => sidebarMailboxes(engine.state.mailboxes));
   const isActive = (slug: string) => props.current === `/${slug}` || props.current.startsWith(`/${slug}/t/`);
 
@@ -227,6 +237,12 @@ function Sidebar(props: { current: string }) {
         <Show when={props.current === '/calendar'}>
           <CalendarList />
         </Show>
+      </Show>
+      <Show when={hasContacts()}>
+        <A href="/contacts" class="nav-item" classList={{ active: props.current === '/contacts' || props.current.startsWith('/contacts/') }}>
+          <Icon name="contacts" />
+          <span class="name">Contacts</span>
+        </A>
       </Show>
     </>
   );

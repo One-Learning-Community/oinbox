@@ -29,6 +29,7 @@ export const SHORTCUTS: [string, string][] = [
   ['/', 'Search'],
   ['g then i / s / t / d / a', 'Go to Inbox / Starred / Sent / Drafts / Archive'],
   ['g then k', 'Go to Calendar'],
+  ['g then p', 'Go to Contacts'],
   ['?', 'Keyboard shortcuts'],
 ];
 
@@ -84,7 +85,8 @@ export function installShortcuts(app: App, nav: Nav, navigate: Navigator, compos
 
     if (Date.now() - pendingG < 1500) {
       pendingG = 0;
-      const dest = e.key === 'k' ? (app.hasCalendars() ? '/calendar' : undefined) : GO[e.key];
+      // "p" for people: "c" is Compose.
+      const dest = e.key === 'k' ? (app.hasCalendars() ? '/calendar' : undefined) : e.key === 'p' ? (app.hasContacts() ? '/contacts' : undefined) : GO[e.key];
       if (dest) {
         e.preventDefault();
         navigate(dest);
