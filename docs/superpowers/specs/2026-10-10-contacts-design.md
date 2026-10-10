@@ -17,7 +17,7 @@ Probed on 0.16.23, 2026-10-10, with throwaway accounts. The full notes are in th
 
 - **Cards are JSContact** (`ContactCard`), stored much as sent. Names, several emails and phones with contexts, organisations with units, titles, addresses, notes, anniversaries, links, keywords and media all round-trip.
 - **Almost nothing is validated.** A malformed email, a nameless card and duplicate addresses are accepted. Unknown properties and a card in no address book are refused.
-- **The server writes no `uid`, `created` or `updated`.** `name.full` is derived from the components once, at creation, and not again.
+- **The server writes no `uid`, `created` or `updated`.** A `uid` can be given only at creation, and is unique in the account. `name.full` is derived from the components once, at creation, and not again.
 - **A patch below a missing parent fails** (`notes/n9` on a card with no `notes`).
 - **A photo is a `data:` URI inside the card** (or an http URL). `blobId` is refused. A card is at most 524,288 bytes.
 - **Query cannot carry the page.** There is no sort by name; `OR` returns nothing and `NOT` returns the wrong set; text search depends on the search store (prefixes on Meilisearch, most likely whole words on OpenSearch); names are indexed from components only; a new card is searchable about 250 ms late.
@@ -132,7 +132,7 @@ An account that appears in the session because someone shared an address book li
 
 ### Groups (`src/contacts/groups.ts`)
 
-- A group is a card of `kind: "group"`. Its members are the `uid`s of people's cards. A person's card with no `uid` is given one when first added to a group. A `mailto:` member written by another client counts as a bare address when expanding, and is shown in the group but cannot be added here.
+- A group is a card of `kind: "group"`. Its members are the `uid`s of people's cards. Stalwart lets a `uid` be set only when a card is created, so a person's card that has none (one made by another JMAP client) is replaced by a copy with a `uid` when first added to a group. A `mailto:` member written by another client counts as a bare address when expanding, and is shown in the group but cannot be added here.
 - A group inside a group is ignored. A member `uid` matching no card is ignored and kept.
 - **Navigation:** on the Contacts page the groups are listed under the Contacts link, with "+" to create one; `/contacts/group/:id` shows its members in the same list. Rename and Delete are in a "⋯" menu as for labels. Deleting a group keeps its people.
 - **Membership:** the table gains a checkbox column, with a select-all box in its header; a selection offers "Add to group", "Remove from group" (inside one), Export and Delete. A card shows its groups as chips, with a picker to add or remove.
