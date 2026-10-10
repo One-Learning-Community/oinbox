@@ -13,6 +13,7 @@ import { createErrorReporter } from './app/errors';
 import { startBranding } from './app/branding';
 import { AppContext, createImagePrefs, createTheme, type App } from './app/context';
 import { createLabels } from './app/labels';
+import { createContacts } from './app/contacts';
 import { createDirectory } from './app/directory';
 import { createRecipients } from './app/recipients';
 import { clearRescue, saveRescue, takeRescue } from './app/rescue';
@@ -213,6 +214,8 @@ async function boot() {
   goHomeIfLost();
   // One list for every mailbox: the organisation is the same whichever of them a message is written from.
   const directory = createDirectory(() => client.principals());
+  // One address book for every mailbox: it is the person's, whichever of them they write from.
+  const contacts = createContacts(client, toasts.toast);
   const all = createSpaces(
     accounts,
     (info) => {
@@ -273,6 +276,9 @@ async function boot() {
     drive,
     driveLinks,
     calendar,
+    contacts,
+    // The Contacts page, like the calendar, is not offered inside a shared mailbox.
+    hasContacts: () => contacts.available() && cur().info.personal,
     // Calendars are the user's own: a shared mailbox has no Calendar link.
     hasCalendars: () => client.hasSession && !!client.session.primaryAccounts[CALENDARS] && cur().info.personal,
     auth,
@@ -319,11 +325,13 @@ async function boot() {
     // Suggestions are a convenience: a failed scan is dropped unless it is an auth failure.
     for (const s of all.list()) void s.recipients.scanSent().catch((e) => onAuthError(e));
     void directory.start(key(accounts[0]!)).catch((e) => onAuthError(e));
+    void contacts.start(key(accounts[0]!)).catch((e) => onAuthError(e));
     push?.close();
     push = openPushStream(client, {
       onStateChange: (c) => {
         each((s) => s.engine.onStateChange(c));
         calendar.onStateChange(c);
+        contacts.onStateChange(c);
       },
       onConnected: (confirmed) => {
         // Only an answer from the server is evidence for the banner; an open request is not.
@@ -338,6 +346,7 @@ async function boot() {
           void s.engine.refreshSettings().catch(logUnexpected);
         });
         calendar.onConnected();
+        contacts.onConnected();
       },
       onDisconnected: (e) => {
         assumedOpen = false;

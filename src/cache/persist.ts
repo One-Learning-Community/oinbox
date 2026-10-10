@@ -1,4 +1,5 @@
 import { createStore as createIdbStore, del, get, set, type UseStore } from 'idb-keyval';
+import { parseContactsCache, type ContactsCache } from '../contacts/cache';
 import type { Session } from '../jmap/types';
 import { parseDirectoryCache, type DirectoryCache } from '../mail/directory';
 import { parseRecipientCache, type RecipientCache } from '../mail/recipients';
@@ -61,7 +62,7 @@ export async function clearCache(key: string): Promise<void> {
   await clearSnapshots(key);
 }
 
-/** Drop one mailbox's snapshot, recipient cache and directory, and nothing else: the session stays. */
+/** Drop one mailbox's snapshot, recipient cache, directory and address book, and nothing else: the session stays. */
 export async function clearSnapshots(key: string): Promise<void> {
   const s = idb();
   if (!s) return;
@@ -69,6 +70,7 @@ export async function clearSnapshots(key: string): Promise<void> {
     await del(`snap:${key}`, s);
     await del(`recipients:${key}`, s);
     await del(`directory:${key}`, s);
+    await del(`contacts:${key}`, s);
   } catch {
     // Ignore: best effort.
   }
@@ -110,6 +112,27 @@ export async function saveDirectory(key: string, cache: DirectoryCache): Promise
   if (!s) return;
   try {
     await set(`directory:${key}`, cache, s);
+  } catch {
+    // Ignore: best effort.
+  }
+}
+
+/** The user's address book as last seen, kept under their own mailbox key. */
+export async function loadContacts(key: string): Promise<ContactsCache | undefined> {
+  const s = idb();
+  if (!s) return undefined;
+  try {
+    return parseContactsCache(await get<unknown>(`contacts:${key}`, s));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveContacts(key: string, cache: ContactsCache): Promise<void> {
+  const s = idb();
+  if (!s) return;
+  try {
+    await set(`contacts:${key}`, cache, s);
   } catch {
     // Ignore: best effort.
   }
