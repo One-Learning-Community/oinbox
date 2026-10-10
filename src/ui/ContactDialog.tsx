@@ -35,8 +35,11 @@ function ContactFormView(props: { state: ContactDialogState }) {
   const location = useLocation();
   const editing = props.state.kind === 'edit' ? props.state.id : undefined;
   const stored = () => (editing ? contacts.state.cards[editing] : undefined);
+  // The card as it was when the dialog opened: what is saved is what the user changed from this,
+  // whatever a push has done to the stored card since.
   const first = stored();
-  const initial = startForm(props.state, first ? structuredClone(unwrap(first)) : undefined);
+  const base = first ? structuredClone(unwrap(first)) : undefined;
+  const initial = startForm(props.state, base);
   const pristine = JSON.stringify(initial);
   const [form, setForm] = createStore<ContactForm>(structuredClone(initial));
   const [errors, setErrors] = createSignal<FormErrors>({});
@@ -69,7 +72,7 @@ function ContactFormView(props: { state: ContactDialogState }) {
     const values = snapshot();
     const found = validateForm(values);
     const card = stored();
-    const next = card ? { ...unwrap(card), ...patchFor(unwrap(card), values, '') } : newCard(values, 'b', '', 'urn:uuid:00000000-0000-0000-0000-000000000000');
+    const next = card && base ? { ...unwrap(card), ...patchFor(base, values, '') } : newCard(values, 'b', '', 'urn:uuid:00000000-0000-0000-0000-000000000000');
     if (cardBytes(next) > MAX_CARD_BYTES) found.size = 'This contact is too large to save. Try a smaller photo or shorter notes.';
     setErrors(found);
     setFailure('');
@@ -79,7 +82,7 @@ function ContactFormView(props: { state: ContactDialogState }) {
     }
     setBusy(true);
     try {
-      const result = editing ? await contacts.update(editing, values) : await contacts.create(values);
+      const result = editing ? await contacts.update(editing, values, base) : await contacts.create(values);
       if (!result.ok) {
         setFailure(result.error);
         return;

@@ -2,7 +2,7 @@
 // a search that depends on the search store), so both happen here, over the whole address book.
 // Pure: no Solid, no JMAP.
 import type { ContactCard } from '../jmap/types';
-import { displayName, emailsOf, isGroup, organizationOf, phonesOf } from './card';
+import { displayName, emailsOf, isGroup, nicknamesOf, organizationOf, phonesOf } from './card';
 
 /** Lower case, without accents: "Zoë" is found by "zoe". */
 export function fold(text: string): string {
@@ -40,7 +40,7 @@ function index(card: ContactCard): Indexed {
   let hit = indexed.get(card);
   if (!hit) {
     const org = organizationOf(card);
-    const text = [displayName(card), ...Object.values(card.nicknames ?? {}).map((n) => n.name), org.name, org.department];
+    const text = [displayName(card), ...nicknamesOf(card), org.name, org.department];
     const words = text.flatMap((t) => fold(t).split(/[^\p{L}\p{N}]+/u));
     for (const e of emailsOf(card)) {
       const email = fold(e.address);

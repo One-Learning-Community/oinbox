@@ -47,8 +47,21 @@ export type FormErrors = Partial<Record<'name' | 'birthday' | 'size' | `emails.$
 /** The order a name is said in. A phone's card lists the surname first, so position means nothing. */
 const NAME_ORDER = ['title', 'given', 'given2', 'surname', 'surname2', 'generation', 'credential'];
 
+/**
+ * Stalwart checks almost nothing it stores, and cards come from other clients and from imports: an
+ * entry may be null, and a field may be missing or not text. One such card must not take the list,
+ * the suggestions and every popover down with it.
+ */
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+/** The entries of a card's map that are objects at all. */
+function rows<T>(map: Record<string, T> | undefined | null): [string, T][] {
+  return map && typeof map === 'object' ? Object.entries(map).filter(([, v]) => !!v && typeof v === 'object') : [];
+}
+const parts = (components: NameComponent[] | undefined | null): NameComponent[] =>
+  Array.isArray(components) ? components.filter((c) => !!c && typeof c === 'object').map((c) => ({ kind: text(c.kind), value: text(c.value) })) : [];
+
 function fullName(components: NameComponent[] | undefined): string {
-  const all = components ?? [];
+  const all = parts(components);
   return NAME_ORDER.flatMap((kind) => all.filter((c) => c.kind === kind).map((c) => c.value.trim()))
     .filter(Boolean)
     .join(' ');
@@ -68,8 +81,8 @@ export function splitName(display: string): { given: string; surname: string } {
 }
 
 export function nameParts(card: ContactCard): { given: string; surname: string } {
-  const components = card.name?.components ?? [];
-  if (!components.length) return splitName(card.name?.full ?? '');
+  const components = parts(card.name?.components);
+  if (!components.length) return splitName(text(card.name?.full));
   const of = (kind: string) => components.find((c) => c.kind === kind)?.value.trim() ?? '';
   return { given: of('given'), surname: of('surname') };
 }
@@ -79,11 +92,11 @@ const phoneLabel = (p: CardPhone): PhoneLabel =>
   p.features?.mobile || p.features?.cell ? 'mobile' : p.contexts?.work ? 'work' : p.contexts?.private ? 'home' : 'other';
 const addressLabel = (a: CardAddress): AddressLabel => (a.contexts?.work ? 'work' : a.contexts?.private ? 'home' : 'other');
 const addressText = (a: CardAddress): string =>
-  a.full ?? (a.components ?? []).filter((c) => c.kind !== 'separator').map((c) => c.value).join(', ');
+  typeof a.full === 'string' ? a.full : parts(a.components).filter((c) => c.kind !== 'separator').map((c) => c.value).join(', ');
 
 /** The preferred address first, then as stored. */
 export function emailsOf(card: ContactCard): EmailView[] {
-  const entries = Object.entries(card.emails ?? {});
+  const entries = rows(card.emails);
   let best: string | undefined = entries[0]?.[0];
   let lowest = Infinity;
   for (const [key, e] of entries) {
@@ -92,28 +105,29 @@ export function emailsOf(card: ContactCard): EmailView[] {
       best = key;
     }
   }
-  const views = entries.map(([key, e]) => ({ key, address: e.address, label: emailLabel(e), preferred: key === best }));
+  const views = entries.map(([key, e]) => ({ key, address: text(e.address), label: emailLabel(e), preferred: key === best }));
   return [...views.filter((v) => v.preferred), ...views.filter((v) => !v.preferred)];
 }
 
 export function phonesOf(card: ContactCard): PhoneView[] {
-  return Object.entries(card.phones ?? {}).map(([key, p]) => ({ key, number: p.number, label: phoneLabel(p) }));
+  return rows(card.phones).map(([key, p]) => ({ key, number: text(p.number), label: phoneLabel(p) }));
 }
 
 export function addressesOf(card: ContactCard): AddressView[] {
-  return Object.entries(card.addresses ?? {}).map(([key, a]) => ({ key, text: addressText(a), label: addressLabel(a) }));
+  return rows(card.addresses).map(([key, a]) => ({ key, text: addressText(a), label: addressLabel(a) }));
 }
 
 const isJobTitle = (t: { kind?: string }) => !t.kind || t.kind === 'title';
 
 export function organizationOf(card: ContactCard): { name: string; department: string; title: string } {
-  const org = Object.values(card.organizations ?? {})[0];
-  const title = Object.values(card.titles ?? {}).find(isJobTitle);
-  return { name: org?.name?.trim() ?? '', department: org?.units?.[0]?.name?.trim() ?? '', title: title?.name?.trim() ?? '' };
+  const org = rows(card.organizations)[0]?.[1];
+  const title = rows(card.titles).map(([, t]) => t).find(isJobTitle);
+  const unit = Array.isArray(org?.units) ? org.units[0] : undefined;
+  return { name: text(org?.name).trim(), department: text(unit?.name).trim(), title: text(title?.name).trim() };
 }
 
 const birthEntry = (card: ContactCard): [string, PartialDate] | undefined => {
-  for (const [key, a] of Object.entries(card.anniversaries ?? {})) {
+  for (const [key, a] of rows(card.anniversaries)) {
     const date = a.date as PartialDate | undefined;
     if (a.kind === 'birth' && date && typeof date.month === 'number' && typeof date.day === 'number') return [key, date];
   }
@@ -127,12 +141,12 @@ export function birthdayOf(card: ContactCard): { day: number; month: number; yea
 }
 
 export function notesOf(card: ContactCard): string {
-  return Object.values(card.notes ?? {}).map((n) => n.note).filter(Boolean).join('\n\n');
+  return rows(card.notes).map(([, n]) => text(n.note)).filter(Boolean).join('\n\n');
 }
 
 const photoEntry = (card: ContactCard): [string, string] | undefined => {
-  for (const [key, m] of Object.entries(card.media ?? {})) {
-    if (m.kind === 'photo' && m.uri?.startsWith('data:image/')) return [key, m.uri];
+  for (const [key, m] of rows(card.media)) {
+    if (m.kind === 'photo' && text(m.uri).startsWith('data:image/')) return [key, m.uri!];
   }
   return undefined;
 };
@@ -142,18 +156,22 @@ export function photoOf(card: ContactCard): string | null {
   return photoEntry(card)?.[1] ?? null;
 }
 
+export function nicknamesOf(card: ContactCard): string[] {
+  return rows(card.nicknames).map(([, n]) => text(n.name).trim()).filter(Boolean);
+}
+
 /** What the card holds that the dialog does not edit, for showing as it is. */
 export function extrasOf(card: ContactCard): { label: string; values: string[] }[] {
   const out: { label: string; values: string[] }[] = [];
-  const add = (label: string, values: (string | undefined)[]) => {
-    const kept = values.map((v) => v?.trim() ?? '').filter(Boolean);
+  const add = (label: string, values: unknown[]) => {
+    const kept = values.map((v) => text(v).trim()).filter(Boolean);
     if (kept.length) out.push({ label, values: kept });
   };
-  add('Nickname', Object.values(card.nicknames ?? {}).map((n) => n.name));
-  add('Links', Object.values(card.links ?? {}).map((l) => l.uri));
-  add('Online', Object.values(card.onlineServices ?? {}).map((s) => (s.service && s.user ? `${s.service}: ${s.user}` : (s.uri ?? s.user))));
-  add('Keywords', Object.keys(card.keywords ?? {}));
-  add('Name', (card.name?.components ?? []).filter((c) => c.kind !== 'given' && c.kind !== 'surname' && c.kind !== 'separator').map((c) => c.value));
+  add('Nickname', nicknamesOf(card));
+  add('Links', rows(card.links).map(([, l]) => l.uri));
+  add('Online', rows(card.onlineServices).map(([, s]) => (text(s.service) && text(s.user) ? `${s.service}: ${s.user}` : (s.uri ?? s.user))));
+  add('Keywords', Object.keys(card.keywords && typeof card.keywords === 'object' ? card.keywords : {}));
+  add('Name', parts(card.name?.components).filter((c) => c.kind !== 'given' && c.kind !== 'surname' && c.kind !== 'separator').map((c) => c.value));
   return out;
 }
 
@@ -161,7 +179,7 @@ export function extrasOf(card: ContactCard): { label: string; values: string[] }
 export function displayName(card: ContactCard): string {
   return (
     fullName(card.name?.components) ||
-    card.name?.full?.trim() ||
+    text(card.name?.full).trim() ||
     organizationOf(card).name ||
     emailsOf(card)[0]?.address.trim() ||
     phonesOf(card)[0]?.number.trim() ||
@@ -283,7 +301,7 @@ function nextName(card: ContactCard | undefined, form: ContactForm): ContactCard
     const cur = nameParts(card);
     if (cur.given === given && cur.surname === surname) return card.name;
   }
-  const others = (card?.name?.components ?? []).filter((c) => c.kind !== 'given' && c.kind !== 'surname');
+  const others = parts(card?.name?.components).filter((c) => c.kind !== 'given' && c.kind !== 'surname');
   const components = [...others, ...(given ? [{ kind: 'given', value: given }] : []), ...(surname ? [{ kind: 'surname', value: surname }] : [])];
   if (!components.length) return { full: '' };
   const rank = (c: NameComponent) => (NAME_ORDER.indexOf(c.kind) + 1 || NAME_ORDER.length + 1);
@@ -362,7 +380,7 @@ function nextMaps(card: ContactCard | undefined, form: ContactForm): Maps {
   const units = [...(department ? [{ name: department }] : []), ...(org?.units ?? []).slice(1)];
   const nextOrg = name || department ? { ...orgRest, ...(name ? { name } : {}), ...(units.length ? { units } : {}) } : null;
 
-  const titleKey = Object.entries(card?.titles ?? {}).find(([, t]) => isJobTitle(t))?.[0] ?? freeKey('t', new Set(Object.keys(card?.titles ?? {})));
+  const titleKey = rows(card?.titles).find(([, t]) => isJobTitle(t))?.[0] ?? freeKey('t', new Set(Object.keys(card?.titles ?? {})));
   const title = form.title.trim();
   const nextTitle = title ? { kind: 'title', ...card?.titles?.[titleKey], name: title } : null;
 

@@ -168,13 +168,14 @@ export function ContactsView() {
         </Switch>
       </section>
       <section class="contact-pane" aria-label="Contact">
-        <Show when={open()} fallback={<div class="list-empty">{params.id ? 'Loading contacts…' : 'Select a contact'}</div>} keyed>
+        {/* Not keyed: a save or a push replaces the card object, and the pane (and the focus in it) must stay. */}
+        <Show when={open()} fallback={<div class="list-empty">{params.id ? 'Loading contacts…' : 'Select a contact'}</div>}>
           {(card) => (
             <>
               <A href="/contacts" class="contact-back">
                 <Icon name="back" /> Back to contacts
               </A>
-              <ContactCardView card={card} onDelete={() => remove(card.id)} />
+              <ContactCardView card={card()} onDelete={() => remove(card().id)} />
             </>
           )}
         </Show>

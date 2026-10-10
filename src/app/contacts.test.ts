@@ -2,6 +2,7 @@ import { createRoot } from 'solid-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadContacts, saveContacts } from '../cache/persist';
 import { displayName, toForm } from '../contacts/card';
+import { matchPeople } from '../contacts/search';
 import { CONTACTS } from '../jmap/types';
 import { FakeJmap } from '../sync/fake-jmap';
 import { createContacts } from './contacts';
@@ -13,11 +14,11 @@ vi.mock('../cache/persist', () => ({
 
 const NOW = '2026-10-10T12:00:00Z';
 
-function setup(opts: { contactsSupported?: boolean } = {}) {
+function setup(opts: { contactsSupported?: boolean; saveDelayMs?: number } = {}) {
   const fake = new FakeJmap();
   fake.contactsSupported = opts.contactsSupported ?? true;
   const toast = vi.fn();
-  const contacts = createRoot(() => createContacts(fake.client(), toast, { now: () => NOW, uid: () => 'urn:uuid:test', saveDelayMs: 0 }));
+  const contacts = createRoot(() => createContacts(fake.client(), toast, { now: () => NOW, uid: () => 'urn:uuid:test', saveDelayMs: opts.saveDelayMs ?? 0 }));
   return { fake, contacts, toast };
 }
 
@@ -139,6 +140,35 @@ describe('createContacts', () => {
     fake.onCall = null;
     await contacts.reload();
     expect(contacts.state).toMatchObject({ loaded: true, failed: false });
+    expect(contacts.people()).toHaveLength(1);
+  });
+  it('writes nothing to the browser once stopped', async () => {
+    const { fake, contacts } = setup({ saveDelayMs: 20 });
+    fake.addCard({ name: { full: 'A' } });
+    await contacts.start('signed-out');
+    // A save is waiting its turn when the person is signed out.
+    contacts.stop();
+    contacts.onStateChange({ '@type': 'StateChange', changed: { a1: { ContactCard: 'k999' } } });
+    await new Promise((r) => setTimeout(r, 40));
+    // Other tests' stores may still be saving under their own keys.
+    expect(vi.mocked(saveContacts).mock.calls.filter(([key]) => key === 'signed-out')).toEqual([]);
+    expect(fake.calls.filter((c) => c === 'ContactCard/changes')).toEqual([]);
+  });
+  it('finds a person by their new name after everything is loaded again', async () => {
+    const { fake, contacts } = setup();
+    const a = fake.addCard({ name: { components: [{ kind: 'given', value: 'Before' }] } });
+    await contacts.start('k');
+    expect(matchPeople(contacts.people(), 'before')).toHaveLength(1);
+    fake.cards.get(a.id)!.name = { components: [{ kind: 'given', value: 'After' }], full: 'After' };
+    await contacts.reload();
+    expect(matchPeople(contacts.people(), 'after')).toHaveLength(1);
+    expect(matchPeople(contacts.people(), 'before')).toHaveLength(0);
+  });
+  it('loads everything again when the server rejects the state it kept', async () => {
+    const { fake, contacts } = setup();
+    fake.addCard({ name: { full: 'A' } });
+    vi.mocked(loadContacts).mockResolvedValue({ cards: [], books: [], cardState: 'not-a-state', bookState: 'ab1' });
+    await contacts.start('k');
     expect(contacts.people()).toHaveLength(1);
   });
   it('does nothing on a server without contacts', async () => {

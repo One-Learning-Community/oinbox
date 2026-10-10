@@ -164,6 +164,7 @@ async function boot() {
     // Whoever signs in next in this tab may be someone else.
     linkPasswords.clear();
     each((s) => s.recipients.stop());
+    contacts.stop();
     push?.close();
     each((s) => s.engine.setOnline(false));
     void clearCaches();

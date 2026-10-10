@@ -130,6 +130,18 @@ describe('ContactsView', () => {
     expect(names()).toEqual(['Adam After', 'Mia Mid', 'Zoë Probe']);
   });
 
+  it('keeps the card on screen, and the focus on it, when the card changes', async () => {
+    const { show, adam, contacts, fake } = await seeded();
+    show(`/contacts/${adam.id}`, routes);
+    const edit = screen.getByRole('button', { name: 'Edit' });
+    edit.focus();
+    fake.handle('ContactCard/set', { accountId: 'a1', update: { [adam.id]: { notes: { n1: { note: 'Changed' } } } } }, [CONTACTS]);
+    contacts.onStateChange({ '@type': 'StateChange', changed: { a1: { ContactCard: `k${fake.cardState}` } } });
+    expect(await screen.findByText('Changed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBe(edit);
+    expect(edit).toHaveFocus();
+  });
+
   it('goes back to the list, saying why, when the open card is deleted elsewhere', async () => {
     const { show, zoe, contacts, fake, toast, path } = await seeded();
     show(`/contacts/${zoe.id}`, routes);

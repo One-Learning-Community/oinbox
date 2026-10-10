@@ -36,13 +36,19 @@ export interface Contacts {
   /** After a push (re)connect, changes may have been missed. */
   onConnected(): void;
   create(form: ContactForm): Promise<ContactWrite>;
-  update(id: Id, form: ContactForm): Promise<ContactWrite>;
+  /**
+   * Save the form. `base` is the card as the form was started from: only what the user changed since
+   * then is sent, so what another device changed meanwhile is left as that device left it.
+   */
+  update(id: Id, form: ContactForm, base?: ContactCard): Promise<ContactWrite>;
   /** Delete, with Undo in the toast. */
   remove(id: Id): Promise<ContactWrite>;
   /** The contact dialog, wherever it was asked for. */
   dialog: Accessor<ContactDialogState | null>;
   openDialog(state: ContactDialogState): void;
   closeDialog(): void;
+  /** The person has been signed out: nothing more is fetched or written to the browser. */
+  stop(): void;
 }
 
 /** Stalwart's limit for one get, and the page a load is read in. */
@@ -75,14 +81,16 @@ export function createContacts(
   let running: Promise<void> | null = null;
   let again = false;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
 
   const accountId = (): Id | undefined => (client.hasSession ? client.session.primaryAccounts[CONTACTS] : undefined);
 
   const saveSoon = () => {
-    if (saveTimer || !key) return;
+    if (saveTimer || !key || stopped) return;
     const under = key;
     saveTimer = setTimeout(() => {
       saveTimer = null;
+      if (stopped) return;
       void saveContacts(under, { cards: Object.values(unwrap(state.cards)), books: Object.values(unwrap(state.books)), cardState, bookState });
     }, saveDelayMs);
   };
@@ -119,8 +127,11 @@ export function createContacts(
       const cc = b.call('ContactCard/changes', { accountId, sinceState: cardState });
       const bc = b.call('AddressBook/changes', { accountId, sinceState: bookState });
       const res = await client.send(b, USING);
-      if ((res.error(cc) ?? res.error(bc))?.type === 'cannotCalculateChanges') {
-        if (!settled) await loadAll(accountId);
+      // The server cannot say what changed (or will not take the state we kept): what we hold is
+      // no use as a starting point, so everything is read again.
+      if (res.error(cc) ?? res.error(bc)) {
+        if (settled) return;
+        await loadAll(accountId);
         return;
       }
       const cards = res.get(cc);
@@ -168,7 +179,14 @@ export function createContacts(
       if (page.ids.length < PAGE) break;
     }
     batch(() => {
-      setState('cards', reconcile(cards));
+      // Every card a new object, not merged into the old one: the search index is kept per object.
+      setState(
+        'cards',
+        produce((all) => {
+          for (const id of Object.keys(all)) if (!(id in cards)) delete all[id];
+          for (const card of Object.values(cards)) all[card.id] = card;
+        }),
+      );
       setState('books', reconcile(Object.fromEntries(books.map((x) => [x.id, x]))));
       setState({ loaded: true, failed: false });
     });
@@ -183,7 +201,7 @@ export function createContacts(
   /** One run at a time; a request during a run is honoured by one more run after it. */
   const sync = (): Promise<void> => {
     const accountId0 = accountId();
-    if (!accountId0) return Promise.resolve();
+    if (!accountId0 || stopped) return Promise.resolve();
     if (running) {
       again = true;
       return running;
@@ -295,11 +313,11 @@ export function createContacts(
         if (!book) return { ok: false, error: 'Your contacts have not loaded yet.' };
         return createCard(accountId0, newCard(form, book.id, now(), uid()));
       }),
-    update: (id, form) =>
+    update: (id, form, base) =>
       guarded(async (accountId0) => {
         const card = state.cards[id];
         if (!card) return { ok: false, error: 'This contact no longer exists.' };
-        const patch = patchFor(unwrap(card), form, now());
+        const patch = patchFor(base ?? unwrap(card), form, now());
         if (!Object.keys(patch).length) return { ok: true, id };
         const b = client.batch();
         const set = b.call('ContactCard/set', { accountId: accountId0, update: { [id]: patch } });
@@ -348,5 +366,10 @@ export function createContacts(
     dialog,
     openDialog: (next) => void setDialog(next),
     closeDialog: () => void setDialog(null),
+    stop: () => {
+      stopped = true;
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = null;
+    },
   };
 }

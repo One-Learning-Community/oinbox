@@ -1,7 +1,7 @@
 // Saved people as the composer's recipient suggestions see them: one entry per address.
 // Pure: no Solid, no JMAP.
 import type { ContactCard, Id } from '../jmap/types';
-import { displayName, emailsOf, organizationOf } from './card';
+import { displayName, emailsOf, nicknamesOf, organizationOf } from './card';
 
 export interface SavedEntry {
   email: string;
@@ -23,7 +23,7 @@ export function savedEntries(people: ContactCard[]): SavedEntry[] {
     if (!emails.length) continue;
     const shown = displayName(card);
     const org = organizationOf(card);
-    const words = [org.name, org.department, ...Object.values(card.nicknames ?? {}).map((n) => n.name.trim())].filter(Boolean);
+    const words = [org.name, org.department, ...nicknamesOf(card)].filter(Boolean);
     for (const e of emails) {
       const email = e.address.trim();
       const key = email.toLowerCase();

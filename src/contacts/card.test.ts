@@ -50,6 +50,32 @@ describe('reading a card', () => {
     expect(photoOf(card({ media: { l: { kind: 'logo', uri: 'data:image/png;base64,AA' }, m: { kind: 'photo', uri: 'data:image/png;base64,BB' } } }))).toBe('data:image/png;base64,BB');
     expect(extrasOf(phone)).toEqual([{ label: 'Nickname', values: ['Davvy'] }, { label: 'Keywords', values: ['vip'] }]);
   });
+  it('reads a card another client left malformed without failing', () => {
+    const broken = card({
+      name: { components: [{ kind: 'given' }, null, { kind: 'surname', value: 'Kept' }] },
+      emails: { a: {}, b: null, c: { address: 'ok@x.example' } },
+      phones: { a: {}, b: { number: 5 } },
+      notes: { a: {}, b: { note: 'fine' } },
+      nicknames: { a: {} },
+      organizations: { a: null },
+      titles: { a: {} },
+      addresses: { a: null, b: { components: [null, { kind: 'locality' }] } },
+      anniversaries: { a: null },
+      media: { a: null },
+      links: { a: {} },
+      onlineServices: { a: null },
+    } as never);
+    expect(displayName(broken)).toBe('Kept');
+    expect(emailsOf(broken).map((e) => e.address)).toEqual(['', 'ok@x.example']);
+    expect(phonesOf(broken).map((p) => p.number)).toEqual(['', '']);
+    expect(notesOf(broken)).toBe('fine');
+    expect(addressesOf(broken).map((a) => a.text)).toEqual(['']);
+    expect(organizationOf(broken)).toEqual({ name: '', department: '', title: '' });
+    expect(birthdayOf(broken)).toBeNull();
+    expect(photoOf(broken)).toBeNull();
+    expect(extrasOf(broken)).toEqual([]);
+    expect(() => toForm(broken)).not.toThrow();
+  });
   it('splits a display name', () => {
     expect(splitName('Zoë Probe-Smith')).toEqual({ given: 'Zoë', surname: 'Probe-Smith' });
     expect(splitName('Cher')).toEqual({ given: 'Cher', surname: '' });

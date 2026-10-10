@@ -95,6 +95,20 @@ describe('ContactDialog', () => {
     expect(sets(kit)).toEqual([{ accountId: 'a1', update: { [kit.id]: { phones: { p1: { number: '555 0200', features: { mobile: true } } }, updated: '2026-10-10T12:00:00Z' } } }]);
   });
 
+  it('does not undo what another device changed while the dialog was open', async () => {
+    const kit = await opened({ kind: 'edit', id: '' }, (k) =>
+      k.fake.addCard({ name: { components: [{ kind: 'given', value: 'Zoë' }] }, emails: { e1: { address: 'old@x.example' } }, phones: { p1: { number: '555 0100' } } }).id,
+    );
+    kit.fake.handle('ContactCard/set', { accountId: 'a1', update: { [kit.id]: { emails: { e1: { address: 'new@x.example' }, e2: { address: 'second@x.example' } }, notes: { n1: { note: 'Added elsewhere' } } } } }, ['urn:ietf:params:jmap:contacts']);
+    kit.contacts.onStateChange({ '@type': 'StateChange', changed: { a1: { ContactCard: `k${kit.fake.cardState}` } } });
+    await vi.waitFor(() => expect(kit.contacts.state.cards[kit.id]!.notes).toBeDefined());
+    type('Phone 1', '555 0200');
+    save();
+    await vi.waitFor(() => expect(kit.contacts.dialog()).toBeNull());
+    expect(sets(kit).at(-1)).toEqual({ accountId: 'a1', update: { [kit.id]: { phones: { p1: { number: '555 0200' } }, updated: '2026-10-10T12:00:00Z' } } });
+    expect(kit.fake.cards.get(kit.id)).toMatchObject({ emails: { e1: { address: 'new@x.example' }, e2: { address: 'second@x.example' } }, notes: { n1: { note: 'Added elsewhere' } }, phones: { p1: { number: '555 0200' } } });
+  });
+
   it('marks the address a person prefers', async () => {
     const kit = await opened({ kind: 'new' });
     type('Given name', 'A');

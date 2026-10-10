@@ -257,6 +257,7 @@ describe('FakeJmap contacts (as Stalwart 0.16.23)', () => {
     const b = fake.addCard({ name: { full: 'B' } });
     call(fake, 'ContactCard/set', { update: { [a.id]: { kind: 'individual' } }, destroy: [] });
     expect(call(fake, 'ContactCard/changes', { sinceState: since })).toMatchObject({ created: [b.id], updated: [a.id], destroyed: [], hasMoreChanges: false });
+    expect(fake.handle('ContactCard/changes', { accountId: 'a1', sinceState: 'bogus' }, [CONTACTS])[1]).toMatchObject({ type: 'invalidArguments' });
     fake.cardChangesUnsupported = true;
     expect(fake.handle('ContactCard/changes', { accountId: 'a1', sinceState: since }, [CONTACTS])[1]).toEqual({ type: 'cannotCalculateChanges' });
   });

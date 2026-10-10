@@ -243,6 +243,7 @@ export class FakeJmap {
       }
       case 'ContactCard/changes': {
         if (this.cardChangesUnsupported) return ['error', { type: 'cannotCalculateChanges' }];
+        if (!/^k\d+$/.test(String(args.sinceState))) return ['error', { type: 'invalidArguments', description: 'invalid JMAP State' }];
         const since = Number(String(args.sinceState).slice(1));
         const entries = this.cardLog.filter((l) => l.state > since);
         const uniq = (xs: string[]) => [...new Set(xs)];
