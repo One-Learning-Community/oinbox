@@ -19,10 +19,12 @@ test.afterAll(async () => {
 async function openMessage(page: Page) {
   await openInbox(page);
   await rowFor(page, mail.threadId).click();
-  await expect(page.locator('.attachments .attachment', { hasText: 'notes.txt' })).toBeVisible();
+  await expect(page.locator('.attachments .attachment-tile', { hasText: 'notes.txt' })).toBeVisible();
 }
 
-const chip = (page: Page) => page.locator('.attachments').getByRole('button', { name: /notes\.txt/ });
+/** With a Drive, the tile's menu; `tile` is the tile itself, which downloads. */
+const chip = (page: Page) => page.locator('.attachments').getByRole('button', { name: 'Options for notes.txt' });
+const tile = (page: Page) => page.locator('.attachments').getByRole('button', { name: 'Download notes.txt' });
 
 test('an attachment is saved into a new Drive folder, and a second save keeps both', async ({ page }) => {
   test.skip(!(await driveOn()), 'needs the stack started with docker-compose.drive.yml');
@@ -64,16 +66,16 @@ test('an attachment is saved into a new Drive folder, and a second save keeps bo
   }
 });
 
-test('without a Drive the chip downloads, as it always did', async ({ page }) => {
+test('without a Drive the tile downloads and has no menu', async ({ page }) => {
   await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: false, linkOverMb: 20 } }));
   const driveRequests: string[] = [];
   page.on('request', (r) => {
     if (new URL(r.url()).pathname.startsWith('/drive/')) driveRequests.push(r.url());
   });
   await openMessage(page);
-  await expect(chip(page)).not.toHaveAttribute('aria-haspopup', 'menu');
+  await expect(chip(page)).toHaveCount(0);
   const download = page.waitForEvent('download');
-  await chip(page).click();
+  await tile(page).click();
   expect((await download).suggestedFilename()).toBe('notes.txt');
   await expect(page.getByRole('menu')).toHaveCount(0);
   expect(driveRequests).toEqual([]);
@@ -99,7 +101,7 @@ test('a Drive that is down says so and leaves mail alone', async ({ page }) => {
   expect((await download).suggestedFilename()).toBe('notes.txt');
 });
 
-test("in the dark theme the chip's menu is dark, with text that can be read", async ({ page }) => {
+test("in the dark theme the tile's menu is dark, with text that can be read", async ({ page }) => {
   await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 20 } }));
   await page.emulateMedia({ colorScheme: 'dark' });
   await openMessage(page);

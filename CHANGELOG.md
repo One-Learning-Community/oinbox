@@ -6,7 +6,8 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 ### Added
 
-- Picture attachments (JPEG, PNG, GIF, WebP, AVIF) show as thumbnails in the message, and open in a full-screen viewer that steps through the message's pictures with the arrow keys. A picture over 5 MB is fetched only when you open it. SVG and formats a browser cannot draw stay plain attachments.
+- Picture attachments (JPEG, PNG, GIF, WebP, AVIF) show as thumbnails in the message, and open in a full-screen viewer that steps through the message's pictures with the arrow keys. A picture over 5 MB is fetched only when you open it. SVG and formats a browser cannot draw are shown as files.
+- Every attachment in a message is a tile of one size: a picture shows itself, any other file shows its kind (PDF, DOCX) and downloads on a click.
 
 ## 0.1.0-beta.3
 

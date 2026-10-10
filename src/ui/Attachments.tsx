@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, type JSX, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 import { useApp } from '../app/context';
 import { createPreviews } from '../app/previews';
 import type { EmailBodyPart } from '../jmap/types';
@@ -10,8 +10,8 @@ import { ImageViewer } from './ImageViewer';
 import { MenuButton } from './MenuButton';
 
 /**
- * A message's attachments as chips. With a Drive, a chip offers a choice; without, it downloads.
- * A picture is a tile showing it, and opens in the viewer.
+ * A message's attachments as tiles of one size. A picture shows itself and opens in the viewer; any other
+ * file shows its kind and downloads. With a Drive, each tile has a menu that also saves it there.
  */
 export function Attachments(props: { email: EmailRec }) {
   const { engine, toast, drive } = useApp();
@@ -61,53 +61,23 @@ export function Attachments(props: { email: EmailRec }) {
     })),
   );
 
-  const face = (a: EmailBodyPart) => (
-    <>
-      <Icon name="file" style={{ width: '20px', height: '20px', flex: 'none' }} />
-      <span>{nameOf(a)}</span>
-      <small>{fileSize(a.size)}</small>
-    </>
-  );
-
   return (
     <Show when={list().length}>
       <div class="attachments">
         <For each={list()}>
           {(a) => (
-            <Switch>
-              <Match when={pictures().includes(a)}>
-                <PictureTile
-                  part={a}
-                  name={nameOf(a)}
-                  url={() => previews.url(a)}
-                  face={() => face(a)}
-                  onView={(from) => view(a, from)}
-                  onDownload={() => void download(a)}
-                  onSave={drive.offered() ? () => toDrive([a]) : undefined}
-                />
-              </Match>
-              <Match when={drive.offered()}>
-                <MenuButton
-                  class="attachment"
-                  title={nameOf(a)}
-                  menuLabel={`Options for ${nameOf(a)}`}
-                  items={[
-                    { label: 'Download', run: () => void download(a) },
-                    { label: 'Save to Drive', run: () => toDrive([a]) },
-                  ]}
-                >
-                  {face(a)}
-                </MenuButton>
-              </Match>
-              <Match when={true}>
-                <button type="button" class="attachment" onClick={() => void download(a)} title={a.name ?? ''}>
-                  {face(a)}
-                </button>
-              </Match>
-            </Switch>
+            <Tile
+              part={a}
+              name={nameOf(a)}
+              picture={pictures().includes(a) ? () => previews.url(a) : undefined}
+              onView={(from) => view(a, from)}
+              onDownload={() => void download(a)}
+              onSave={drive.offered() ? () => toDrive([a]) : undefined}
+            />
           )}
         </For>
         <Show when={drive.offered() && list().length > 1}>
+          <span class="attachments-break" />
           <button type="button" class="attachment attachment-all" onClick={() => toDrive(list())}>
             Save all to Drive
           </button>
@@ -125,78 +95,81 @@ export function Attachments(props: { email: EmailRec }) {
   );
 }
 
+/** The letters after the last dot, when they are few enough to read as a kind of file. */
+const extension = (name: string) => /\.([a-z0-9]{1,4})$/i.exec(name)?.[1]?.toUpperCase();
+
 /**
- * A picture among the attachments. One small enough to fetch unasked is shown once it scrolls into view;
- * a larger one, or one that would not load, is the plain chip. Either opens the viewer.
+ * One attachment: a tile of one size whatever the file. A picture small enough to fetch unasked is shown
+ * once it scrolls into view, and any picture opens the viewer; another file shows its kind and downloads.
  */
-function PictureTile(props: {
+function Tile(props: {
   part: EmailBodyPart;
   name: string;
-  url: () => Promise<string>;
-  face: () => JSX.Element;
+  /** An address to show the picture from; absent for a file that is not a picture. */
+  picture?: () => Promise<string>;
   onView: (from: HTMLElement) => void;
   onDownload: () => void;
   onSave?: () => void;
 }) {
   const [src, setSrc] = createSignal<string>();
-  const [failed, setFailed] = createSignal(false);
   let tile: HTMLDivElement | undefined;
 
-  const load = () => props.url().then(setSrc, () => setFailed(true));
   onMount(() => {
-    if (!tile) return;
-    if (typeof IntersectionObserver === 'undefined') return void load();
+    const picture = props.picture;
+    if (!tile || !picture || !hasThumbnail(props.part)) return;
+    // A picture that will not load keeps the icon; the viewer says why when it is opened.
+    const load = () => void picture().then(setSrc, () => {});
+    if (typeof IntersectionObserver === 'undefined') return load();
     const seen = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       seen.disconnect();
-      void load();
+      load();
     }, { rootMargin: '200px' });
     seen.observe(tile);
     onCleanup(() => seen.disconnect());
   });
 
   return (
-    <Show
-      when={hasThumbnail(props.part) && !failed()}
-      fallback={
-        <button type="button" class="attachment" title={props.name} onClick={(e) => props.onView(e.currentTarget)}>
-          {props.face()}
-        </button>
-      }
-    >
-      <div class="attachment-tile" ref={tile}>
-        <button type="button" class="attachment-thumb" aria-label={`Preview ${props.name}`} title={props.name} onClick={(e) => props.onView(e.currentTarget)}>
-          <Show when={src()} fallback={<Icon name="file" />}>
-            <img src={src()} alt="" draggable={false} />
-          </Show>
-        </button>
-        <div class="attachment-tile-foot">
-          <div class="attachment-tile-name">
-            <span title={props.name}>{props.name}</span>
-            <small>{fileSize(props.part.size)}</small>
-          </div>
-          <Switch>
-            <Match when={props.onSave}>
-              <MenuButton
-                class="icon-btn"
-                title={`Options for ${props.name}`}
-                menuLabel={`Options for ${props.name}`}
-                items={[
-                  { label: 'Download', run: props.onDownload },
-                  { label: 'Save to Drive', run: () => props.onSave?.() },
-                ]}
-              >
-                <Icon name="more" />
-              </MenuButton>
-            </Match>
-            <Match when={true}>
-              <button type="button" class="icon-btn" title={`Download ${props.name}`} onClick={props.onDownload}>
-                <Icon name="download" />
-              </button>
-            </Match>
-          </Switch>
+    <div class="attachment-tile" ref={tile}>
+      <button
+        type="button"
+        class="attachment-thumb"
+        classList={{ 'attachment-picture': !!props.picture }}
+        aria-label={`${props.picture ? 'Preview' : 'Download'} ${props.name}`}
+        title={props.name}
+        onClick={(e) => (props.picture ? props.onView(e.currentTarget) : props.onDownload())}
+      >
+        <Show when={src()} fallback={<><Icon name="file" /><span>{extension(props.name)}</span></>}>
+          <img src={src()} alt="" draggable={false} />
+        </Show>
+      </button>
+      <div class="attachment-tile-foot">
+        <div class="attachment-tile-name">
+          <span title={props.name}>{props.name}</span>
+          <small>{fileSize(props.part.size)}</small>
         </div>
+        <Switch>
+          <Match when={props.onSave}>
+            <MenuButton
+              class="icon-btn"
+              title={`Options for ${props.name}`}
+              menuLabel={`Options for ${props.name}`}
+              items={[
+                { label: 'Download', run: props.onDownload },
+                { label: 'Save to Drive', run: () => props.onSave?.() },
+              ]}
+            >
+              <Icon name="more" />
+            </MenuButton>
+          </Match>
+          {/* Without a Drive a file's tile is already its download. */}
+          <Match when={props.picture}>
+            <button type="button" class="icon-btn" title={`Download ${props.name}`} onClick={props.onDownload}>
+              <Icon name="download" />
+            </button>
+          </Match>
+        </Switch>
       </div>
-    </Show>
+    </div>
   );
 }

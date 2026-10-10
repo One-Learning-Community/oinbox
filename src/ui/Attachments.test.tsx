@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type Mock, vi } from 'vitest';
 import { AppContext, type App } from '../app/context';
 import type { SaveFile } from '../app/drive';
 import type { EmailRec } from '../sync/engine';
@@ -7,9 +7,9 @@ import { Attachments } from './Attachments';
 
 const part = (name: string | null, extra: Record<string, unknown> = {}) => ({ partId: name ?? 'p', blobId: `blob-${name}`, name, type: 'text/plain', size: 1536, disposition: 'attachment', ...extra });
 
-function setup(opts: { offered: boolean; parts?: ReturnType<typeof part>[] }) {
+function setup(opts: { offered: boolean; parts?: ReturnType<typeof part>[]; fetchBlob?: Mock<() => Promise<Blob>> }) {
   const fetched = new Blob(['bytes']);
-  const fetchBlob = vi.fn(async () => fetched);
+  const fetchBlob = opts.fetchBlob ?? vi.fn(async () => fetched);
   const saveToDrive = vi.fn<(files: SaveFile[]) => void>();
   const app = { engine: { fetchBlob }, toast: vi.fn(), drive: { offered: () => opts.offered, saveToDrive } } as unknown as App;
   const email = { id: 'e1', attachments: opts.parts ?? [part('notes.txt')] } as unknown as EmailRec;
@@ -22,33 +22,38 @@ function setup(opts: { offered: boolean; parts?: ReturnType<typeof part>[] }) {
 }
 
 describe('Attachments', () => {
-  it('without Drive, a chip downloads on a click and has no menu', async () => {
+  it('without Drive, a tile downloads on a click and has no menu', async () => {
     URL.createObjectURL = vi.fn(() => 'blob:x');
     URL.revokeObjectURL = vi.fn();
     const { fetchBlob } = setup({ offered: false });
-    const chip = screen.getByRole('button', { name: /notes\.txt/ });
-    expect(chip).not.toHaveAttribute('aria-haspopup');
-    fireEvent.click(chip);
+    const tile = screen.getByRole('button', { name: 'Download notes.txt' });
+    expect(tile).toHaveTextContent('TXT');
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    fireEvent.click(tile);
     await vi.waitFor(() => expect(fetchBlob).toHaveBeenCalledWith('blob-notes.txt', 'notes.txt', 'text/plain'));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Save all to Drive' })).toBeNull();
   });
 
-  it('with Drive, a chip opens a menu of Download and Save to Drive', async () => {
-    setup({ offered: true });
-    const chip = screen.getByRole('button', { name: /notes\.txt/ });
-    expect(chip).toHaveAttribute('aria-haspopup', 'menu');
-    fireEvent.click(chip);
+  it('with Drive, a tile has a menu of Download and Save to Drive, and still downloads on a click', async () => {
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const { fetchBlob } = setup({ offered: true });
+    const more = screen.getByRole('button', { name: 'Options for notes.txt' });
+    expect(more).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(more);
     const items = await screen.findAllByRole('menuitem');
     expect(items.map((i) => i.textContent)).toEqual(['Download', 'Save to Drive']);
     await vi.waitFor(() => expect(items[0]).toHaveFocus());
     fireEvent.keyDown(items[0]!, { key: 'ArrowDown' });
     expect(items[1]).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Download notes.txt' }));
+    await vi.waitFor(() => expect(fetchBlob).toHaveBeenCalledTimes(1));
   });
 
   it('Save to Drive hands the app the file, fetched only when asked for', async () => {
     const { fetchBlob, saveToDrive, fetched } = setup({ offered: true });
-    fireEvent.click(screen.getByRole('button', { name: /notes\.txt/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Options for notes.txt' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Save to Drive' }));
     expect(saveToDrive).toHaveBeenCalledOnce();
     const files = saveToDrive.mock.calls[0]![0];
@@ -62,7 +67,7 @@ describe('Attachments', () => {
     URL.createObjectURL = vi.fn(() => 'blob:x');
     URL.revokeObjectURL = vi.fn();
     const { fetchBlob, saveToDrive } = setup({ offered: true });
-    fireEvent.click(screen.getByRole('button', { name: /notes\.txt/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Options for notes.txt' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Download' }));
     await vi.waitFor(() => expect(fetchBlob).toHaveBeenCalled());
     expect(saveToDrive).not.toHaveBeenCalled();
@@ -98,34 +103,31 @@ describe('Attachments: pictures', () => {
     await vi.waitFor(() => expect(tile.querySelector('img')).toHaveAttribute('src', 'blob:1'));
     expect(fetchBlob).toHaveBeenCalledWith('blob-beach.jpg', 'beach.jpg', 'image/jpeg');
     expect(fetchBlob).toHaveBeenCalledTimes(1);
-    // The other attachment is the chip it always was.
-    expect(screen.getByRole('button', { name: /notes\.txt/ })).toHaveClass('attachment');
+    // The other attachment is a tile of the same kind, showing what it is.
+    expect(screen.getByRole('button', { name: 'Download notes.txt' })).toHaveClass('attachment-thumb');
   });
 
-  it('leaves a large picture as a chip until it is clicked', async () => {
+  it('does not fetch a large picture until it is opened', async () => {
     urls();
     const { fetchBlob } = setup({ offered: true, parts: [photo('huge.jpg', { size: 9_000_000 })] });
-    const chip = screen.getByRole('button', { name: /huge\.jpg/ });
-    expect(chip).toHaveClass('attachment');
+    const tile = screen.getByRole('button', { name: 'Preview huge.jpg' });
+    expect(tile).toHaveTextContent('JPG');
     await Promise.resolve();
     expect(fetchBlob).not.toHaveBeenCalled();
-    fireEvent.click(chip);
+    fireEvent.click(tile);
     const viewer = await screen.findByRole('dialog');
     await vi.waitFor(() => expect(viewer.querySelector('img')).toHaveAttribute('src', 'blob:1'));
     expect(viewer.querySelector('img')).toHaveAttribute('alt', 'huge.jpg');
   });
 
-  it('falls back to a chip when the picture will not load', async () => {
+  it('keeps the icon when the picture will not load, and the viewer says so', async () => {
     urls();
-    const failing = vi.fn(async () => Promise.reject(new Error('404')));
-    const app = { engine: { fetchBlob: failing }, toast: vi.fn(), drive: { offered: () => false, saveToDrive: vi.fn() } } as unknown as App;
-    render(() => (
-      <AppContext.Provider value={app}>
-        <Attachments email={{ id: 'e2', attachments: [photo('gone.jpg')] } as unknown as EmailRec} />
-      </AppContext.Provider>
-    ));
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: /gone\.jpg/ })).toHaveClass('attachment'));
-    expect(screen.queryByRole('button', { name: 'Preview gone.jpg' })).toBeNull();
+    const { fetchBlob } = setup({ offered: false, parts: [photo('gone.jpg')], fetchBlob: vi.fn(async () => Promise.reject(new Error('404'))) });
+    const tile = screen.getByRole('button', { name: 'Preview gone.jpg' });
+    await vi.waitFor(() => expect(fetchBlob).toHaveBeenCalledTimes(1));
+    expect(tile.querySelector('img')).toBeNull();
+    fireEvent.click(tile);
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
   });
 
   it('opens the viewer on a click, steps with the arrow keys, and closes with the focus back on the tile', async () => {
@@ -193,10 +195,11 @@ describe('Attachments: pictures', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:1');
   });
 
-  it('keeps a picture shown in the text, and an SVG, out of the tiles', () => {
+  it('leaves out a picture shown in the text, and treats an SVG as a file', () => {
     urls();
     setup({ offered: false, parts: [part('chart.png', { type: 'image/png', disposition: 'inline', cid: 'c1' }), part('logo.svg', { type: 'image/svg+xml' })] });
     expect(screen.queryByRole('button', { name: /Preview/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /logo\.svg/ })).toHaveClass('attachment');
+    expect(screen.queryByRole('button', { name: /chart\.png/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Download logo.svg' })).toHaveTextContent('SVG');
   });
 });

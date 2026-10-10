@@ -33,9 +33,11 @@ test('pictures show as tiles and open in a viewer that steps between them', asyn
   await openMessageWith(page, [imagePart('first.png'), notes, imagePart('second.png')]);
 
   for (const name of ['first.png', 'second.png']) await expect.poll(() => drawn(tile(page, name).locator('img'))).toBe(true);
-  // What is not a picture is the chip it always was.
-  await expect(page.locator('.attachments .attachment', { hasText: 'notes.txt' })).toBeVisible();
-  await expect(page.locator('.attachment-tile')).toHaveCount(2);
+  // What is not a picture is a tile of the same size, showing its kind.
+  await expect(page.getByRole('button', { name: 'Download notes.txt' })).toHaveText('TXT');
+  const sizes = await page.locator('.attachment-tile').evaluateAll((tiles) => tiles.map((t) => `${t.clientWidth}x${t.clientHeight}`));
+  expect(sizes).toHaveLength(3);
+  expect(new Set(sizes).size, `tiles are one size: ${sizes.join(', ')}`).toBe(1);
 
   await tile(page, 'second.png').click();
   await expect(viewer(page)).toContainText('second.png');
@@ -75,7 +77,7 @@ test('the viewer has no serious accessibility faults and downloads the picture',
   await expect(tile(page, 'first.png')).toBeFocused();
 });
 
-test('a picture over the size cap stays a chip until it is clicked', async ({ page }) => {
+test('a picture over the size cap is not fetched until it is opened', async ({ page }) => {
   // A PNG still draws with bytes after its end, so padding makes a large one cheaply.
   const large = Buffer.concat([PNG, Buffer.alloc(5 * 1024 * 1024 + 1024)]).toString('base64').replace(/.{76}/g, '$&\n');
   const fetched: string[] = [];
@@ -84,12 +86,10 @@ test('a picture over the size cap stays a chip until it is clicked', async ({ pa
   });
   await openMessageWith(page, [imagePart('large.png', large)]);
 
-  const chip = page.locator('.attachments .attachment', { hasText: 'large.png' });
-  await expect(chip).toBeVisible();
-  await expect(page.locator('.attachment-tile')).toHaveCount(0);
+  await expect(tile(page, 'large.png')).toHaveText('PNG');
   expect(fetched).toEqual([]);
 
-  await chip.click();
+  await tile(page, 'large.png').click();
   await expect.poll(() => drawn(viewer(page).locator('img')), { timeout: 20_000 }).toBe(true);
   expect(fetched).toHaveLength(1);
 });

@@ -203,13 +203,17 @@ a { color: var(--accent); }
 .attachment { display: flex; align-items: center; gap: 8px; max-width: 240px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
 .attachment span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .attachment small { color: var(--text-3); }
-/* A picture among the attachments: the image over its name, size and one action. */
-.attachment-tile { display: flex; flex-direction: column; width: 180px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
-.attachment-thumb { display: grid; place-items: center; height: 120px; padding: 0; border: 0; background: var(--surface-2); color: var(--text-3); cursor: zoom-in; }
+/* An attachment in a message: the picture, or the file's kind, over its name, size and one action. */
+/* Two to a row on a phone, where 180px would leave one. */
+.attachment-tile { display: flex; flex-direction: column; width: min(180px, calc(50% - 4px)); box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.attachment-thumb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 120px; padding: 0; border: 0; background: var(--surface-2); color: var(--text-2); cursor: pointer; }
+.attachment-thumb.attachment-picture { cursor: zoom-in; }
+.attachment-thumb span { font-size: 12px; font-weight: 500; letter-spacing: 0.04em; }
+.attachments-break { flex-basis: 100%; height: 0; }
 .attachment-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .attachment-thumb img { width: 100%; height: 120px; object-fit: cover; display: block; }
 .attachment-thumb svg { width: 32px; height: 32px; }
-.attachment-tile-foot { display: flex; align-items: center; gap: 4px; padding: 4px 2px 4px 10px; min-width: 0; }
+.attachment-tile-foot { display: flex; align-items: center; gap: 4px; min-height: 44px; box-sizing: border-box; padding: 4px 2px 4px 10px; min-width: 0; }
 .attachment-tile-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .attachment-tile-name span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .attachment-tile-name small { color: var(--text-3); }
