@@ -35,7 +35,7 @@ Probed on 0.16.23, 2026-10-10, with throwaway accounts. The full notes are in th
 | Whose | The user's own contacts account only. The link is not shown while a shared mailbox is open, as with Calendar. Suggestions and the person popover use the user's contacts in every mailbox. | Agreed. The address book is the person's, whichever mailbox they write from. |
 | Loading | The whole address book is held in the browser, sorted and searched there, kept current by `/changes` and push, and stored in IndexedDB for the next start. | The server cannot sort by name or search reliably. The directory already works this way. |
 | Layout | List on the left, the open card read-only on the right. On a phone the list fills the screen and a card replaces it, with a back button. | The shape Mail has. |
-| List | rozie DataTable with virtual rows: Name, Email, Phone, Organisation. Sorted by name. Email alone accompanies the name on a phone. | A contact list is a table, which the thread list was not. |
+| List | A plain HTML table with virtual rows (the adapter the thread list uses): Name, Email, Phone, Organisation. Sorted by name. Email alone accompanies the name on a phone. | Agreed 2026-10-10: rozie DataTable is a spreadsheet-grade grid, and nothing here needs one. |
 | Editing | One rozie Dialog for new, edit and add-from-mail. Full-screen on a phone. | Agreed. One form serves all three; cancel is unambiguous. |
 | Fields edited | Given name, surname, photo; emails; phones; organisation, department, job title; postal addresses; birthday; notes. | Agreed. |
 | Other data | Nicknames, links, online services, keywords and anything else on a card are shown read-only and survive a save untouched. | A phone's or an import's data must not be lost by editing a phone number here. |
@@ -104,7 +104,7 @@ A picked image is drawn to a canvas, cropped square, scaled to 256 px and stored
 ### The page (`src/ui/ContactsView.tsx`)
 
 - **Navigation:** "Contacts" under Calendar, shown when `hasContacts()` and the user's own mailbox is open. "New contact" takes the place of Compose on this page.
-- **List:** DataTable, virtual, `getRowId` the card id, `row-activate` opens the card. The open card's row is marked. A count ("212 contacts") sits above.
+- **List:** a `<table>` whose body renders only the rows in view, through `src/ui/virtual.ts`, with spacer rows keeping the scroll height. Each name is a link to its card, so a row is opened by click or Enter and the arrow keys move between rows. The open card's row is marked. A count ("212 contacts") sits above.
 - **Search:** a box above the list, filtering as you type. Every word typed must begin a word of the name, nickname, organisation or an email, or occur in a phone number's digits. Diacritics and case are ignored.
 - **Card:** photo or initial, name, organisation and title; emails (each a link that opens the composer addressed to it); phones (`tel:` links); addresses; birthday; notes; then the read-only extras. Edit and Delete at the top.
 - **Empty states:** no contacts yet (with New contact, and Import in slice 2); nothing matches the search; no card chosen.
@@ -135,7 +135,7 @@ An account that appears in the session because someone shared an address book li
 - A group is a card of `kind: "group"`. Its members are the `uid`s of people's cards. A person's card with no `uid` is given one when first added to a group. A `mailto:` member written by another client counts as a bare address when expanding, and is shown in the group but cannot be added here.
 - A group inside a group is ignored. A member `uid` matching no card is ignored and kept.
 - **Navigation:** on the Contacts page the groups are listed under the Contacts link, with "+" to create one; `/contacts/group/:id` shows its members in the same list. Rename and Delete are in a "⋯" menu as for labels. Deleting a group keeps its people.
-- **Membership:** the list gains a checkbox column; a selection offers "Add to group", "Remove from group" (inside one), Export and Delete. A card shows its groups as chips, with a picker to add or remove.
+- **Membership:** the table gains a checkbox column, with a select-all box in its header; a selection offers "Add to group", "Remove from group" (inside one), Export and Delete. A card shows its groups as chips, with a picker to add or remove.
 - **Group cards are not listed among people** and are not offered by the person popover.
 
 ### Groups as recipients
@@ -171,7 +171,7 @@ The dev stack needs no new fixture: every account has an empty default book.
 
 ## Documents
 
-`CHANGELOG.md` ("Unreleased"), `README.md` (features and known limits), `e2e/README.md` (the new specs), `docs/operating.md` (contacts count against nothing but the request limits; CardDAV is not proxied by the bundled Caddy), and `docs/rozie-feedback.md` for whatever DataTable, Dialog or Popover turn out to lack.
+`CHANGELOG.md` ("Unreleased"), `README.md` (features and known limits), `e2e/README.md` (the new specs), `docs/operating.md` (contacts count against nothing but the request limits; CardDAV is not proxied by the bundled Caddy), and `docs/rozie-feedback.md` for whatever Dialog or Popover turn out to lack.
 
 ## Not in this version
 
@@ -186,7 +186,6 @@ The dev stack needs no new fixture: every account has an empty default book.
 ## Risks
 
 - **A very large address book.** Everything is in memory and in IndexedDB. Ten thousand cards with photos is about 200 MB; without photos, a few MB. If that proves real, the cache can drop photos first.
-- **rozie DataTable** is not yet used anywhere in oinbox. If virtual rows, `row-activate`, the checkbox column or a narrow-screen layout fall short, work stops and the gap is reported, as agreed.
 - **Import and the upload quota.** Whether `Blob/upload` counts against Stalwart's 1,000 uploads an hour is not known; it is measured when import is built, and an import that would exceed it says so.
 - **Addresses lose their components when edited here.** A phone then shows the address as one label. Accepted for a free-text field.
 - **Undo of a delete makes a new id.** A CardDAV client sees a delete and a create.
