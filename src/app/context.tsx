@@ -3,6 +3,7 @@ import type { Spaces } from './accounts';
 import type { Actions, ToastFn } from './actions';
 import type { Composers } from './composer';
 import type { Contacts } from './contacts';
+import type { Directory } from './directory';
 import type { ErrorReporter } from './errors';
 import type { Labels } from './labels';
 import type { Drive } from './drive';
@@ -29,6 +30,8 @@ export interface App {
   calendar: CalendarStore;
   /** Whether the server offers JMAP Calendars (false until the session is known). */
   hasCalendars: () => boolean;
+  /** The organisation's people and groups, where the server lists them. */
+  directory: Directory;
   /** The user's own address book, whichever mailbox is on screen. */
   contacts: Contacts;
   /** Whether the Contacts page is offered: the server has JMAP Contacts and the user's own mailbox is open. */

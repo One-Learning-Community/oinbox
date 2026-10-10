@@ -4,6 +4,7 @@ import { useApp, type App } from '../app/context';
 import type { EmailAddress, Id, Mailbox } from '../jmap/types';
 import { avatarColor, fullDate, listDate } from '../mail/format';
 import { displayName } from '../mail/participants';
+import { PersonButton } from './PersonPopover';
 import type { EmailRec } from '../sync/engine';
 import { Attachments } from './Attachments';
 import { LinkPasswordNote } from './LinkPasswordNote';
@@ -254,10 +255,26 @@ export function Conversation(props: { view: View; threadId: Id }) {
   );
 }
 
-function recipients(e: EmailRec, me: Set<string>): string {
-  const addrs: EmailAddress[] = [...(e.to ?? []), ...(e.cc ?? [])];
-  if (!addrs.length) return '';
-  return 'to ' + addrs.map((a) => (me.has(a.email.toLowerCase()) ? 'me' : displayName(a, addrs.length > 1))).join(', ');
+/** "to me, Bob, Carol": each of the others a button that opens their card. */
+function Recipients(props: { email: EmailRec; me: Set<string> }) {
+  const addrs = (): EmailAddress[] => [...(props.email.to ?? []), ...(props.email.cc ?? [])];
+  return (
+    <div class="to">
+      <Show when={addrs().length}>
+        to{' '}
+        <For each={addrs()}>
+          {(a, i) => (
+            <>
+              {i() ? ', ' : ''}
+              <Show when={!props.me.has(a.email.toLowerCase())} fallback="me">
+                <PersonButton address={a} label={displayName(a, addrs().length > 1)} inMessage />
+              </Show>
+            </>
+          )}
+        </For>
+      </Show>
+    </div>
+  );
 }
 
 /** The message r/a/f act on: the newest non-draft message that isn't in Trash/Junk. */
@@ -325,11 +342,11 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
               {name()}
             </button>
             <Show when={props.expanded && from()}>
-              <span class="addr">&lt;{from()!.email}&gt;</span>
+              <PersonButton address={from()!} label={`<${from()!.email}>`} class="addr" inMessage />
             </Show>
           </div>
           <Show when={props.expanded} fallback={<div class="snippet">{props.email.preview}</div>}>
-            <div class="to">{recipients(props.email, me())}</div>
+            <Recipients email={props.email} me={me()} />
           </Show>
         </div>
         <div class="msg-date" title={fullDate(props.email.receivedAt)}>

@@ -277,6 +277,7 @@ async function boot() {
     drive,
     driveLinks,
     calendar,
+    directory,
     contacts,
     // The Contacts page, like the calendar, is not offered inside a shared mailbox.
     hasContacts: () => contacts.available() && cur().info.personal,

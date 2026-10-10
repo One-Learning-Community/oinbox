@@ -783,3 +783,23 @@ a { color: var(--accent); }
   .contact-form input[type='text'], .contact-form input[type='email'], .contact-form input[type='tel'], .contact-form select, .contact-form-add, .contact-form-photo-actions button { min-height: 44px; }
   .contact-form label.contact-form-preferred { min-height: 44px; }
 }
+
+/* A name that opens the person's card (PersonButton). It looks like the text it replaces. */
+.person-anchor { display: inline; }
+.person { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-align: inherit; border-radius: 4px; }
+.person:hover { text-decoration: underline; }
+.person:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg-meta .to .person { font-size: inherit; }
+.person-card { display: flex; flex-direction: column; gap: 10px; min-width: 240px; max-width: min(320px, calc(100vw - 32px)); padding: 4px; color: var(--text); font-size: 14px; white-space: normal; }
+.person-head { display: flex; align-items: center; gap: 12px; }
+.person-who { display: flex; flex-direction: column; min-width: 0; }
+.person-who strong { font-weight: 500; overflow-wrap: anywhere; }
+.person-who span { color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.person-facts { list-style: none; margin: 0; padding: 0; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.person-note { margin: 0; color: var(--text-2); font-size: 13px; }
+.person-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.person-actions button, .person-actions a { border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; text-decoration: none; }
+.person-actions button:hover, .person-actions a:hover { background: var(--hover); }
+@media (pointer: coarse) {
+  .person-actions button, .person-actions a { display: inline-flex; align-items: center; min-height: 44px; }
+}

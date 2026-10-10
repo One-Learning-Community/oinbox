@@ -3,6 +3,7 @@ import { createMemo, createSignal, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import type { EmailAddress } from '../jmap/types';
 import { formatAddress, parseAddressList } from '../mail/compose';
+import { PersonButton } from './PersonPopover';
 import { addUnique, completeAddress, offer, toAddress, type Recipient } from '../mail/recipients';
 
 interface Option {
@@ -133,7 +134,7 @@ export function RecipientField(props: {
             <Show when={props.value[chip.index]}>
               {(a) => (
                 <>
-                  <span class="rcpt-chip-label">{formatAddress(a())}</span>
+                  <PersonButton address={a()} label={formatAddress(a())} class="rcpt-chip-label" />
                   <button
                     type="button"
                     class="rcpt-chip-remove"
