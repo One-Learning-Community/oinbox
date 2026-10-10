@@ -10,6 +10,8 @@ export const CALENDARS = 'urn:ietf:params:jmap:calendars';
 export const CALENDARS_PARSE = 'urn:ietf:params:jmap:calendars:parse';
 export const VACATION = 'urn:ietf:params:jmap:vacationresponse';
 export const PRINCIPALS = 'urn:ietf:params:jmap:principals';
+export const CONTACTS = 'urn:ietf:params:jmap:contacts';
+export const CONTACTS_PARSE = 'urn:ietf:params:jmap:contacts:parse';
 /** Stalwart's own objects, the account's password among them. */
 export const STALWART = 'urn:stalwart:jmap';
 
@@ -391,6 +393,12 @@ export interface Methods {
   'Mailbox/get': { args: GetArgs; result: GetResult<Mailbox> };
   'Principal/get': { args: GetArgs; result: GetResult<Principal> };
   'Principal/query': { args: QueryArgs<Record<string, never>>; result: QueryResult };
+  'AddressBook/get': { args: GetArgs; result: GetResult<AddressBook> };
+  'AddressBook/changes': { args: ChangesArgs; result: ChangesResult };
+  'ContactCard/get': { args: GetArgs; result: GetResult<ContactCard> };
+  'ContactCard/query': { args: QueryArgs<Record<string, never>>; result: QueryResult };
+  'ContactCard/changes': { args: ChangesArgs; result: ChangesResult };
+  'ContactCard/set': { args: SetArgs<ContactCard>; result: SetResult<ContactCard> };
   'Mailbox/changes': { args: ChangesArgs; result: MailboxChangesResult };
   'Mailbox/set': { args: MailboxSetArgs; result: SetResult<Mailbox> };
   'Email/get': { args: EmailGetArgs; result: GetResult<Email> };
@@ -449,4 +457,70 @@ export interface Principal {
   name: string;
   description: string | null;
   email: string | null;
+}
+
+export interface AddressBook {
+  id: Id;
+  name: string;
+  isDefault: boolean;
+  isSubscribed?: boolean;
+}
+
+export interface NameComponent {
+  /** 'given', 'surname', 'given2', 'surname2', 'title', 'credential', 'generation', 'separator'. */
+  kind: string;
+  value: string;
+}
+export interface CardEmail {
+  address: string;
+  contexts?: Record<string, boolean>;
+  /** 1 is the most preferred. */
+  pref?: number;
+  label?: string;
+}
+export interface CardPhone {
+  number: string;
+  contexts?: Record<string, boolean>;
+  features?: Record<string, boolean>;
+  pref?: number;
+  label?: string;
+}
+export interface CardAddress {
+  full?: string;
+  components?: NameComponent[];
+  contexts?: Record<string, boolean>;
+  countryCode?: string;
+  isOrdered?: boolean;
+}
+export interface PartialDate {
+  '@type'?: 'PartialDate';
+  year?: number;
+  month?: number;
+  day?: number;
+}
+
+/** A JSContact Card as Stalwart 0.16 stores it. It sets no uid, created or updated of its own. */
+export interface ContactCard {
+  id: Id;
+  '@type'?: 'Card';
+  version?: string;
+  uid?: string;
+  kind?: string;
+  created?: UTCDate;
+  updated?: UTCDate;
+  addressBookIds: Record<Id, boolean>;
+  name?: { full?: string; components?: NameComponent[]; isOrdered?: boolean };
+  nicknames?: Record<string, { name: string }>;
+  emails?: Record<string, CardEmail>;
+  phones?: Record<string, CardPhone>;
+  organizations?: Record<string, { name?: string; units?: { name: string }[] }>;
+  titles?: Record<string, { name: string; kind?: string }>;
+  addresses?: Record<string, CardAddress>;
+  notes?: Record<string, { note: string }>;
+  anniversaries?: Record<string, { kind?: string; date?: PartialDate | { '@type': 'Timestamp'; utc: string } }>;
+  links?: Record<string, { uri: string; kind?: string; label?: string }>;
+  onlineServices?: Record<string, { service?: string; user?: string; uri?: string }>;
+  keywords?: Record<string, boolean>;
+  media?: Record<string, { kind: string; uri?: string; mediaType?: string }>;
+  members?: Record<string, boolean>;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VACATION } from '../jmap/types';
+import { CONTACTS, VACATION } from '../jmap/types';
 import { FakeJmap } from './fake-jmap';
 
 const ALL = ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', VACATION];
@@ -187,5 +187,81 @@ describe('FakeJmap message parts (as Stalwart 0.16.23)', () => {
     const r2 = eset(s, { destroy: [id] });
     expect(r2.destroyed).toEqual([id]);
     expect(r2.notDestroyed).toBeNull();
+  });
+});
+
+const call = (s: FakeJmap, name: string, args: Record<string, unknown>) => s.handle(name, { accountId: 'a1', ...args }, [CONTACTS])[1] as Record<string, any>;
+
+describe('FakeJmap contacts (as Stalwart 0.16.23)', () => {
+  const book = { b: true };
+  it('creates a card without adding a uid or dates, deriving name.full once', () => {
+    const fake = new FakeJmap();
+    const r = call(fake, 'ContactCard/set', { create: { c: { addressBookIds: book, name: { components: [{ kind: 'given', value: 'Zoë' }, { kind: 'surname', value: 'Probe' }] } } } });
+    const id = r.created.c.id;
+    expect(r.created.c).toEqual({ id });
+    const card = fake.cards.get(id)!;
+    expect(card.name!.full).toBe('Zoë Probe');
+    expect(card.uid).toBeUndefined();
+    expect(card.created).toBeUndefined();
+    call(fake, 'ContactCard/set', { update: { [id]: { 'name/components/0/value': 'Zed' } } });
+    expect(fake.cards.get(id)!.name).toMatchObject({ full: 'Zoë Probe', components: [{ kind: 'given', value: 'Zed' }, { kind: 'surname', value: 'Probe' }] });
+  });
+  it('gives a nameless card an empty full name', () => {
+    const fake = new FakeJmap();
+    const r = call(fake, 'ContactCard/set', { create: { c: { addressBookIds: book, emails: { e: { address: 'not an address' } } } } });
+    expect(fake.cards.get(r.created.c.id)!.name).toEqual({ full: '' });
+  });
+  it('refuses unknown properties, a missing or unknown book, a changed uid, a second card with a uid, and an oversized card', () => {
+    const fake = new FakeJmap();
+    const r = call(fake, 'ContactCard/set', {
+      create: {
+        unknown: { addressBookIds: book, frobnicate: 1 },
+        nobook: { name: { full: 'x' } },
+        badbook: { addressBookIds: { zzz: true } },
+        one: { addressBookIds: book, uid: 'u1' },
+        big: { addressBookIds: book, notes: { n: { note: 'x'.repeat(524_288) } } },
+      },
+    });
+    expect(r.notCreated.unknown).toMatchObject({ type: 'invalidProperties', properties: ['frobnicate'] });
+    expect(r.notCreated.nobook).toMatchObject({ type: 'invalidProperties', description: 'Contact has to belong to at least one address book.' });
+    expect(r.notCreated.badbook.description).toBe('addressBookId zzz does not exist.');
+    expect(r.notCreated.big.description).toMatch(/exceeds the maximum allowed size of 524288 bytes/);
+    const id = r.created.one.id;
+    expect(call(fake, 'ContactCard/set', { create: { two: { addressBookIds: book, uid: 'u1' } } }).notCreated.two.description).toBe(`Contact with UID u1 already exists with id ${id}.`);
+    expect(call(fake, 'ContactCard/set', { update: { [id]: { uid: 'u2' } } }).notUpdated[id].description).toBe('You cannot change the UID of a contact.');
+    expect(call(fake, 'ContactCard/set', { update: { nope: { kind: 'individual' } } }).notUpdated.nope).toEqual({ type: 'notFound' });
+  });
+  it('patches by path, refuses a patch below a missing parent, and clears a property set to null', () => {
+    const fake = new FakeJmap();
+    const { id } = fake.addCard({ emails: { e1: { address: 'a@x.example' } }, notes: { n1: { note: 'hi' } } });
+    expect(call(fake, 'ContactCard/set', { update: { [id]: { 'emails/e1/address': 'b@x.example', 'phones/p1': { number: '1' } } } }).notUpdated[id]).toMatchObject({ type: 'invalidProperties', description: 'Patch operation failed.' });
+    expect(fake.cards.get(id)!.emails!.e1!.address).toBe('a@x.example');
+    call(fake, 'ContactCard/set', { update: { [id]: { 'emails/e1/address': 'b@x.example', notes: null } } });
+    expect(fake.cards.get(id)).toMatchObject({ emails: { e1: { address: 'b@x.example' } } });
+    expect(fake.cards.get(id)!.notes).toBeUndefined();
+  });
+  it('pages a query, cuts get at 500, and refuses 501 ids', () => {
+    const fake = new FakeJmap();
+    for (let i = 0; i < 520; i++) fake.addCard({ name: { full: `P${i}` } });
+    const q = call(fake, 'ContactCard/query', { position: 500, limit: 500 });
+    expect(q.ids).toHaveLength(20);
+    expect(call(fake, 'ContactCard/get', { ids: null }).list).toHaveLength(500);
+    const all = call(fake, 'ContactCard/query', {}).ids as string[];
+    expect(fake.handle('ContactCard/get', { accountId: 'a1', ids: all.slice(0, 501) }, [CONTACTS])).toEqual(['error', expect.objectContaining({ type: 'requestTooLarge' })]);
+    expect(fake.handle('ContactCard/query', { accountId: 'a1', sort: [{ property: 'name' }] }, [CONTACTS])).toEqual(['error', { type: 'unsupportedSort', description: 'name' }]);
+  });
+  it('reports changes since a state, and cannot when told so', () => {
+    const fake = new FakeJmap();
+    const a = fake.addCard({ name: { full: 'A' } });
+    const since = call(fake, 'ContactCard/get', { ids: [] }).state;
+    const b = fake.addCard({ name: { full: 'B' } });
+    call(fake, 'ContactCard/set', { update: { [a.id]: { kind: 'individual' } }, destroy: [] });
+    expect(call(fake, 'ContactCard/changes', { sinceState: since })).toMatchObject({ created: [b.id], updated: [a.id], destroyed: [], hasMoreChanges: false });
+    fake.cardChangesUnsupported = true;
+    expect(fake.handle('ContactCard/changes', { accountId: 'a1', sinceState: since }, [CONTACTS])[1]).toEqual({ type: 'cannotCalculateChanges' });
+  });
+  it('answers unknownMethod without the capability', () => {
+    const fake = new FakeJmap();
+    expect(fake.handle('ContactCard/get', { accountId: 'a1', ids: [] }, [])[0]).toBe('error');
   });
 });

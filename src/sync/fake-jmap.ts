@@ -2,9 +2,31 @@
 // exercise paging, back-references, /changes, /queryChanges and Email/set.
 import { JmapClient } from '../jmap/client';
 import type { Invocation } from '../jmap/request';
-import { CALENDARS_PARSE, PRINCIPALS, STALWART, VACATION, type Calendar, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Principal, type Session, type VacationResponse } from '../jmap/types';
+import { CALENDARS_PARSE, CONTACTS, PRINCIPALS, STALWART, VACATION, type AddressBook, type Calendar, type ContactCard, type NameComponent, type CalendarEvent, type Email, type EmailBodyPart, type EmailBodyStructure, type Identity, type Mailbox, type Principal, type Session, type VacationResponse } from '../jmap/types';
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
+
+const CARD_PROPS = new Set(['@type', 'version', 'uid', 'kind', 'created', 'updated', 'prodId', 'addressBookIds', 'name', 'nicknames', 'emails', 'phones', 'organizations', 'titles', 'addresses', 'notes', 'anniversaries', 'links', 'onlineServices', 'keywords', 'media', 'members']);
+const MAX_CARD_BYTES = 524_288;
+const MAX_OBJECTS = 500;
+const fullOf = (components?: NameComponent[]) => (components ?? []).map((c) => c.value).join(' ');
+const tooLarge = { type: 'requestTooLarge', description: 'The number of ids requested by the client exceeds the maximum number the server is willing to process in a single method call.' };
+
+/** Apply one JMAP patch to a card copy. Returns the property that could not be set, else null. */
+function patchCard(card: Record<string, unknown>, patch: Record<string, unknown>): string | null {
+  for (const [path, value] of Object.entries(patch)) {
+    const segs = path.split('/');
+    let cur: any = card;
+    for (const s of segs.slice(0, -1)) {
+      cur = Array.isArray(cur) ? cur[Number(s)] : cur?.[s];
+      if (cur === undefined || cur === null || typeof cur !== 'object') return path;
+    }
+    const last = segs[segs.length - 1]!;
+    if (value === null) delete cur[last];
+    else cur[last] = structuredClone(value);
+  }
+  return null;
+}
 
 export class FakeJmap {
   /** This fake's account, as a session built by fakeClient() names it. */
@@ -67,6 +89,27 @@ export class FakeJmap {
   personal = true;
   /** Set once the password is: Stalwart derives token keys from its hash, so every token dies. */
   revoked = false;
+  /** Whether the session names a contacts account. */
+  contactsSupported = true;
+  books = new Map<string, AddressBook>([['b', { id: 'b', name: 'Stalwart Address Book (alice@example.test)', isDefault: true, isSubscribed: true }]]);
+  cards = new Map<string, ContactCard>();
+  cardState = 1;
+  cardLog: { state: number; created: string[]; updated: string[]; destroyed: string[] }[] = [];
+  /** Simulates ContactCard/changes answering cannotCalculateChanges. */
+  cardChangesUnsupported = false;
+  private nextCardId = 1;
+
+  addCard(card: Partial<ContactCard>): ContactCard {
+    const id = `c${this.nextCardId++}`;
+    const stored = { '@type': 'Card', version: '1.0', addressBookIds: { b: true }, ...structuredClone(card), id } as ContactCard;
+    stored.name = { ...stored.name, full: stored.name?.full ?? fullOf(stored.name?.components) };
+    this.cards.set(id, stored);
+    this.bumpCards({ created: [id] });
+    return stored;
+  }
+  bumpCards(c: Partial<{ created: string[]; updated: string[]; destroyed: string[] }>) {
+    this.cardLog.push({ state: ++this.cardState, created: c.created ?? [], updated: c.updated ?? [], destroyed: c.destroyed ?? [] });
+  }
 
   addMailbox(id: string, name: string, role: Mailbox['role'] = null, parentId: string | null = null) {
     this.mailboxes.set(id, {
@@ -175,7 +218,41 @@ export class FakeJmap {
     if (name.startsWith('Principal/') && !(using.includes(PRINCIPALS) && this.principals)) {
       return ['error', { type: 'unknownMethod', description: `Method ${name} requires capability ${PRINCIPALS}.` }];
     }
+    if ((name.startsWith('ContactCard/') || name.startsWith('AddressBook/')) && !(using.includes(CONTACTS) && this.contactsSupported)) {
+      return ['error', { type: 'unknownMethod', description: `Method ${name} requires capability ${CONTACTS}.` }];
+    }
     switch (name) {
+      case 'AddressBook/get':
+        return [name, { accountId: args.accountId, state: 'ab1', list: [...this.books.values()].map((b) => structuredClone(b)), notFound: [] }];
+      case 'AddressBook/changes':
+        return [name, { accountId: args.accountId, oldState: args.sinceState, newState: 'ab1', hasMoreChanges: false, created: [], updated: [], destroyed: [] }];
+      case 'ContactCard/query': {
+        const sort = args.sort as { property: string }[] | undefined;
+        if (sort?.length) return ['error', { type: 'unsupportedSort', description: sort[0]!.property }];
+        const position = (args.position as number | undefined) ?? 0;
+        const all = [...this.cards.keys()];
+        const limit = (args.limit as number | undefined) || all.length;
+        return [name, { accountId: args.accountId, queryState: `k${this.cardState}`, canCalculateChanges: true, position, ids: all.slice(position, position + limit) }];
+      }
+      case 'ContactCard/get': {
+        if (ids && ids.length > MAX_OBJECTS) return ['error', tooLarge];
+        const all = [...this.cards.values()];
+        // Stalwart cuts an unbounded get at 500 without saying so.
+        const list = (ids ? all.filter((c) => ids.includes(c.id)) : all.slice(0, MAX_OBJECTS)).map((c) => structuredClone(c));
+        return [name, { accountId: args.accountId, state: `k${this.cardState}`, list, notFound: ids ? ids.filter((id) => !this.cards.has(id)) : [] }];
+      }
+      case 'ContactCard/changes': {
+        if (this.cardChangesUnsupported) return ['error', { type: 'cannotCalculateChanges' }];
+        const since = Number(String(args.sinceState).slice(1));
+        const entries = this.cardLog.filter((l) => l.state > since);
+        const uniq = (xs: string[]) => [...new Set(xs)];
+        const destroyed = uniq(entries.flatMap((l) => l.destroyed));
+        const created = uniq(entries.flatMap((l) => l.created)).filter((id) => !destroyed.includes(id));
+        const updated = uniq(entries.flatMap((l) => l.updated)).filter((id) => !created.includes(id) && !destroyed.includes(id));
+        return [name, { accountId: args.accountId, oldState: args.sinceState, newState: `k${this.cardState}`, hasMoreChanges: false, created, updated, destroyed }];
+      }
+      case 'ContactCard/set':
+        return [name, this.cardSet(args)];
       case 'Principal/query': {
         const position = (args.position as number | undefined) ?? 0;
         const all = this.principals!.map((p) => p.id);
@@ -509,6 +586,63 @@ export class FakeJmap {
     return ['error', { type: 'unknownMethod' }];
   }
 
+  private cardSet(args: Record<string, unknown>) {
+    const create = (args.create ?? {}) as Record<string, Record<string, unknown>>;
+    const update = (args.update ?? {}) as Record<string, Record<string, unknown>>;
+    const destroy = (args.destroy ?? []) as string[];
+    const oldState = `k${this.cardState}`;
+    const invalid = (description: string, properties?: string[]) => ({ type: 'invalidProperties', description, ...(properties ? { properties } : {}) });
+    const check = (card: Record<string, unknown>, selfId?: string) => {
+      const unknown = Object.keys(card).find((k) => k !== 'id' && !CARD_PROPS.has(k));
+      if (unknown) return invalid('Invalid property.', [unknown]);
+      const books = Object.keys((card.addressBookIds ?? {}) as object);
+      if (!books.length) return invalid('Contact has to belong to at least one address book.', ['addressBookIds']);
+      const missing = books.find((b) => !this.books.has(b));
+      if (missing) return invalid(`addressBookId ${missing} does not exist.`, ['addressBookIds']);
+      const size = JSON.stringify(card).length;
+      if (size > MAX_CARD_BYTES) return invalid(`Contact size ${size} exceeds the maximum allowed size of ${MAX_CARD_BYTES} bytes.`);
+      const twin = card.uid ? [...this.cards.values()].find((c) => c.uid === card.uid && c.id !== selfId) : undefined;
+      if (twin) return invalid(`Contact with UID ${card.uid as string} already exists with id ${twin.id}.`, ['uid']);
+      return null;
+    };
+    const created: Record<string, { id: string }> = {};
+    const notCreated: Record<string, unknown> = {};
+    const updated: Record<string, null> = {};
+    const notUpdated: Record<string, unknown> = {};
+    const destroyed: string[] = [];
+    const notDestroyed: Record<string, unknown> = {};
+    for (const [key, card] of Object.entries(create)) {
+      const err = check(card);
+      if (err) notCreated[key] = err;
+      else created[key] = { id: this.addCard(card as Partial<ContactCard>).id };
+    }
+    for (const [id, patch] of Object.entries(update)) {
+      const cur = this.cards.get(id);
+      if (!cur) notUpdated[id] = { type: 'notFound' };
+      else if ('id' in patch) notUpdated[id] = invalid('The id property is immutable.', ['id']);
+      else if ('uid' in patch) notUpdated[id] = invalid('You cannot change the UID of a contact.', ['uid']);
+      else {
+        const next = structuredClone(cur) as unknown as Record<string, unknown>;
+        const failed = patchCard(next, patch);
+        const err = failed ? invalid('Patch operation failed.', [failed]) : check(next, id);
+        if (err) notUpdated[id] = err;
+        else {
+          this.cards.set(id, next as unknown as ContactCard);
+          this.bumpCards({ updated: [id] });
+          updated[id] = null;
+        }
+      }
+    }
+    for (const id of destroy) {
+      if (this.cards.delete(id)) {
+        this.bumpCards({ destroyed: [id] });
+        destroyed.push(id);
+      } else notDestroyed[id] = { type: 'notFound' };
+    }
+    const none = (o: object) => (Object.keys(o).length ? o : null);
+    return { accountId: args.accountId, oldState, newState: `k${this.cardState}`, created: none(created), updated: none(updated), destroyed: destroyed.length ? destroyed : null, notCreated: none(notCreated), notUpdated: none(notUpdated), notDestroyed: none(notDestroyed) };
+  }
+
   private identitySet(args: Record<string, unknown>) {
     const bytes = (v: unknown) => new TextEncoder().encode(typeof v === 'string' ? v : '').length;
     const invalid = (prop: string, description = 'Field could not be set.') => ({ type: 'invalidProperties', description, properties: [prop] });
@@ -660,7 +794,7 @@ export class FakeJmap {
       },
       accounts: { a1: { name: 'alice@example.test', isPersonal: true, isReadOnly: false, accountCapabilities: { ...(this.vacationSupported ? { [VACATION]: {} } : {}), ...(this.passwordSupported ? { [STALWART]: {} } : {}) } } },
       get primaryAccounts() {
-        return { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1', ...(fake.principals ? { [PRINCIPALS]: 'a1' } : {}) };
+        return { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1', ...(fake.principals ? { [PRINCIPALS]: 'a1' } : {}), ...(fake.contactsSupported ? { [CONTACTS]: 'a1' } : {}) };
       },
       username: 'alice@example.test',
       apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
@@ -699,7 +833,7 @@ export function fakeClient(fakes: FakeJmap[]): JmapClient {
   const session: Session = {
     capabilities: {},
     accounts: Object.fromEntries(fakes.map((f, i) => [f.accountId, { name: f.accountName, isPersonal: i === 0, isReadOnly: false, accountCapabilities: caps(f) }])),
-    primaryAccounts: { 'urn:ietf:params:jmap:mail': first.accountId, 'urn:ietf:params:jmap:calendars': first.accountId },
+    primaryAccounts: { 'urn:ietf:params:jmap:mail': first.accountId, 'urn:ietf:params:jmap:calendars': first.accountId, ...(first.contactsSupported ? { [CONTACTS]: first.accountId } : {}) },
     username: first.accountName,
     apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
   };
