@@ -225,12 +225,14 @@ oinbox keeps each person's address book in Stalwart as JMAP Contacts, in their d
 - A card, its photo included, is limited by Stalwart to 524,288 bytes. oinbox scales a chosen photo down to about 20 kB.
 - oinbox loads the whole address book into the browser, 500 cards a request, and keeps a copy there for the next start. Signing out removes it.
 - Someone who shares only an address book or a calendar with a colleague (from another client) appears in that colleague's session as an account. oinbox does not offer it as a shared mailbox.
+- **Importing contacts uses the upload allowance.** oinbox cuts a vCard file into cards and Stalwart reads each one as an uploaded blob (`ContactCard/parse`), so every imported card is one of the account's uploads for the hour: 1,000 files and 50 MB by default (`Jmap.maxUploadCount`, `Jmap.uploadQuota`), the same allowance attachments use. Stalwart announces that limit nowhere before it is reached, so oinbox's dialog names the default figure whatever you have set. At the limit the import stops, says how many cards are left and how long until the allowance is back, and until then that person may be unable to attach files. If people will bring address books of more than a few hundred cards, raise `Jmap.maxUploadCount` before they do. Cards already present are skipped before anything is uploaded, so repeating an import costs only the cards still missing.
+- An export is a vCard 4.0 file made in the browser; nothing is asked of the server. A contact group is a card of kind `group` whose members are other cards' `uid`s, which is how CardDAV clients see it too.
 
 ## Limits worth knowing
 
 These are Stalwart defaults that users of a web client run into:
 
-- **Attachments: 50 MB and 1,000 uploads per account per hour** (`Jmap.uploadQuota`, `Jmap.maxUploadCount`), on top of the 50 MB per file limit. Raise them if people send large files.
+- **Attachments: 50 MB and 1,000 uploads per account per hour** (`Jmap.uploadQuota`, `Jmap.maxUploadCount`), on top of the 50 MB per file limit. Raise them if people send large files. An import of contacts spends the same allowance, one upload a card (see "Contacts").
 - **1,000 requests a minute per account** (`Http.rateLimitAuthenticated`). Ordinary use stays far below it.
 - **Inbound mail is throttled** to 25 messages an hour per sender and recipient by default, and Stalwart restores those throttles at start-up when there are none.
 - **Large mailboxes are slow to list.** On an account with 50,000 messages, each page of a mail list took Stalwart about 1.4 seconds in our tests (`docs/beta-audit.md`, L2).

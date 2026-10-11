@@ -24,7 +24,7 @@ Probed on 0.16.23, 2026-10-10, with throwaway accounts. The full notes are in th
 - **Change tracking works.** `ContactCard/changes`, `AddressBook/changes`, and `ContactCard` / `AddressBook` on the event stream, including for a card written over CardDAV.
 - **Limits:** 500 objects per get and per set. `ContactCard/get` with `ids: null` returns the first 500 without saying so.
 - **Groups:** a card of `kind: "group"` with `members: {<uid>: true}`. Keys are not checked; a phone may write `mailto:` keys.
-- **Parse:** `ContactCard/parse` reads vCard 2.1, 3.0 and 4.0 from a blob, but only the first card in it. `Blob/upload` and a parse of `"#key"` work in one request. There is no export.
+- **Parse:** `ContactCard/parse` reads vCard 2.1, 3.0 and 4.0 from a blob, but only the first card in it. `Blob/upload` and a parse of `"#key"` work in one request. There is no export. A parse takes at most 10 blobs; each blob is one of the account's uploads for the hour (1,000 by default), which the server announces nowhere until it refuses with `overQuota`. Apple's `X-ADDRESSBOOKSERVER-KIND` and `-MEMBER` are not understood and come back under the card's `vCard` property, from where the client reads them.
 - **Sharing a book** puts the owner's whole account in the other person's session, mail capability included, though mail there is forbidden.
 
 ## Decisions
@@ -132,7 +132,7 @@ An account that appears in the session because someone shared an address book li
 
 ### Groups (`src/contacts/groups.ts`)
 
-- A group is a card of `kind: "group"`. Its members are the `uid`s of people's cards. Stalwart lets a `uid` be set only when a card is created, so a person's card that has none (one made by another JMAP client) is replaced by a copy with a `uid` when first added to a group. A `mailto:` member written by another client counts as a bare address when expanding, and is shown in the group but cannot be added here.
+- A group is a card of `kind: "group"`. Its members are the `uid`s of people's cards. Stalwart lets a `uid` be set only when a card is created, so a person's card that has none (one made by another JMAP client) is replaced by a copy with a `uid` when first added to a group. A `mailto:` member written by another client counts as a bare address when expanding, and is shown in the group but cannot be added here. Such addresses, and a count of members that match no card, are shown above the group's list.
 - A group inside a group is ignored. A member `uid` matching no card is ignored and kept.
 - **Navigation:** on the Contacts page the groups are listed under the Contacts link, with "+" to create one; `/contacts/group/:id` shows its members in the same list. Rename and Delete are in a "⋯" menu as for labels. Deleting a group keeps its people.
 - **Membership:** the table gains a checkbox column, with a select-all box in its header; a selection offers "Add to group", "Remove from group" (inside one), Export and Delete. A card shows its groups as chips, with a picker to add or remove.
@@ -160,7 +160,7 @@ Imported cards go to the default book, get a `uid` if they have none, and keep w
 
 ## Fake server and fixtures
 
-`src/sync/fake-jmap.ts` gains `AddressBook/get`, `AddressBook/changes`, `ContactCard/get`, `/set`, `/changes`, `/query` (paging only), and for slice 2 `Blob/upload` and `ContactCard/parse`, with the probed behaviour: no `uid` or dates added; `name.full` derived at creation only; unknown properties and a missing book refused; a patch below a missing parent refused; 500 per get and set; `ids: null` cut at 500; the 524,288-byte limit.
+`src/sync/fake-jmap.ts` gains `AddressBook/get`, `AddressBook/changes`, `ContactCard/get`, `/set`, `/changes`, `/query` (paging only), and for slice 2 `Blob/upload` and `ContactCard/parse`, with the probed behaviour: no `uid` or dates added; `name.full` derived at creation only; unknown properties and a missing book refused; a patch below a missing parent refused; 500 per get and set; `ids: null` cut at 500; the 524,288-byte limit. `ContactCard/parse` refuses more than 10 blobs and a `#key` whose blob was not made; `Blob/upload` refuses with `overQuota` past an allowance the test sets.
 
 The dev stack needs no new fixture: every account has an empty default book.
 

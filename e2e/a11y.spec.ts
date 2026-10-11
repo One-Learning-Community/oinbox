@@ -54,6 +54,25 @@ const openContact = async (page: Page) => {
   await page.locator('.contact-card').getByRole('heading', { name: 'E2e Axe' }).waitFor();
 };
 
+/** The same person in a group, with the group on screen and the person selected. */
+const openGroup = async (page: Page) => {
+  const ids = await createCards([
+    named('E2e', 'Axe', { uid: 'urn:uuid:e2e-axe', emails: { e1: { address: 'e2e-axe@work.example' } }, phones: { p1: { number: '+1 555 0100' } } }),
+    { kind: 'group', uid: 'urn:uuid:e2e-axe-group', name: { full: 'E2e Axe group' }, members: { 'urn:uuid:e2e-axe': true, 'mailto:elsewhere@x.example': true, 'urn:uuid:gone': true } },
+  ]);
+  made.push(...ids);
+  await page.goto(`/contacts/group/${ids[1]}`);
+  await page.getByRole('heading', { name: 'E2e Axe group' }).waitFor();
+  await page.getByRole('checkbox', { name: 'Select E2e Axe' }).check();
+  await page.getByText('1 selected').waitFor();
+};
+const openImport = async (page: Page, text: string) => {
+  await page.getByRole('button', { name: 'More contact actions' }).click();
+  await page.getByRole('menuitem', { name: 'Import…' }).click();
+  await page.getByRole('dialog').getByLabel('vCard files').setInputFiles({ name: 'c.vcf', mimeType: 'text/vcard', buffer: Buffer.from(text) });
+};
+const vcard = (...lines: string[]) => ['BEGIN:VCARD', 'VERSION:3.0', ...lines, 'END:VCARD', ''].join('\r\n');
+
 const screens: Record<string, (page: Page) => Promise<void>> = {
   'thread list': (page) => openInbox(page),
   conversation: openThread,
@@ -117,6 +136,36 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
     await d.getByLabel('Email 1', { exact: true }).fill('not an address');
     await d.getByRole('button', { name: 'Save' }).click();
     await d.getByText('This is not an email address.').waitFor();
+  },
+  'contact group with a selection': openGroup,
+  'group picker': async (page) => {
+    await openGroup(page);
+    await page.getByRole('button', { name: 'Add to group' }).click();
+    await page.getByRole('menuitem', { name: 'New group…' }).waitFor();
+  },
+  'group dialog': async (page) => {
+    await openGroup(page);
+    await page.locator('nav.sidebar').getByRole('button', { name: 'New group' }).click();
+    const name = page.getByRole('textbox', { name: 'Group name' });
+    await name.fill('E2e Axe group');
+    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByText('There is already a group called “E2e Axe group”.').waitFor();
+  },
+  'import preview': async (page) => {
+    await openContact(page);
+    // 1,001 new cards for the warning, one already here, and one cut short. Nothing is sent.
+    const many = Array.from({ length: 1001 }, (_, i) => vcard(`FN:New ${i}`, `EMAIL:new${i}@x.example`)).join('');
+    await openImport(page, many + vcard('FN:E2e Axe', 'EMAIL:e2e-axe@work.example') + 'BEGIN:VCARD\r\nFN:Cut short\r\n');
+    await page.getByRole('dialog').getByText('1 already in your contacts').waitFor();
+    await page.getByRole('dialog').getByText(/^This is more than the usual allowance/).waitFor();
+  },
+  'import result': async (page) => {
+    await page.goto('/contacts');
+    await page.locator('.contacts-count').waitFor();
+    // A card too large to send fails without an upload: the result screen, at no cost to alice's allowance.
+    await openImport(page, vcard('FN:Too Large', `NOTE:${'x'.repeat(7_000_001)}`));
+    await page.getByRole('dialog').getByRole('button', { name: 'Import 1' }).click();
+    await page.getByRole('dialog').getByText('Too Large: This card is too large to import.').waitFor();
   },
   'person popover': async (page) => {
     await openThread(page);
