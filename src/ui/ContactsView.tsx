@@ -3,12 +3,15 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on } 
 import { useApp } from '../app/context';
 import { displayName, emailsOf, isGroup, organizationOf, phonesOf, photoOf } from '../contacts/card';
 import { groupName, membersOf } from '../contacts/groups';
+import { downloadText } from '../contacts/download';
 import { matchPeople } from '../contacts/search';
+import { toVcards } from '../contacts/vcard';
 import type { ContactCard, Id } from '../jmap/types';
 import { Avatar } from './Avatar';
 import { ContactCardView } from './ContactCard';
 import { GroupPicker } from './GroupPicker';
 import { Icon } from './icons';
+import { MenuButton } from './MenuButton';
 import { createVirtualList } from './virtual';
 
 const ROW_HEIGHT = 48;
@@ -115,6 +118,22 @@ export function ContactsView() {
     if (result.ok) toast(`Removed ${ids.length} from ${groupName(g)}.`, 'info');
     else toast(`Couldn't remove from ${groupName(g)}: ${result.error}`, 'error');
   };
+  /** One vCard file of these cards, saved by the browser. */
+  const exportCards = (cards: ContactCard[]) => {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    downloadText(`contacts-${day}.vcf`, 'text/vcard;charset=utf-8', toVcards(cards));
+    const people = cards.filter((c) => !isGroup(c)).length;
+    const groups = cards.length - people;
+    const said = [people || !groups ? `${people.toLocaleString()} contact${people === 1 ? '' : 's'}` : '', groups ? `${groups.toLocaleString()} group${groups === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+    toast(`Exported ${said}.`, 'info');
+  };
+  /** Everything, with the groups; or the group on screen, with its own card so it is a group where it is imported. */
+  const exportAll = () => {
+    const g = group();
+    exportCards(g ? [...(members()?.people ?? []), g] : [...contacts.people(), ...contacts.groups()]);
+  };
+
   const removeSelected = async () => {
     const ids = selectedIds();
     const what = (n: number) => `${n.toLocaleString()} contact${n === 1 ? '' : 's'}`;
@@ -187,6 +206,7 @@ export function ContactsView() {
               <Show when={group()}>
                 <button type="button" class="btn tonal" onClick={() => void removeFromGroup()}>Remove from group</button>
               </Show>
+              <button type="button" class="btn tonal" onClick={() => exportCards(selected())}>Export</button>
               <button type="button" class="btn tonal" onClick={() => void removeSelected()}>Delete</button>
               <button type="button" class="btn tonal" onClick={clear}>Clear selection</button>
             </div>
@@ -206,6 +226,17 @@ export function ContactsView() {
           <Show when={contacts.state.loaded}>
             <span class="contacts-count" role="status">{count()}</span>
           </Show>
+          <MenuButton
+            class="icon-btn"
+            title="More contact actions"
+            menuLabel="More contact actions"
+            items={[
+              { label: 'Import…', run: () => contacts.openImport() },
+              { label: params.gid ? 'Export this group' : 'Export all', run: exportAll },
+            ]}
+          >
+            <Icon name="more" />
+          </MenuButton>
         </div>
         </Show>
         <Show when={members()}>
@@ -243,6 +274,7 @@ export function ContactsView() {
             <div class="list-empty">
               <p>No contacts yet.</p>
               <button type="button" class="btn" onClick={() => contacts.openDialog({ kind: 'new' })}>New contact</button>
+              <button type="button" class="btn tonal" onClick={() => contacts.openImport()}>Import…</button>
             </div>
           </Match>
           <Match when={!shown().length}>

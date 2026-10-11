@@ -714,6 +714,20 @@ a { color: var(--accent); }
 .contacts-group span { flex: none; color: var(--text-2); font-size: 13px; }
 .contacts-group-notes { padding: 8px 16px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 13px; }
 .contacts-group-notes p { margin: 2px 0; }
+/* The import dialog: what the files hold, then how it went. */
+.import-form { display: flex; flex-direction: column; gap: 12px; width: min(480px, calc(100vw - 64px)); }
+.import-form h2 { margin: 0; }
+.import-form p { margin: 0; }
+.import-pick { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); }
+.import-pick input { max-width: 100%; color: var(--text); font: inherit; }
+.import-found { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.import-dupes { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.import-quiet { color: var(--text-2); font-size: 13px; }
+.import-warning { padding: 8px 12px; border-left: 3px solid var(--danger); background: var(--surface-2); border-radius: 4px; font-size: 13px; }
+div.import-warning { display: flex; flex-direction: column; gap: 6px; }
+.import-result { display: flex; flex-direction: column; gap: 8px; }
+.import-failed { margin: 0; padding-left: 20px; max-height: 30vh; overflow-y: auto; font-size: 13px; color: var(--text-2); }
+.import-form progress { width: 100%; height: 8px; accent-color: var(--accent); }
 .contact-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .contact-group { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border: 1px solid var(--border); border-radius: 14px; font-size: 13px; }
 .contact-group button { width: 22px; height: 22px; border: 0; border-radius: 50%; background: none; color: var(--text-2); font: inherit; cursor: pointer; }

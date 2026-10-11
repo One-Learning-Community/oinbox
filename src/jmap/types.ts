@@ -11,6 +11,7 @@ export const CALENDARS_PARSE = 'urn:ietf:params:jmap:calendars:parse';
 export const VACATION = 'urn:ietf:params:jmap:vacationresponse';
 export const PRINCIPALS = 'urn:ietf:params:jmap:principals';
 export const CONTACTS = 'urn:ietf:params:jmap:contacts';
+export const BLOB = 'urn:ietf:params:jmap:blob';
 export const CONTACTS_PARSE = 'urn:ietf:params:jmap:contacts:parse';
 /** Stalwart's own objects, the account's password among them. */
 export const STALWART = 'urn:stalwart:jmap';
@@ -399,6 +400,16 @@ export interface Methods {
   'ContactCard/query': { args: QueryArgs<Record<string, never>>; result: QueryResult };
   'ContactCard/changes': { args: ChangesArgs; result: ChangesResult };
   'ContactCard/set': { args: SetArgs<ContactCard>; result: SetResult<ContactCard> };
+  /** Inline blobs (RFC 9404). Stalwart leaves `created` or `notCreated` out when it has nothing to put in it. */
+  'Blob/upload': {
+    args: { accountId: Id; create: Record<string, { data: { 'data:asText': string }[]; type?: string }> };
+    result: { accountId: Id; created?: Record<string, { id: Id; type?: string; size: number }> | null; notCreated?: Record<string, SetError> | null };
+  };
+  /** At most 10 blob ids a call on Stalwart. `parsed` is keyed by blob id, never by the `#key` it was named with. */
+  'ContactCard/parse': {
+    args: { accountId: Id; blobIds: string[] };
+    result: { accountId: Id; parsed?: Record<string, ParsedCard> | null; notParsable?: string[] | null; notFound?: string[] | null };
+  };
   'Mailbox/changes': { args: ChangesArgs; result: MailboxChangesResult };
   'Mailbox/set': { args: MailboxSetArgs; result: SetResult<Mailbox> };
   'Email/get': { args: EmailGetArgs; result: GetResult<Email> };
@@ -498,6 +509,9 @@ export interface PartialDate {
   month?: number;
   day?: number;
 }
+
+/** A card as ContactCard/parse returns one: no id or book yet, and what the parser did not understand under `vCard`. */
+export type ParsedCard = Partial<ContactCard> & { vCard?: { properties?: [string, Record<string, unknown>, string, unknown][] } };
 
 /** A JSContact Card as Stalwart 0.16 stores it. It sets no uid, created or updated of its own. */
 export interface ContactCard {

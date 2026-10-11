@@ -9,6 +9,7 @@ import { UnauthorizedError, type JmapClient } from '../jmap/client';
 import { CONTACTS, CORE, type AddressBook, type ContactCard, type Id, type StateChange } from '../jmap/types';
 import { logUnexpected } from '../sync/connection';
 import type { ToastFn } from './actions';
+import { createImporter, type ImportOptions, type ImportResult, type VcardBlock } from './contacts-import';
 
 export type ContactDialogState = { kind: 'new'; seed?: { name?: string; email?: string } } | { kind: 'edit'; id: Id };
 /** `then`: people to put in the group once it is made. */
@@ -62,6 +63,15 @@ export interface Contacts {
   removeMany(ids: Id[]): Promise<{ removed: number; error?: string }>;
   /** Reactive: the card that took this one's place when it was given a uid, if any. */
   movedTo(id: Id): Id | undefined;
+  /**
+   * Import cards cut from vCard files: the server reads each one, and what it makes of them is saved.
+   * Never rejects for a bad card; stops when asked, when the connection is lost, or when the server's
+   * upload allowance runs out, and says which.
+   */
+  importVcards(blocks: VcardBlock[], opts?: ImportOptions): Promise<ImportResult>;
+  importOpen: Accessor<boolean>;
+  openImport(): void;
+  closeImport(): void;
   groupDialog: Accessor<GroupDialogState | null>;
   openGroupDialog(state: GroupDialogState): void;
   closeGroupDialog(): void;
@@ -97,6 +107,7 @@ export function createContacts(
   const [dialog, setDialog] = createSignal<ContactDialogState | null>(null);
   const [groupDialog, setGroupDialog] = createSignal<GroupDialogState | null>(null);
   const [moved, setMoved] = createSignal<ReadonlyMap<Id, Id>>(new Map());
+  const [importOpen, setImportOpen] = createSignal(false);
   let key: string | null = null;
   let cardState = '';
   let bookState = '';
@@ -519,6 +530,10 @@ export function createContacts(
       }
       return { removed };
     },
+    importVcards: createImporter(client, { accountId, bookId: () => defaultBook()?.id, now, uid, catchUp: () => sync() }),
+    importOpen,
+    openImport: () => void setImportOpen(true),
+    closeImport: () => void setImportOpen(false),
     movedTo: (id) => moved().get(id),
     groupDialog,
     openGroupDialog: (next) => void setGroupDialog(next),

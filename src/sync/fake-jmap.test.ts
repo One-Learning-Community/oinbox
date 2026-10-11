@@ -300,3 +300,69 @@ describe('FakeJmap contacts (as Stalwart 0.16.23)', () => {
     expect(call(fake, 'ContactCard/query', { position: 7, limit: 500 }).ids).toHaveLength(7);
   });
 });
+
+describe('FakeJmap vCard upload and parse (as Stalwart 0.16.23)', () => {
+  const USING = [CONTACTS, 'urn:ietf:params:jmap:blob', 'urn:ietf:params:jmap:contacts:parse'];
+  const run = (s: FakeJmap, name: string, args: Record<string, unknown>) => s.handle(name, { accountId: 'a1', ...args }, USING);
+  const vc = (...lines: string[]) => ['BEGIN:VCARD', 'VERSION:3.0', ...lines, 'END:VCARD', ''].join('\r\n');
+  const upload = (s: FakeJmap, texts: Record<string, string>) =>
+    run(s, 'Blob/upload', { create: Object.fromEntries(Object.entries(texts).map(([k, t]) => [k, { data: [{ 'data:asText': t }], type: 'text/vcard' }])) })[1] as Record<string, any>;
+
+  it('uploads inline text and parses the first card of each blob, keyed by the blob id', () => {
+    const fake = new FakeJmap();
+    fake.newRequest();
+    const up = upload(fake, { a: vc('FN:Zoë Probe', 'N:Probe;Zoë;;;', 'item1.EMAIL;TYPE=INTERNET:zoe@x.example', 'TEL:555', 'UID:u-1', 'NOTE:Hi\\, there') + vc('FN:Second'), b: 'not a card' });
+    expect(up.created.a).toMatchObject({ type: 'text/vcard' });
+    expect(up).not.toHaveProperty('notCreated');
+    const [name, parsed] = run(fake, 'ContactCard/parse', { blobIds: ['#a', '#b', 'nope'] }) as [string, Record<string, any>];
+    expect(name).toBe('ContactCard/parse');
+    expect(parsed.parsed[up.created.a.id]).toMatchObject({
+      '@type': 'Card', uid: 'u-1', name: { full: 'Zoë Probe', components: [{ kind: 'surname', value: 'Probe' }, { kind: 'given', value: 'Zoë' }] },
+      emails: { k1: { address: 'zoe@x.example' } }, phones: { k1: { number: '555' } }, notes: { k1: { note: 'Hi, there' } },
+    });
+    expect(parsed.parsed[up.created.a.id]).toHaveProperty('vCard');
+    expect(parsed.notParsable).toEqual([up.created.b.id]);
+    // An id it does not know is in neither list.
+    expect(parsed).not.toHaveProperty('notFound');
+  });
+  it('reads a group and its members, but not as Apple writes one: that stays in the vCard property', () => {
+    const fake = new FakeJmap();
+    fake.newRequest();
+    const up = upload(fake, { g: vc('FN:Team', 'KIND:group', 'MEMBER:u-1', 'MEMBER:mailto:x@y.example'), a: vc('FN:Apple', 'X-ADDRESSBOOKSERVER-KIND:group', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:A') });
+    const parsed = (run(fake, 'ContactCard/parse', { blobIds: ['#g', '#a'] })[1] as Record<string, any>).parsed;
+    expect(parsed[up.created.g.id]).toMatchObject({ kind: 'group', members: { 'u-1': true, 'mailto:x@y.example': true } });
+    expect(parsed[up.created.a.id].kind).toBeUndefined();
+    expect(parsed[up.created.a.id].vCard.properties).toEqual(expect.arrayContaining([['x-addressbookserver-kind', {}, 'unknown', 'group'], ['x-addressbookserver-member', {}, 'unknown', 'urn:uuid:A']]));
+  });
+  it('refuses more than 10 blobs in one parse', () => {
+    const fake = new FakeJmap();
+    expect(run(fake, 'ContactCard/parse', { blobIds: Array.from({ length: 11 }, (_, i) => `b${i}`) })).toEqual(['error', expect.objectContaining({ type: 'requestTooLarge' })]);
+  });
+  it('refuses uploads over the allowance, and a parse that names a blob it did not make', () => {
+    const fake = new FakeJmap();
+    fake.uploadsLeft = 1;
+    fake.newRequest();
+    const up = upload(fake, { a: vc('FN:A'), b: vc('FN:B') });
+    expect(Object.keys(up.created)).toEqual(['a']);
+    expect(up.notCreated.b).toEqual({ type: 'overQuota', description: 'You have exceeded the blob upload quota of 1000 files or 50000000 bytes.' });
+    expect(run(fake, 'ContactCard/parse', { blobIds: ['#a', '#b'] })).toEqual(['error', { type: 'invalidResultReference', description: 'blobId reference "b" not found.' }]);
+    // A key belongs to the request that made it.
+    fake.newRequest();
+    expect(run(fake, 'ContactCard/parse', { blobIds: ['#a'] })[0]).toBe('error');
+    expect((run(fake, 'ContactCard/parse', { blobIds: [up.created.a.id] })[1] as Record<string, any>).parsed[up.created.a.id].name.full).toBe('A');
+  });
+  it('takes a parsed card as it is, dropping the vCard property', () => {
+    const fake = new FakeJmap();
+    fake.newRequest();
+    const up = upload(fake, { a: vc('FN:A') });
+    const card = (run(fake, 'ContactCard/parse', { blobIds: ['#a'] })[1] as Record<string, any>).parsed[up.created.a.id];
+    const set = run(fake, 'ContactCard/set', { create: { c: { ...card, addressBookIds: { b: true } } } })[1] as Record<string, any>;
+    expect(fake.cards.get(set.created.c.id)).not.toHaveProperty('vCard');
+  });
+  it('refuses the cards it is told to, for a test of a partly failed import', () => {
+    const fake = new FakeJmap();
+    fake.rejectCardCreates.add('u-bad');
+    const set = run(fake, 'ContactCard/set', { create: { c: { uid: 'u-bad', addressBookIds: { b: true } } } })[1] as Record<string, any>;
+    expect(set.notCreated.c).toMatchObject({ type: 'invalidProperties', description: 'Invalid property.' });
+  });
+});

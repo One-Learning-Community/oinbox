@@ -192,6 +192,26 @@ describe('JmapClient', () => {
   });
 });
 
+describe('uploadRetryAfter', () => {
+  const clientWith = async (answer: () => Response) => {
+    const f = vi.fn(async (url: string) => (url.endsWith('/.well-known/jmap') ? json(session) : answer()));
+    const c = makeClient(f as unknown as typeof fetch);
+    await c.loadSession();
+    return { c, f };
+  };
+  it('reads the seconds until uploads are allowed again from a refused upload', async () => {
+    const { c, f } = await clientWith(() => new Response('{"status":429}', { status: 429, headers: { 'retry-after': '2075' } }));
+    expect(await c.uploadRetryAfter()).toBe(2075);
+    expect((f.mock.calls[1] as unknown as [string, RequestInit])[0]).toBe('http://localhost:8080/jmap/upload/a1/');
+    expect((f.mock.calls[1] as unknown as [string, RequestInit])[1].method).toBe('POST');
+  });
+  it('is null when the upload is accepted, when no time is given, and when the request fails', async () => {
+    expect(await (await clientWith(() => json({ blobId: 'B' }))).c.uploadRetryAfter()).toBeNull();
+    expect(await (await clientWith(() => new Response('', { status: 429 }))).c.uploadRetryAfter()).toBeNull();
+    expect(await (await clientWith(() => { throw new TypeError('Failed to fetch'); })).c.uploadRetryAfter()).toBeNull();
+  });
+});
+
 const make = (fetchImpl: typeof fetch, onOutcome = vi.fn(), timeoutMs = 30_000) =>
   ({ client: new JmapClient({ sessionUrl: 'http://x/session', getToken: async () => 't', fetch: fetchImpl, onOutcome, timeoutMs }), onOutcome });
 

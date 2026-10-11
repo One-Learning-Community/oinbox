@@ -15,11 +15,11 @@ vi.mock('../cache/persist', () => ({
 
 const NOW = '2026-10-10T12:00:00Z';
 
-function setup(opts: { contactsSupported?: boolean; saveDelayMs?: number } = {}) {
+function setup(opts: { contactsSupported?: boolean; saveDelayMs?: number; uid?: () => string } = {}) {
   const fake = new FakeJmap();
   fake.contactsSupported = opts.contactsSupported ?? true;
   const toast = vi.fn();
-  const contacts = createRoot(() => createContacts(fake.client(), toast, { now: () => NOW, uid: () => 'urn:uuid:test', saveDelayMs: opts.saveDelayMs ?? 0 }));
+  const contacts = createRoot(() => createContacts(fake.client(), toast, { now: () => NOW, uid: opts.uid ?? (() => 'urn:uuid:test'), saveDelayMs: opts.saveDelayMs ?? 0 }));
   return { fake, contacts, toast };
 }
 
@@ -348,5 +348,129 @@ describe('createContacts: groups and bulk work', () => {
     expect(contacts.groupDialog()).toEqual({ kind: 'create', then: ['c1'] });
     contacts.closeGroupDialog();
     expect(contacts.groupDialog()).toBeNull();
+  });
+});
+
+describe('createContacts: importing vCards through the server', () => {
+  const vc = (...lines: string[]) => ['BEGIN:VCARD', 'VERSION:3.0', ...lines, 'END:VCARD', ''].join('\r\n');
+  const block = (i: number, uid = `u-${i}`) => ({ text: vc(`FN:P${i}`, `EMAIL:p${i}@x.example`, ...(uid ? [`UID:${uid}`] : [])), name: `P${i}`, uid });
+  const many = (n: number) => Array.from({ length: n }, (_, i) => block(i));
+  const counted = () => {
+    let n = 0;
+    return setup({ uid: () => `urn:uuid:new-${++n}` });
+  };
+  const calls = (fake: FakeJmap, name: string) => fake.sent.filter(([n]) => n === name);
+
+  it('uploads a batch in one call, parses it ten at a time, saves it, and shows the cards', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    const r = await contacts.importVcards(many(25));
+    expect(r).toEqual({ imported: 25, failed: [], cancelled: false, left: 0 });
+    expect(calls(fake, 'Blob/upload')).toHaveLength(1);
+    expect(calls(fake, 'ContactCard/parse').map(([, a]) => (a.blobIds as string[]).length)).toEqual([10, 10, 5]);
+    expect(contacts.people()).toHaveLength(25);
+    const stored = [...fake.cards.values()].find((c) => c.uid === 'u-3')!;
+    expect(stored).toMatchObject({ kind: 'individual', created: NOW, updated: NOW, addressBookIds: { b: true }, name: { full: 'P3' } });
+    expect(stored).not.toHaveProperty('vCard');
+  });
+  it('reports progress after every batch of a hundred', async () => {
+    const { contacts } = counted();
+    await contacts.start('k');
+    const seen: [number, number][] = [];
+    const r = await contacts.importVcards(many(250), { onProgress: (done, total) => seen.push([done, total]) });
+    expect(seen).toEqual([[100, 250], [200, 250], [250, 250]]);
+    expect(r.imported).toBe(250);
+    expect(contacts.people()).toHaveLength(250);
+  });
+  it('gives a card with no uid one of its own', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    await contacts.importVcards([block(1, '')]);
+    expect([...fake.cards.values()][0]!.uid).toBe('urn:uuid:new-1');
+  });
+  it('names what could not be read and what the server refused, and saves the rest', async () => {
+    const { fake, contacts } = counted();
+    fake.rejectCardCreates.add('u-2');
+    await contacts.start('k');
+    const r = await contacts.importVcards([block(1), block(2), { text: 'garbage', name: 'Junk', uid: '' }, block(3)]);
+    expect(r).toEqual({ imported: 2, failed: [{ name: 'Junk', error: 'This card could not be read.' }, { name: 'P2', error: 'Invalid property.' }], cancelled: false, left: 0 });
+    expect(contacts.people().map((p) => p.name?.full)).toEqual(['P1', 'P3']);
+  });
+  it('stops when the upload allowance runs out, keeping what was saved and saying when it is back', async () => {
+    const { fake, contacts } = counted();
+    fake.uploadsLeft = 135;
+    await contacts.start('k');
+    const seen: number[] = [];
+    const r = await contacts.importVcards(many(250), { onProgress: (done) => seen.push(done) });
+    expect(r).toEqual({
+      imported: 135, failed: [], cancelled: false, left: 115,
+      quota: { message: 'You have exceeded the blob upload quota of 1000 files or 50000000 bytes.', retryAfter: 2075 },
+    });
+    expect(contacts.people()).toHaveLength(135);
+    expect(seen).toEqual([100, 135]);
+    // Nothing more was tried once the server had refused.
+    expect(calls(fake, 'Blob/upload')).toHaveLength(2);
+  });
+  it('says so when the server gives no time', async () => {
+    const { fake, contacts } = counted();
+    fake.uploadsLeft = 0;
+    fake.retryAfter = null;
+    await contacts.start('k');
+    expect((await contacts.importVcards(many(3))).quota).toEqual({ message: 'You have exceeded the blob upload quota of 1000 files or 50000000 bytes.', retryAfter: null });
+  });
+  it('stops between batches when asked, and what is saved stays', async () => {
+    const { contacts } = counted();
+    await contacts.start('k');
+    const stop = new AbortController();
+    const r = await contacts.importVcards(many(250), { signal: stop.signal, onProgress: () => stop.abort() });
+    expect(r).toEqual({ imported: 100, failed: [], cancelled: true, left: 150 });
+    expect(contacts.people()).toHaveLength(100);
+  });
+  it('stops at a batch the network loses, naming its cards', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    let uploads = 0;
+    fake.onCall = (name) => {
+      if (name === 'Blob/upload' && ++uploads === 2) throw new Error('offline');
+    };
+    const r = await contacts.importVcards(many(250));
+    expect(r.imported).toBe(100);
+    expect(r.failed).toHaveLength(100);
+    expect(r.failed[0]).toEqual({ name: 'P100', error: 'offline' });
+    expect(r.left).toBe(50);
+  });
+  it('imports a duplicate under a new uid when told to, and points an imported group at the copy', async () => {
+    const { fake, contacts } = counted();
+    fake.addCard({ uid: 'u-1', name: { full: 'P1' } });
+    await contacts.start('k');
+    const group = { text: vc('FN:Team', 'KIND:group', 'UID:g-1', 'MEMBER:u-1', 'MEMBER:u-2'), name: 'Team', uid: 'g-1' };
+    const r = await contacts.importVcards([{ ...block(1), freshUid: true }, block(2), group]);
+    expect(r.imported).toBe(3);
+    expect([...fake.cards.values()].filter((c) => c.name?.full === 'P1').map((c) => c.uid).sort()).toEqual(['u-1', 'urn:uuid:new-1']);
+    expect(contacts.groups()[0]!.members).toEqual({ 'urn:uuid:new-1': true, 'u-2': true });
+  });
+  it('reads a group as Apple writes one', async () => {
+    const { contacts } = counted();
+    await contacts.start('k');
+    await contacts.importVcards([{ text: vc('FN:Crew', 'X-ADDRESSBOOKSERVER-KIND:group', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:A', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:B'), name: 'Crew', uid: '' }]);
+    expect(contacts.groups()[0]).toMatchObject({ kind: 'group', members: { 'urn:uuid:A': true, 'urn:uuid:B': true } });
+    expect(contacts.people()).toEqual([]);
+  });
+  it('fails a card too large to send, alone, and saves one too large to store without its photo', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    const huge = { text: vc('FN:Huge', `NOTE:${'x'.repeat(7_000_001)}`), name: 'Huge', uid: '' };
+    const photo = { text: vc('FN:Snap', 'UID:u-snap', `PHOTO:data:image/png;base64,${'A'.repeat(600_000)}`), name: 'Snap', uid: 'u-snap' };
+    const r = await contacts.importVcards([huge, photo, block(1)]);
+    expect(r).toEqual({ imported: 2, failed: [{ name: 'Huge', error: 'This card is too large to import.' }], cancelled: false, left: 0 });
+    expect([...fake.cards.values()].find((c) => c.uid === 'u-snap')).not.toHaveProperty('media');
+  });
+  it('holds whether the import dialog is open', () => {
+    const { contacts } = counted();
+    expect(contacts.importOpen()).toBe(false);
+    contacts.openImport();
+    expect(contacts.importOpen()).toBe(true);
+    contacts.closeImport();
+    expect(contacts.importOpen()).toBe(false);
   });
 });

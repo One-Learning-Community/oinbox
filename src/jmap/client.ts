@@ -200,6 +200,24 @@ export class JmapClient {
     return (await res.json()) as UploadResult;
   }
 
+  /**
+   * Seconds until the account may upload again, when the server is refusing uploads now; else null.
+   * Stalwart says its upload allowance nowhere but in the refusal of an upload, so one is tried:
+   * call this only after an upload was refused, or it spends one.
+   */
+  async uploadRetryAfter(accountId = this.accountId): Promise<number | null> {
+    try {
+      const url = this.session.uploadUrl.replace('{accountId}', encodeURIComponent(accountId));
+      const res = await this.authFetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: new Blob(['']) }, false, true);
+      if (res.status !== 429) return null;
+      const seconds = Number(res.headers.get('retry-after'));
+      return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null;
+    } catch (e) {
+      if (e instanceof UnauthorizedError) throw e;
+      return null;
+    }
+  }
+
   downloadUrl(blobId: string, name: string, type: string, accountId = this.accountId): string {
     return this.session.downloadUrl
       .replace('{accountId}', encodeURIComponent(accountId))

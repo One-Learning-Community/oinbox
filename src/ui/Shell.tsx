@@ -17,6 +17,7 @@ import { DrivePicker } from './DrivePicker';
 import { ContactDialog } from './ContactDialog';
 import { GroupDialog } from './GroupDialog';
 import { GroupNav } from './GroupNav';
+import { ImportDialog } from './ImportDialog';
 import { LabelDialog } from './LabelDialog';
 import { LinkDialog } from './LinkDialog';
 import { LabelMenu } from './LabelMenu';
@@ -144,6 +145,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       <LabelDialog />
       <ContactDialog />
       <GroupDialog />
+      <ImportDialog />
       <DrivePicker />
       <LinkDialog />
       <props.confirmHost />

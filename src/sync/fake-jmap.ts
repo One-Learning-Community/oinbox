@@ -6,7 +6,7 @@ import { CALENDARS_PARSE, CONTACTS, PRINCIPALS, STALWART, VACATION, type Address
 
 type Rec = Partial<Email> & { id: string; threadId: string; receivedAt: string };
 
-const CARD_PROPS = new Set(['@type', 'version', 'uid', 'kind', 'created', 'updated', 'prodId', 'addressBookIds', 'name', 'nicknames', 'emails', 'phones', 'organizations', 'titles', 'addresses', 'notes', 'anniversaries', 'links', 'onlineServices', 'keywords', 'media', 'members']);
+const CARD_PROPS = new Set(['vCard', '@type', 'version', 'uid', 'kind', 'created', 'updated', 'prodId', 'addressBookIds', 'name', 'nicknames', 'emails', 'phones', 'organizations', 'titles', 'addresses', 'notes', 'anniversaries', 'links', 'onlineServices', 'keywords', 'media', 'members']);
 const MAX_CARD_BYTES = 524_288;
 const MAX_OBJECTS = 500;
 const fullOf = (components?: NameComponent[]) => (components ?? []).map((c) => c.value).join(' ');
@@ -35,6 +35,55 @@ function dropBareServices(card: Record<string, unknown>) {
   if (!services || typeof services !== 'object') return;
   for (const [key, s] of Object.entries(services)) if (!s?.uri) delete services[key];
   if (!Object.keys(services).length) delete card.onlineServices;
+}
+
+/**
+ * The first card of a vCard text, read the way Stalwart's parser answers for the few properties the
+ * tests use; anything else lands under `vCard`, as there. Null when the text holds no card.
+ */
+function readVcard(text: string): Record<string, unknown> | null {
+  const lines: string[] = [];
+  let inside = false;
+  let ended = false;
+  for (const raw of text.split(/\r\n|\n/)) {
+    if (/^BEGIN:VCARD$/i.test(raw.trim())) inside = true;
+    else if (/^END:VCARD$/i.test(raw.trim())) {
+      ended = inside;
+      break;
+    } else if (inside) {
+      if (/^[ \t]/.test(raw) && lines.length) lines[lines.length - 1] += raw.slice(1);
+      else lines.push(raw);
+    }
+  }
+  if (!ended) return null;
+  const un = (v: string) => v.replace(/\\([\\,;nN])/g, (_m, c: string) => (c === 'n' || c === 'N' ? '\n' : c));
+  const card: Record<string, any> = { '@type': 'Card', version: '1.0' };
+  const other: [string, Record<string, unknown>, string, unknown][] = [];
+  const add = (prop: string, value: unknown) => {
+    const map = (card[prop] ??= {}) as Record<string, unknown>;
+    map[`k${Object.keys(map).length + 1}`] = value;
+  };
+  for (const line of lines) {
+    const colon = line.indexOf(':');
+    if (colon < 1) continue;
+    const name = line.slice(0, colon).split(';')[0]!.replace(/^[^.]*\./, '').toUpperCase();
+    const value = line.slice(colon + 1);
+    if (name === 'FN') card.name = { ...card.name, full: un(value) };
+    else if (name === 'N') {
+      const [surname, given] = value.split(/(?<!\\);/).map(un);
+      card.name = { ...card.name, components: [...(surname ? [{ kind: 'surname', value: surname }] : []), ...(given ? [{ kind: 'given', value: given }] : [])] };
+    } else if (name === 'EMAIL') add('emails', { address: value });
+    else if (name === 'TEL') add('phones', { number: value });
+    else if (name === 'ORG') add('organizations', { name: un(value.split(/(?<!\\);/)[0]!) });
+    else if (name === 'NOTE') add('notes', { note: un(value) });
+    else if (name === 'PHOTO') add('media', { kind: 'photo', uri: value });
+    else if (name === 'UID') card.uid = value;
+    else if (name === 'KIND') card.kind = value.toLowerCase();
+    else if (name === 'MEMBER') card.members = { ...card.members, [value]: true };
+    else other.push([name.toLowerCase(), {}, 'unknown', value]);
+  }
+  card.vCard = { properties: other };
+  return card;
 }
 
 export class FakeJmap {
@@ -111,6 +160,21 @@ export class FakeJmap {
   bookState = 1;
   bookLog: { state: number; updated: string[] }[] = [];
   private nextCardId = 1;
+  /** How many more blobs the account may upload this hour (Stalwart: 1,000). */
+  uploadsLeft = Infinity;
+  /** What a refused upload says in Retry-After. */
+  retryAfter: number | null = 2075;
+  blobTexts = new Map<string, string>();
+  /** Creation keys or uids of cards whose creation is refused. */
+  rejectCardCreates = new Set<string>();
+  /** The blobs made in the request being answered, by their creation key: a `#key` means nothing in a later one. */
+  private requestBlobs = new Map<string, string>();
+  private nextBlobId = 1;
+
+  /** Called by the fake's client before each request's calls are handled. */
+  newRequest() {
+    this.requestBlobs.clear();
+  }
 
   renameBook(id: string, name: string) {
     this.books.set(id, { ...this.books.get(id)!, name });
@@ -274,6 +338,42 @@ export class FakeJmap {
       }
       case 'ContactCard/set':
         return [name, this.cardSet(args)];
+      case 'Blob/upload': {
+        const create = (args.create ?? {}) as Record<string, { data: { 'data:asText'?: string }[]; type?: string }>;
+        const created: Record<string, unknown> = {};
+        const notCreated: Record<string, unknown> = {};
+        for (const [key, spec] of Object.entries(create)) {
+          if (this.uploadsLeft <= 0) {
+            notCreated[key] = { type: 'overQuota', description: 'You have exceeded the blob upload quota of 1000 files or 50000000 bytes.' };
+            continue;
+          }
+          this.uploadsLeft--;
+          const id = `blob${this.nextBlobId++}`;
+          const text = spec.data.map((d) => d['data:asText'] ?? '').join('');
+          this.blobTexts.set(id, text);
+          this.requestBlobs.set(key, id);
+          created[key] = { id, type: spec.type, size: new TextEncoder().encode(text).length };
+        }
+        // Stalwart leaves out the one it has nothing for.
+        return [name, { accountId: args.accountId, ...(Object.keys(created).length ? { created } : {}), ...(Object.keys(notCreated).length ? { notCreated } : {}) }];
+      }
+      case 'ContactCard/parse': {
+        const blobIds = (args.blobIds ?? []) as string[];
+        if (blobIds.length > 10) return ['error', tooLarge];
+        const parsed: Record<string, unknown> = {};
+        const notParsable: string[] = [];
+        for (const ref of blobIds) {
+          const id = ref.startsWith('#') ? this.requestBlobs.get(ref.slice(1)) : ref;
+          if (!id) return ['error', { type: 'invalidResultReference', description: `blobId reference "${ref.slice(1)}" not found.` }];
+          const text = this.blobTexts.get(id);
+          // An id it does not know is in neither list.
+          if (text === undefined) continue;
+          const card = readVcard(text);
+          if (card) parsed[id] = card;
+          else notParsable.push(id);
+        }
+        return [name, { accountId: args.accountId, ...(Object.keys(parsed).length ? { parsed } : {}), ...(notParsable.length ? { notParsable } : {}) }];
+      }
       case 'Principal/query': {
         const position = (args.position as number | undefined) ?? 0;
         const all = this.principals!.map((p) => p.id);
@@ -633,9 +733,13 @@ export class FakeJmap {
     const destroyed: string[] = [];
     const notDestroyed: Record<string, unknown> = {};
     for (const [key, card] of Object.entries(create)) {
-      const err = check(card);
+      const err = this.rejectCardCreates.has(key) || this.rejectCardCreates.has(card.uid as string) ? invalid('Invalid property.') : check(card);
       if (err) notCreated[key] = err;
-      else created[key] = { id: this.addCard(card as Partial<ContactCard>).id };
+      else {
+        // What a parse answered is taken as it is; the vCard property is not stored.
+        const { vCard: _v, ...kept } = card;
+        created[key] = { id: this.addCard(kept as Partial<ContactCard>).id };
+      }
     }
     for (const [id, patch] of Object.entries(update)) {
       const cur = this.cards.get(id);
@@ -819,12 +923,18 @@ export class FakeJmap {
         return { 'urn:ietf:params:jmap:mail': 'a1', 'urn:ietf:params:jmap:calendars': 'a1', ...(fake.principals ? { [PRINCIPALS]: 'a1' } : {}), ...(fake.contactsSupported ? { [CONTACTS]: 'a1' } : {}) };
       },
       username: 'alice@example.test',
-      apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: '', eventSourceUrl: '', state: 's',
+      apiUrl: 'http://fake/jmap', downloadUrl: '', uploadUrl: 'http://fake/upload/{accountId}/', eventSourceUrl: '', state: 's',
     };
-    const fetchImpl = async (_url: string, init?: RequestInit) => {
+    const fetchImpl = async (url: string, init?: RequestInit) => {
       if (this.revoked) return new Response('{"type":"about:blank","status":401,"title":"Unauthorized"}', { status: 401 });
+      if (url.startsWith('http://fake/upload/')) {
+        if (this.uploadsLeft <= 0) return new Response('{"status":429,"title":"Quota exceeded"}', { status: 429, headers: this.retryAfter === null ? {} : { 'retry-after': String(this.retryAfter) } });
+        this.uploadsLeft--;
+        return new Response(JSON.stringify({ accountId: 'a1', blobId: `blob${this.nextBlobId++}`, type: 'text/plain', size: 0 }), { status: 200 });
+      }
       const body = JSON.parse(init!.body as string) as { using: string[]; methodCalls: Invocation[] };
       this.usings.push(body.using);
+      this.newRequest();
       const done = new Map<string, Invocation>();
       const responses: Invocation[] = [];
       for (const [name, args, id] of body.methodCalls) {
