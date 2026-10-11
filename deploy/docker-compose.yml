@@ -1,4 +1,4 @@
-# oinbox dev stack: Stalwart (JMAP/SMTP) + Meilisearch (FTS) + Caddy (SPA + same-origin proxy)
+# oinbox dev stack: Stalwart (JMAP/SMTP) + OpenSearch (FTS) + Caddy (SPA + same-origin proxy)
 name: oinbox
 
 services:
@@ -10,7 +10,6 @@ services:
       STALWART_RECOVERY_ADMIN: "admin:oinbox-admin-pass"
       # Base for every URL in /.well-known/jmap, oauth-authorization-server, openid-configuration.
       STALWART_PUBLIC_URL: "http://localhost:8080"
-      MEILI_MASTER_KEY: "oinbox-dev-meili-master-key"
     volumes:
       # config.json only names the datastore; everything else is applied by seed.sh (stalwart/plan.ndjson)
       - ./stalwart/config.json:/etc/stalwart/config.json:ro
@@ -20,7 +19,7 @@ services:
       - "1993:993"           # IMAPS (implicit TLS; Stalwart has no plaintext IMAP listener) for
                               # tests simulating another client mutating mail out-of-band
     depends_on:
-      meilisearch:
+      opensearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz/live"]
@@ -29,20 +28,24 @@ services:
       retries: 30
       start_period: 10s
 
-  meilisearch:
-    image: getmeili/meilisearch:v1.54.0
+  opensearch:
+    # Stalwart's full-text search store (its ElasticSearch store type speaks to OpenSearch).
+    image: opensearchproject/opensearch:2.19.6
     restart: unless-stopped
     environment:
-      MEILI_MASTER_KEY: "oinbox-dev-meili-master-key"
-      MEILI_ENV: development
-      MEILI_NO_ANALYTICS: "true"
+      discovery.type: single-node
+      # Reached only by Stalwart, inside this compose network: no port is published.
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     volumes:
-      - meili-data:/meili_data
+      - opensearch-data:/usr/share/opensearch/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7700/health"]
+      test: ["CMD-SHELL", "curl -fsS 'http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null"]
       interval: 5s
-      timeout: 3s
-      retries: 30
+      timeout: 5s
+      retries: 60
+      start_period: 20s
 
   caddy:
     # The app: SPA built from the repo root Dockerfile (pnpm build) and served by Caddy,
@@ -73,4 +76,4 @@ services:
 
 volumes:
   stalwart-data:
-  meili-data:
+  opensearch-data:

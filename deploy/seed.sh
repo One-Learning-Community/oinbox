@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Idempotent bootstrap for the oinbox dev stack.
-#   1. applies stalwart/plan.ndjson (domain, OAuth clients, Meilisearch FTS, ...),
+#   1. applies stalwart/plan.ndjson (domain, OAuth clients, OpenSearch FTS, ...),
 #      creates the users from stalwart/accounts.ndjson only if they don't exist yet, and
 #      the shared mailbox support@ (stalwart/groups.ndjson) with alice and bob as members
-#   2. restarts Stalwart once if the search store had to be switched to Meilisearch
+#   2. restarts Stalwart once if the search store had to be switched to OpenSearch, and has
+#      everything already stored indexed again (the new index starts empty)
 #   3. delivers the seed mail (skipped if already present)
 # Requires only docker. Run from anywhere after `docker compose up -d`.
 set -euo pipefail
@@ -74,11 +75,16 @@ echo "seed: support@example.test is shared with alice and bob"
 # Listener/OAuth/MTA settings are compiled into the running core; rebuild it.
 cli create Action/ReloadSettings >/dev/null
 
-if [ "$before" != "Meilisearch" ]; then
+# Stalwart's ElasticSearch store type is what speaks to OpenSearch.
+if [ "$before" != "ElasticSearch" ]; then
   echo "seed: search store changed -> restarting stalwart"
   docker compose restart stalwart >/dev/null
   sleep 3
   wait_healthy
+  # A stack that already holds mail has none of it in the new index. Stalwart schedules the
+  # indexing a few minutes out: search finds old mail once that has run.
+  echo "seed: asking stalwart to index what it already holds (takes some minutes)"
+  cli create Task/StoreMaintenance --field maintenanceType=reindexAccounts >/dev/null
 fi
 
 echo "seed: delivering mail"

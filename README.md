@@ -4,7 +4,7 @@ A Gmail-style webmail client for [Stalwart](https://stalw.art), speaking only JM
 It is a static SolidJS app served on the same origin as Stalwart: no server of its own, no database, no telemetry.
 oinbox is free software (MIT). The aim is a solid everyday client that makes running your own Stalwart a real alternative to a commercial mail service.
 
-**Status: beta (`0.1.0-beta.3`).** Tested against Stalwart 0.16.23 with Meilisearch.
+**Status: beta (`0.1.0-beta.3`).** Tested against Stalwart 0.16.23 with OpenSearch 2.19 as its search store.
 
 ## What it does
 
@@ -62,7 +62,7 @@ cd deploy && docker compose -f docker-compose.yml -f docker-compose.local-dist.y
 open http://localhost:8080     # alice@example.test / oinbox-dev-pass
 ```
 
-[deploy/README.md](deploy/README.md) describes the development stack (Stalwart, Meilisearch and Caddy on plain HTTP) and its accounts.
+[deploy/README.md](deploy/README.md) describes the development stack (Stalwart, OpenSearch and Caddy on plain HTTP) and its accounts.
 For hot reload, keep the stack running and use `pnpm dev` (http://localhost:5173); Vite proxies JMAP and OAuth to `localhost:8080`.
 
 ### Test

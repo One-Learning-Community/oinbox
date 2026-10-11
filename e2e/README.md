@@ -1,6 +1,6 @@
 # oinbox end-to-end tests
 
-Playwright (Chromium, Firefox, WebKit, and WebKit at phone size) against the real dev stack in `deploy/` (Stalwart + Meilisearch + Caddy on http://localhost:8080).
+Playwright (Chromium, Firefox, WebKit, and WebKit at phone size) against the real dev stack in `deploy/` (Stalwart + OpenSearch + Caddy on http://localhost:8080).
 
 ## Run
 

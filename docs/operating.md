@@ -7,7 +7,7 @@ oinbox is a set of static files. It has no server of its own and stores nothing 
 ## What you need
 
 - **Stalwart 0.16.23**, the version oinbox is tested against. Later 0.16 releases should work; other series are untested.
-- **A full-text search store** in Stalwart. oinbox is tested with Meilisearch 1.54. Without one, search in oinbox returns nothing useful; reading and sending mail still work.
+- **A full-text search store** in Stalwart. oinbox is tested with OpenSearch 2.19, which Stalwart reaches through its ElasticSearch store type. Up to 0.1.0-beta.3 it was tested with Meilisearch 1.54, which still works; the two differ in what a search finds (OpenSearch matches word forms, so "redesigning" finds "redesign"; Meilisearch matches the beginnings of words). Without one, search in oinbox returns nothing useful; reading and sending mail still work.
 - **A reverse proxy** on the public HTTPS port that serves oinbox's files and forwards Stalwart's paths. The release image contains Caddy set up for this; nginx works too.
 - **A host name** for the service (below, `mail.example.com`) whose DNS already points at the machine, and ports 80 and 443 reachable, so a certificate can be issued.
 - For calendars: nothing extra. oinbox shows the calendar when the account has JMAP Calendars, which Stalwart provides.
@@ -34,7 +34,7 @@ Whatever proxy you use, it has five jobs. `deploy/routes.caddy` is the reference
 
 ## Install with Docker Compose
 
-`deploy/production/` is a complete template: Stalwart, Meilisearch, and oinbox behind Caddy with automatic HTTPS.
+`deploy/production/` is a complete template: Stalwart, OpenSearch, and oinbox behind Caddy with automatic HTTPS. OpenSearch runs with its security plugin off and no published port: only Stalwart, on the same compose network, can reach it. It wants about 2 GB of memory with the default 1 GB heap (`OPENSEARCH_JAVA_OPTS` in `.env` changes it).
 
 1. **Copy the template** to the server and enter it:
 
@@ -44,7 +44,7 @@ Whatever proxy you use, it has five jobs. `deploy/routes.caddy` is the reference
    cp .env.example .env
    ```
 
-2. **Fill in `.env`**: the host name (`OINBOX_DOMAIN`), your mail domain (`MAIL_DOMAIN`), a contact address for the certificate authority, the oinbox version, a Meilisearch key (`openssl rand -hex 32`) and Stalwart's recovery admin as `user:password`. Keep this file private.
+2. **Fill in `.env`**: the host name (`OINBOX_DOMAIN`), your mail domain (`MAIL_DOMAIN`), a contact address for the certificate authority, the oinbox version and Stalwart's recovery admin as `user:password`. Keep this file private.
 
 3. **Start it**:
 
@@ -63,7 +63,7 @@ Whatever proxy you use, it has five jobs. `deploy/routes.caddy` is the reference
    This waits for the certificate, then fills your values into `plan.ndjson` and applies it with Stalwart's command line. It is safe to run again. What it sets:
 
    - your mail domain, and the host name the server announces;
-   - Meilisearch as the search store;
+   - OpenSearch as the search store;
    - CORS off, and trust in the proxy's `X-Forwarded-For`;
    - OAuth: client registration required, and the `oinbox` client registered as a public client with the single redirect `https://mail.example.com/auth/callback` (plus Stalwart's own WebUI client, which registration then needs);
    - the certificate for SMTP and IMAP (see "Certificates").
@@ -227,6 +227,17 @@ oinbox keeps each person's address book in Stalwart as JMAP Contacts, in their d
 - Someone who shares only an address book or a calendar with a colleague (from another client) appears in that colleague's session as an account. oinbox does not offer it as a shared mailbox.
 - **Importing contacts uses the upload allowance.** oinbox cuts a vCard file into cards and Stalwart reads each one as an uploaded blob (`ContactCard/parse`), so every imported card is one of the account's uploads for the hour: 1,000 files and 50 MB by default (`Jmap.maxUploadCount`, `Jmap.uploadQuota`), the same allowance attachments use. Stalwart announces that limit nowhere before it is reached, so oinbox's dialog names the default figure whatever you have set. At the limit the import stops, says how many cards are left and how long until the allowance is back, and until then that person may be unable to attach files. If people will bring address books of more than a few hundred cards, raise `Jmap.maxUploadCount` before they do. Cards already present are skipped before anything is uploaded, so repeating an import costs only the cards still missing.
 - An export is a vCard 4.0 file made in the browser; nothing is asked of the server. A contact group is a card of kind `group` whose members are other cards' `uid`s, which is how CardDAV clients see it too.
+
+## Moving an existing server from Meilisearch to OpenSearch
+
+The template used Meilisearch up to 0.1.0-beta.3. Nothing forces a move: a server that keeps its Meilisearch service and `SearchStore` setting goes on working. To move:
+
+1. Take the new `docker-compose.yml`, `plan.ndjson` and `apply.sh` (the `opensearch` service replaces `meilisearch`; `MEILI_MASTER_KEY` is no longer read) and run `docker compose up -d --remove-orphans`.
+2. Run `./apply.sh`. It sees that the search store changed, restarts Stalwart once (the store is read at start-up; nobody is signed out) and asks it to index everything it already holds (the task `StoreMaintenance`, `reindexAccounts`).
+3. The indexing starts a few minutes later; 50,000 messages took about four minutes in our test. Until it has run, search finds only new mail. Reading and sending are unaffected.
+4. When search is whole again, the `meili-data` volume can be removed.
+
+Up to 0.1.0-beta.3 `apply.sh` did not restart Stalwart after setting the search store on a new server. If search has found nothing since you installed, a restart of Stalwart followed by this version's `./apply.sh` puts it right.
 
 ## Limits worth knowing
 

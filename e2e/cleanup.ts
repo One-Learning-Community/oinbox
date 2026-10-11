@@ -6,8 +6,8 @@ export async function cleanupE2eMail(): Promise<number> {
   // Compose tests also leave mail in bob's mailbox (deliveries) and replies ("Re: Compose test …").
   for (const user of [ALICE, BOB]) {
     const acct = await accountId(user);
-    // One query per prefix: Stalwart (with the Meilisearch store) returns nothing for an
-    // OR of subject conditions.
+    // One query per prefix: with some search stores (Meilisearch) Stalwart returns nothing for
+    // an OR of subject conditions.
     const ids: string[] = [];
     for (const prefix of ['Push test', 'Archive target', 'Archive neighbour', 'Compose test', 'Label test', 'Inline image test']) {
       const r = await jmap(

@@ -43,6 +43,8 @@ if [ -z "$found" ]; then
   exit 1
 fi
 
+store_type() { cli get SearchStore --json | sed -n 's/.*"@type":"\([A-Za-z]*\)".*/\1/p' | tail -1; }
+store_before=$(store_type)
 render plan.ndjson | cli apply --stdin --quiet
 # Stalwart's certificate for SMTP and IMAP: the files Caddy keeps renewed. Created once.
 if ! cli query Certificate --json | grep -q '"id"'; then
@@ -50,4 +52,18 @@ if ! cli query Certificate --json | grep -q '"id"'; then
 fi
 cli create Action/ReloadSettings >/dev/null
 cli create Action/ReloadTlsCertificates >/dev/null
+# The search store is read when Stalwart starts: a first run, or a move from another store, needs
+# a restart, and whatever is already stored has to be put into the new, empty index.
+if [ "$store_before" != "$(store_type)" ]; then
+  echo "apply: the search store changed (was: ${store_before:-none}); restarting Stalwart"
+  compose restart stalwart >/dev/null
+  ready=""
+  for _ in $(seq 60); do
+    if compose exec -T stalwart curl -fsS -o /dev/null http://127.0.0.1:8080/healthz/ready 2>/dev/null; then ready=1; break; fi
+    sleep 3
+  done
+  [ -n "$ready" ] || { echo "apply: Stalwart did not come back after the restart. See: docker compose logs stalwart" >&2; exit 1; }
+  cli create Task/StoreMaintenance --field maintenanceType=reindexAccounts >/dev/null
+  echo "apply: Stalwart is indexing what it already holds; search finds older mail in a few minutes"
+fi
 echo "apply: done. Create accounts at $PUBLIC_ORIGIN/admin/ and then open $PUBLIC_ORIGIN/"

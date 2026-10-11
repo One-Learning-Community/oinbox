@@ -59,7 +59,7 @@ jobs:
       - run: pnpm build # the stack serves ./dist
       # Chromium always: the sign-in setup project runs on it.
       - run: pnpm exec playwright install --with-deps chromium ${{ matrix.browser }}
-      - name: Start Stalwart, Meilisearch and Caddy
+      - name: Start Stalwart, OpenSearch and Caddy
         working-directory: deploy
         # --build also proves the Dockerfile still builds the web image.
         run: docker compose -f docker-compose.yml -f docker-compose.local-dist.yml up -d --build --wait

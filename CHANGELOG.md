@@ -18,8 +18,13 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 - Picture attachments (JPEG, PNG, GIF, WebP, AVIF) show as thumbnails in the message, and open in a full-screen viewer that steps through the message's pictures with the arrow keys. A picture over 5 MB is fetched only when you open it. SVG and formats a browser cannot draw are shown as files.
 - Every attachment in a message is a tile of one size: a picture shows itself, any other file shows its kind (PDF, DOCX) and downloads on a click.
 
+### Changed
+
+- OpenSearch 2.19 is now the search store oinbox is developed and tested with, in place of Meilisearch: the development stack and the production template (`deploy/production`) both run it, through Stalwart's ElasticSearch store type. Search then matches word forms ("redesigning" finds "redesign") and no longer the beginnings of words. Meilisearch still works, and a server that keeps it needs to change nothing. To move a server over, see docs/operating.md, "Moving an existing server from Meilisearch to OpenSearch"; `MEILI_MASTER_KEY` is no longer read by the template.
+
 ### Fixed
 
+- The production template's `apply.sh` restarts Stalwart when it sets or changes the search store, and has what is already stored indexed. Before, a newly installed server did not use its search store until Stalwart was next restarted.
 - Someone who shares only an address book or a calendar with you is no longer offered as a shared mailbox that then fails to open.
 
 ## 0.1.0-beta.3
