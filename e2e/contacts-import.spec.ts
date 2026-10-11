@@ -131,15 +131,25 @@ test('a file that is no vCard says nothing was found, and a stop keeps what was 
 
   const text = Array.from({ length: 250 }, (_, i) => vc('3.0', `FN:Stop ${i}`, `EMAIL:stop${i}@x.example`)).join('');
   await choose(page, text);
+  // The first batch is held on its way, so that Stop is pressed while it is: on a fast machine
+  // the whole import could otherwise be over before the button is reached.
+  let held = false;
+  await page.route('**/jmap/', async (route) => {
+    if (!held && route.request().postData()?.includes('Blob/upload')) {
+      held = true;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue();
+  });
   await dialog(page).getByRole('button', { name: 'Import 250' }).click();
   await dialog(page).getByRole('button', { name: 'Stop' }).click();
-  await expect(dialog(page).getByText(/^Imported \d+ contacts\.$/)).toBeVisible({ timeout: 30_000 });
-  const left = Number((await dialog(page).getByText(/^Stopped: /).textContent())!.match(/\d+/)![0]);
-  const saved = (await listCards(USER)).length;
-  expect(saved).toBeGreaterThan(0);
-  expect(saved + left).toBe(250);
+  // The batch on its way is finished, and nothing after it is sent.
+  await expect(dialog(page).getByText('Imported 100 contacts.')).toBeVisible({ timeout: 30_000 });
+  await expect(dialog(page).getByText('Stopped: 150 were not imported.')).toBeVisible();
+  await page.unroute('**/jmap/');
+  expect(await listCards(USER)).toHaveLength(100);
   await dialog(page).getByRole('button', { name: 'Done' }).click();
-  await expect(count(page)).toHaveText(`${saved} contacts`);
+  await expect(count(page)).toHaveText('100 contacts');
 });
 
 test('an export is the same address book when it is imported again', async ({ page }) => {
