@@ -2,6 +2,8 @@ import { batch, createMemo, createSignal, type Accessor } from 'solid-js';
 import { createStore, produce, reconcile, unwrap } from 'solid-js/store';
 import { loadContacts, saveContacts } from '../cache/persist';
 import { emailsOf, newCard, patchFor, type ContactForm } from '../contacts/card';
+import { isGroup } from '../contacts/card';
+import { membersWith, membersWithout, newGroup, sortGroups } from '../contacts/groups';
 import { sortPeople } from '../contacts/search';
 import { UnauthorizedError, type JmapClient } from '../jmap/client';
 import { CONTACTS, CORE, type AddressBook, type ContactCard, type Id, type StateChange } from '../jmap/types';
@@ -9,6 +11,8 @@ import { logUnexpected } from '../sync/connection';
 import type { ToastFn } from './actions';
 
 export type ContactDialogState = { kind: 'new'; seed?: { name?: string; email?: string } } | { kind: 'edit'; id: Id };
+/** `then`: people to put in the group once it is made. */
+export type GroupDialogState = { kind: 'create'; then?: Id[] } | { kind: 'rename'; id: Id };
 export type ContactWrite = { ok: true; id: Id } | { ok: false; error: string };
 
 export interface ContactsState {
@@ -45,6 +49,22 @@ export interface Contacts {
   update(id: Id, form: ContactForm, base?: ContactCard): Promise<ContactWrite>;
   /** Delete, with Undo in the toast. */
   remove(id: Id): Promise<ContactWrite>;
+  /** Reactive: the groups, by name. */
+  groups: Accessor<ContactCard[]>;
+  createGroup(name: string): Promise<ContactWrite>;
+  renameGroup(id: Id, name: string): Promise<ContactWrite>;
+  /** Deletes the group card only: its people stay. Asks nothing: the caller confirms. */
+  removeGroup(id: Id): Promise<ContactWrite>;
+  /** Add people to a group. A person's card with no uid is first replaced by a copy that has one. */
+  addToGroup(groupId: Id, cardIds: Id[]): Promise<ContactWrite>;
+  removeFromGroup(groupId: Id, cardIds: Id[]): Promise<ContactWrite>;
+  /** Delete several people in one go. No undo: the caller confirms first. */
+  removeMany(ids: Id[]): Promise<{ removed: number; error?: string }>;
+  /** Reactive: the card that took this one's place when it was given a uid, if any. */
+  movedTo(id: Id): Id | undefined;
+  groupDialog: Accessor<GroupDialogState | null>;
+  openGroupDialog(state: GroupDialogState): void;
+  closeGroupDialog(): void;
   /** The contact dialog, wherever it was asked for. */
   dialog: Accessor<ContactDialogState | null>;
   openDialog(state: ContactDialogState): void;
@@ -58,6 +78,7 @@ const PAGE = 500;
 const SAVE_MS = 2000;
 const USING = [CORE, CONTACTS];
 const UNAVAILABLE = 'Contacts are not available.';
+const NO_GROUP = 'This group no longer exists.';
 
 /**
  * The user's address book, held whole: the server can neither sort it by name nor search it
@@ -74,6 +95,8 @@ export function createContacts(
   const saveDelayMs = opts.saveDelayMs ?? SAVE_MS;
   const [state, setState] = createStore<ContactsState>({ cards: {}, books: {}, loaded: false, failed: false, current: false });
   const [dialog, setDialog] = createSignal<ContactDialogState | null>(null);
+  const [groupDialog, setGroupDialog] = createSignal<GroupDialogState | null>(null);
+  const [moved, setMoved] = createSignal<ReadonlyMap<Id, Id>>(new Map());
   let key: string | null = null;
   let cardState = '';
   let bookState = '';
@@ -233,6 +256,7 @@ export function createContacts(
   };
 
   const people = createMemo(() => sortPeople(Object.values(state.cards)));
+  const groups = createMemo(() => sortGroups(Object.values(state.cards)));
   const byAddress = createMemo(() => {
     const map = new Map<string, ContactCard>();
     for (const card of people()) {
@@ -275,6 +299,58 @@ export function createContacts(
       if (e instanceof UnauthorizedError) throw e;
       return { ok: false, error: (e as Error).message };
     }
+  };
+
+  /** Send one card's patch and show the card as the server then has it. `gone`: what to say when it no longer exists. */
+  const patchCard = async (accountId: Id, id: Id, patch: Record<string, unknown>, gone: string): Promise<ContactWrite> => {
+    const b = client.batch();
+    const set = b.call('ContactCard/set', { accountId, update: { [id]: patch } });
+    const res = (await client.send(b, USING)).get(set);
+    const err = res.notUpdated?.[id];
+    if (err?.type === 'notFound') {
+      put([], [id]);
+      return { ok: false, error: gone };
+    }
+    if (err) return { ok: false, error: refused(err, 'change') };
+    // Read back: the card may also hold what another device changed a moment ago.
+    const fetched = await fetchCards(accountId, [id]);
+    put(fetched.list, fetched.notFound);
+    advance(res.oldState, res.newState);
+    return { ok: true, id };
+  };
+
+  const defaultBook = (): AddressBook | undefined => {
+    const books = Object.values(state.books);
+    return books.find((x) => x.isDefault) ?? books[0];
+  };
+  const groupCard = (id: Id): ContactCard | undefined => {
+    const card = state.cards[id];
+    return card && isGroup(card) ? unwrap(card) : undefined;
+  };
+
+  /**
+   * Stalwart lets a uid be set only when a card is made, and a group names its members by uid: a card
+   * without one is made again with one, and only then is the old card removed.
+   */
+  const withUid = async (accountId: Id, card: ContactCard): Promise<{ ok: true; uid: string } | { ok: false; error: string }> => {
+    if (card.uid) return { ok: true, uid: card.uid };
+    const { id, ...rest } = structuredClone(card);
+    const copy = { ...rest, uid: uid(), updated: now() };
+    const made = await createCard(accountId, copy);
+    if (!made.ok) return made;
+    const b = client.batch();
+    const set = b.call('ContactCard/set', { accountId, destroy: [id] });
+    const res = (await client.send(b, USING)).get(set);
+    const err = res.notDestroyed?.[id];
+    // Left behind, the old card is a duplicate the person can see and delete; the group has the new one.
+    if (!err || err.type === 'notFound') {
+      batch(() => {
+        setMoved(new Map(moved()).set(id, made.id));
+        put([], [id]);
+      });
+    }
+    advance(res.oldState, res.newState);
+    return { ok: true, uid: copy.uid };
   };
 
   /** A second click while the first is on its way is the same deletion, not another. */
@@ -329,8 +405,7 @@ export function createContacts(
     },
     create: (form) =>
       guarded(async (accountId0) => {
-        const books = Object.values(state.books);
-        const book = books.find((x) => x.isDefault) ?? books[0];
+        const book = defaultBook();
         if (!book) return { ok: false, error: 'Your contacts have not loaded yet.' };
         return createCard(accountId0, newCard(form, book.id, now(), uid()));
       }),
@@ -340,20 +415,7 @@ export function createContacts(
         if (!card) return { ok: false, error: 'This contact no longer exists.' };
         const patch = patchFor(base ?? unwrap(card), form, now());
         if (!Object.keys(patch).length) return { ok: true, id };
-        const b = client.batch();
-        const set = b.call('ContactCard/set', { accountId: accountId0, update: { [id]: patch } });
-        const res = (await client.send(b, USING)).get(set);
-        const err = res.notUpdated?.[id];
-        if (err?.type === 'notFound') {
-          put([], [id]);
-          return { ok: false, error: 'This contact no longer exists.' };
-        }
-        if (err) return { ok: false, error: refused(err, 'change') };
-        // Read back: the card may also hold what another device changed a moment ago.
-        const fetched = await fetchCards(accountId0, [id]);
-        put(fetched.list, fetched.notFound);
-        advance(res.oldState, res.newState);
-        return { ok: true, id };
+        return patchCard(accountId0, id, patch, 'This contact no longer exists.');
       }),
     remove: (id) => once(id, async () => {
       const stored = state.cards[id];
@@ -384,6 +446,83 @@ export function createContacts(
       toast('Contact deleted.', 'info', copy ? { label: 'Undo', run: undo } : undefined);
       return result;
     }),
+    groups,
+    createGroup: (name) =>
+      guarded(async (accountId0) => {
+        const book = defaultBook();
+        if (!book) return { ok: false, error: 'Your contacts have not loaded yet.' };
+        return createCard(accountId0, newGroup(name, book.id, now(), uid()));
+      }),
+    renameGroup: (id, name) =>
+      guarded(async (accountId0) => {
+        const group = groupCard(id);
+        if (!group) return { ok: false, error: NO_GROUP };
+        return patchCard(accountId0, id, { name: { ...group.name, full: name.trim() }, updated: now() }, NO_GROUP);
+      }),
+    removeGroup: (id) =>
+      guarded(async (accountId0) => {
+        const b = client.batch();
+        const set = b.call('ContactCard/set', { accountId: accountId0, destroy: [id] });
+        const res = (await client.send(b, USING)).get(set);
+        const err = res.notDestroyed?.[id];
+        if (err && err.type !== 'notFound') return { ok: false, error: refused(err, 'deletion') };
+        put([], [id]);
+        advance(res.oldState, res.newState);
+        return { ok: true, id };
+      }),
+    addToGroup: (groupId, cardIds) =>
+      guarded(async (accountId0) => {
+        if (!groupCard(groupId)) return { ok: false, error: NO_GROUP };
+        const uids: string[] = [];
+        for (const id of cardIds) {
+          const card = state.cards[id];
+          if (!card || isGroup(card)) continue;
+          const r = await withUid(accountId0, unwrap(card));
+          if (!r.ok) return r;
+          uids.push(r.uid);
+        }
+        // Read again: making the copies took requests, and the group may have changed meanwhile.
+        const group = groupCard(groupId);
+        if (!group) return { ok: false, error: NO_GROUP };
+        if (uids.every((u) => group.members?.[u] === true)) return { ok: true, id: groupId };
+        return patchCard(accountId0, groupId, { members: membersWith(group, uids), updated: now() }, NO_GROUP);
+      }),
+    removeFromGroup: (groupId, cardIds) =>
+      guarded(async (accountId0) => {
+        const group = groupCard(groupId);
+        if (!group) return { ok: false, error: NO_GROUP };
+        const uids = cardIds.map((id) => state.cards[id]?.uid).filter((u): u is string => !!u && group.members?.[u] === true);
+        if (!uids.length) return { ok: true, id: groupId };
+        return patchCard(accountId0, groupId, { members: membersWithout(group, uids), updated: now() }, NO_GROUP);
+      }),
+    removeMany: async (ids) => {
+      const accountId0 = accountId();
+      if (!accountId0) return { removed: 0, error: UNAVAILABLE };
+      let removed = 0;
+      try {
+        for (let i = 0; i < ids.length; i += PAGE) {
+          const chunk = ids.slice(i, i + PAGE);
+          const b = client.batch();
+          const set = b.call('ContactCard/set', { accountId: accountId0, destroy: chunk });
+          const res = (await client.send(b, USING)).get(set);
+          const failed = Object.entries(res.notDestroyed ?? {}).filter(([, e]) => e.type !== 'notFound');
+          const kept = new Set(failed.map(([id]) => id));
+          const gone = chunk.filter((id) => !kept.has(id));
+          put([], gone);
+          removed += gone.length;
+          advance(res.oldState, res.newState);
+          if (failed.length) return { removed, error: refused(failed[0]![1], 'deletion') };
+        }
+      } catch (e) {
+        if (e instanceof UnauthorizedError) throw e;
+        return { removed, error: (e as Error).message };
+      }
+      return { removed };
+    },
+    movedTo: (id) => moved().get(id),
+    groupDialog,
+    openGroupDialog: (next) => void setGroupDialog(next),
+    closeGroupDialog: () => void setGroupDialog(null),
     dialog,
     openDialog: (next) => void setDialog(next),
     closeDialog: () => void setDialog(null),

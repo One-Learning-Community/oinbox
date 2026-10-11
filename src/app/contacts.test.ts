@@ -7,6 +7,7 @@ import { CONTACTS } from '../jmap/types';
 import { FakeJmap } from '../sync/fake-jmap';
 import { createContacts } from './contacts';
 
+
 vi.mock('../cache/persist', () => ({
   loadContacts: vi.fn(async () => undefined),
   saveContacts: vi.fn(async () => undefined),
@@ -228,5 +229,124 @@ describe('createContacts', () => {
     await contacts.start('alice:a1');
     await vi.waitFor(() => expect(saveContacts).toHaveBeenCalled());
     expect(vi.mocked(saveContacts).mock.lastCall).toEqual(['alice:a1', expect.objectContaining({ cards: [expect.objectContaining({ id: a.id })], cardState: `k${fake.cardState}` })]);
+  });
+});
+
+describe('createContacts: groups and bulk work', () => {
+  const person = (fake: FakeJmap, name: string, uid?: string) => fake.addCard({ ...(uid ? { uid } : {}), name: { full: name }, emails: { e1: { address: `${name.toLowerCase()}@x.example` } } });
+  const sets = (fake: FakeJmap) => fake.sent.filter(([n]) => n === 'ContactCard/set').map(([, a]) => a);
+
+  it('creates a group with a kind and a uid, listed among groups and not among people', async () => {
+    const { fake, contacts } = setup();
+    person(fake, 'Ann', 'u-ann');
+    await contacts.start('k');
+    const r = await contacts.createGroup('  Team  ');
+    expect(r.ok).toBe(true);
+    expect(contacts.groups().map((g) => g.name?.full)).toEqual(['Team']);
+    expect(contacts.people().map((p) => p.name?.full)).toEqual(['Ann']);
+    expect([...fake.cards.values()].find((c) => c.kind === 'group')).toMatchObject({ uid: 'urn:uuid:test', created: NOW, updated: NOW, name: { full: 'Team' } });
+  });
+  it('renames a group, and says so when it is gone', async () => {
+    const { fake, contacts } = setup();
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Old' }, members: { 'u-ann': true } });
+    await contacts.start('k');
+    expect((await contacts.renameGroup(g.id, ' New ')).ok).toBe(true);
+    expect(fake.cards.get(g.id)).toMatchObject({ name: { full: 'New' }, updated: NOW, members: { 'u-ann': true } });
+    expect(contacts.groups()[0]!.name?.full).toBe('New');
+    fake.cards.delete(g.id);
+    expect(await contacts.renameGroup(g.id, 'Newer')).toEqual({ ok: false, error: 'This group no longer exists.' });
+    expect(await contacts.renameGroup('nope', 'Newer')).toEqual({ ok: false, error: 'This group no longer exists.' });
+  });
+  it('deletes a group and leaves its people', async () => {
+    const { fake, contacts } = setup();
+    person(fake, 'Ann', 'u-ann');
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' }, members: { 'u-ann': true } });
+    await contacts.start('k');
+    expect((await contacts.removeGroup(g.id)).ok).toBe(true);
+    expect(contacts.groups()).toEqual([]);
+    expect(contacts.people()).toHaveLength(1);
+  });
+  it('adds people to a group; one with no uid is first replaced by a copy that has one', async () => {
+    const { fake, contacts } = setup();
+    const ann = person(fake, 'Ann', 'u-ann');
+    const bob = person(fake, 'Bob');
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' } });
+    await contacts.start('k');
+    const r = await contacts.addToGroup(g.id, [ann.id, bob.id]);
+    expect(r.ok).toBe(true);
+    expect(fake.cards.has(bob.id)).toBe(false);
+    const copy = [...fake.cards.values()].find((c) => c.name?.full === 'Bob')!;
+    expect(copy).toMatchObject({ uid: 'urn:uuid:test', emails: { e1: { address: 'bob@x.example' } }, updated: NOW });
+    expect(fake.cards.get(g.id)!.members).toEqual({ 'u-ann': true, 'urn:uuid:test': true });
+    expect(contacts.state.cards[bob.id]).toBeUndefined();
+    expect(contacts.movedTo(bob.id)).toBe(copy.id);
+    expect(contacts.people().map((p) => p.name?.full)).toEqual(['Ann', 'Bob']);
+    expect(fake.cards.get(g.id)!.updated).toBe(NOW);
+  });
+  it('keeps the original when the copy cannot be made', async () => {
+    const { fake, contacts } = setup();
+    const bob = person(fake, 'Bob');
+    fake.addCard({ uid: 'urn:uuid:test', name: { full: 'Holder of the uid' } });
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' } });
+    await contacts.start('k');
+    const r = await contacts.addToGroup(g.id, [bob.id]);
+    expect(r.ok).toBe(false);
+    expect(fake.cards.has(bob.id)).toBe(true);
+    expect(fake.cards.get(g.id)!.members).toBeUndefined();
+  });
+  it('sends nothing when everyone is already in the group', async () => {
+    const { fake, contacts } = setup();
+    const ann = person(fake, 'Ann', 'u-ann');
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' }, members: { 'u-ann': true } });
+    await contacts.start('k');
+    const before = sets(fake).length;
+    expect((await contacts.addToGroup(g.id, [ann.id])).ok).toBe(true);
+    expect(sets(fake)).toHaveLength(before);
+  });
+  it('removes people from a group, clearing members when the last goes and keeping keys it does not know', async () => {
+    const { fake, contacts } = setup();
+    const ann = person(fake, 'Ann', 'u-ann');
+    const bob = person(fake, 'Bob', 'u-bob');
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' }, members: { 'u-ann': true, 'u-bob': true, 'u-gone': true } });
+    await contacts.start('k');
+    await contacts.removeFromGroup(g.id, [ann.id]);
+    expect(fake.cards.get(g.id)!.members).toEqual({ 'u-bob': true, 'u-gone': true });
+    fake.cards.get(g.id)!.members = { 'u-bob': true };
+    await contacts.reload();
+    await contacts.removeFromGroup(g.id, [bob.id]);
+    expect(fake.cards.get(g.id)).not.toHaveProperty('members');
+    expect(contacts.groups()[0]!.members).toBeUndefined();
+  });
+  it('says so when the group to change is gone', async () => {
+    const { fake, contacts } = setup();
+    const ann = person(fake, 'Ann', 'u-ann');
+    await contacts.start('k');
+    expect(await contacts.addToGroup('nope', [ann.id])).toEqual({ ok: false, error: 'This group no longer exists.' });
+    expect(await contacts.removeFromGroup('nope', [ann.id])).toEqual({ ok: false, error: 'This group no longer exists.' });
+  });
+  it('deletes several people in one go, counting one already gone', async () => {
+    const { fake, contacts } = setup();
+    const ids = ['Ann', 'Bob', 'Cy'].map((n) => person(fake, n, `u-${n}`).id);
+    await contacts.start('k');
+    fake.cards.delete(ids[1]!);
+    expect(await contacts.removeMany(ids)).toEqual({ removed: 3 });
+    expect(contacts.people()).toEqual([]);
+    expect(sets(fake).filter((a) => a.destroy)).toHaveLength(1);
+  });
+  it('deletes more than 500 people in chunks', async () => {
+    const { fake, contacts } = setup();
+    const ids: string[] = [];
+    for (let i = 0; i < 620; i++) ids.push(fake.addCard({ name: { full: `P${i}` } }).id);
+    await contacts.start('k');
+    expect(await contacts.removeMany(ids)).toEqual({ removed: 620 });
+    expect(sets(fake).filter((a) => a.destroy).map((a) => (a.destroy as string[]).length)).toEqual([500, 120]);
+  });
+  it('holds the group dialog', async () => {
+    const { contacts } = setup();
+    expect(contacts.groupDialog()).toBeNull();
+    contacts.openGroupDialog({ kind: 'create', then: ['c1'] });
+    expect(contacts.groupDialog()).toEqual({ kind: 'create', then: ['c1'] });
+    contacts.closeGroupDialog();
+    expect(contacts.groupDialog()).toBeNull();
   });
 });
