@@ -83,7 +83,8 @@ export function splitName(display: string): { given: string; surname: string } {
 export function nameParts(card: ContactCard): { given: string; surname: string } {
   const components = parts(card.name?.components);
   if (!components.length) return splitName(text(card.name?.full));
-  const of = (kind: string) => components.find((c) => c.kind === kind)?.value.trim() ?? '';
+  // Someone may have two of either ("Mary" "Ann"): all of them, or a rename would drop the second.
+  const of = (kind: string) => components.filter((c) => c.kind === kind).map((c) => c.value.trim()).filter(Boolean).join(' ');
   return { given: of('given'), surname: of('surname') };
 }
 
@@ -227,13 +228,14 @@ const whole = (text: string, min: number, max: number): number | null => {
   return n >= min && n <= max ? n : null;
 };
 
-function formBirthday(form: ContactForm): { day: number; month: number; year?: number } | null | 'invalid' {
+function formBirthday(form: ContactForm): { day: number; month: number; year?: number } | null | 'invalid' | 'bad-year' {
   const { day, month, year } = form.birthday;
   if (!day.trim() && !month.trim() && !year.trim()) return null;
   const d = whole(day, 1, 31);
   const m = whole(month, 1, 12);
   const y = year.trim() ? whole(year, 1, 9999) : undefined;
-  if (d === null || m === null || y === null) return 'invalid';
+  if (d === null || m === null) return 'invalid';
+  if (y === null) return 'bad-year';
   return { day: d, month: m, ...(y === undefined ? {} : { year: y }) };
 }
 
@@ -245,7 +247,9 @@ export function validateForm(form: ContactForm): FormErrors {
   form.emails.forEach((e, i) => {
     if (e.address.trim() && !EMAIL.test(e.address.trim())) errors[`emails.${i}`] = 'This is not an email address.';
   });
-  if (formBirthday(form) === 'invalid') errors.birthday = 'Give both a day and a month.';
+  const born = formBirthday(form);
+  if (born === 'invalid') errors.birthday = 'Give both a day and a month.';
+  if (born === 'bad-year') errors.birthday = 'Give the year as a number, or leave it empty.';
   return errors;
 }
 
@@ -288,6 +292,15 @@ function rebuild<S extends object, R extends { key?: string }>(
   return out;
 }
 
+/** What the user typed, or the stored text when that is all it amounts to: a save that changes nothing writes nothing. */
+const unchanged = (stored: unknown, typed: string): string => (typeof stored === 'string' && stored.trim() === typed.trim() ? stored : typed.trim());
+
+/** An entry another client left empty, still in the form as it came: it is not the user who removed it. */
+function storedBlank<S>(stored: Record<string, S> | undefined, key: string | undefined, field: keyof S): boolean {
+  const entry = key === undefined ? undefined : stored?.[key];
+  return !!entry && typeof entry === 'object' && !text(entry[field]).trim();
+}
+
 function withContexts<T extends { contexts?: Record<string, boolean> }>(entry: T, context: 'work' | 'private' | null): T {
   if (context) entry.contexts = { [context]: true };
   else delete entry.contexts;
@@ -301,8 +314,13 @@ function nextName(card: ContactCard | undefined, form: ContactForm): ContactCard
     const cur = nameParts(card);
     if (cur.given === given && cur.surname === surname) return card.name;
   }
-  const others = parts(card?.name?.components).filter((c) => c.kind !== 'given' && c.kind !== 'surname');
-  const components = [...others, ...(given ? [{ kind: 'given', value: given }] : []), ...(surname ? [{ kind: 'surname', value: surname }] : [])];
+  const stored = parts(card?.name?.components);
+  const cur = card ? nameParts(card) : { given: '', surname: '' };
+  // A part the user left alone keeps its components as they are: "Mary" "Ann" stays two given names.
+  const kept = (kind: 'given' | 'surname', value: string) =>
+    stored.length && cur[kind] === value ? stored.filter((c) => c.kind === kind) : value ? [{ kind, value }] : [];
+  const others = stored.filter((c) => c.kind !== 'given' && c.kind !== 'surname');
+  const components = [...others, ...kept('given', given), ...kept('surname', surname)];
   if (!components.length) return { full: '' };
   const rank = (c: NameComponent) => (NAME_ORDER.indexOf(c.kind) + 1 || NAME_ORDER.length + 1);
   components.sort((a, b) => rank(a) - rank(b));
@@ -310,9 +328,9 @@ function nextName(card: ContactCard | undefined, form: ContactForm): ContactCard
 }
 
 function nextEmails(card: ContactCard | undefined, form: ContactForm): Record<string, CardEmail> {
-  const rows = form.emails.filter((e) => e.address.trim());
+  const rows = form.emails.filter((e) => e.address.trim() || storedBlank(card?.emails, e.key, 'address'));
   const emails = rebuild<CardEmail, (typeof rows)[number]>(card?.emails, rows, 'e', (row, base) => {
-    const entry: CardEmail = { ...base, address: row.address.trim() };
+    const entry: CardEmail = { ...base, address: unchanged(base?.address, row.address) };
     if (!base || emailLabel(base) !== row.label) withContexts(entry, row.label === 'work' ? 'work' : row.label === 'personal' ? 'private' : null);
     return entry;
   });
@@ -331,9 +349,9 @@ function nextEmails(card: ContactCard | undefined, form: ContactForm): Record<st
 }
 
 function nextPhones(card: ContactCard | undefined, form: ContactForm): Record<string, CardPhone> {
-  const rows = form.phones.filter((p) => p.number.trim());
+  const rows = form.phones.filter((p) => p.number.trim() || storedBlank(card?.phones, p.key, 'number'));
   return rebuild<CardPhone, (typeof rows)[number]>(card?.phones, rows, 'p', (row, base) => {
-    const entry: CardPhone = { ...base, number: row.number.trim() };
+    const entry: CardPhone = { ...base, number: unchanged(base?.number, row.number) };
     if (base && phoneLabel(base) === row.label) return entry;
     if (row.label === 'mobile') entry.features = { ...entry.features, mobile: true };
     else {
@@ -349,7 +367,7 @@ function nextPhones(card: ContactCard | undefined, form: ContactForm): Record<st
 }
 
 function nextAddresses(card: ContactCard | undefined, form: ContactForm): Record<string, CardAddress> {
-  const rows = form.addresses.filter((a) => a.text.trim());
+  const rows = form.addresses.filter((a) => a.text.trim() || (a.key !== undefined && !!card?.addresses?.[a.key] && !addressText(card.addresses[a.key]!).trim()));
   return rebuild<CardAddress, (typeof rows)[number]>(card?.addresses, rows, 'a', (row, base) => {
     let entry: CardAddress;
     if (base && addressText(base) === row.text) entry = base;
@@ -376,20 +394,31 @@ function nextMaps(card: ContactCard | undefined, form: ContactForm): Maps {
   const org = card?.organizations?.[orgKey];
   const name = form.organization.trim();
   const department = form.department.trim();
+  const was = card ? organizationOf(card) : { name: '', department: '', title: '' };
   const { name: _n, units: _u, ...orgRest } = org ?? {};
-  const units = [...(department ? [{ name: department }] : []), ...(org?.units ?? []).slice(1)];
-  const nextOrg = name || department ? { ...orgRest, ...(name ? { name } : {}), ...(units.length ? { units } : {}) } : null;
+  const storedUnits = Array.isArray(org?.units) ? org.units : [];
+  // The first unit is the department; whatever else it holds (a sort key) stays with it.
+  const units = department === was.department ? storedUnits : [...(department ? [{ ...storedUnits[0], name: department }] : []), ...storedUnits.slice(1)];
+  const orgName = name === was.name ? org?.name : name;
+  const nextOrg =
+    org && name === was.name && department === was.department
+      ? org
+      : name || department
+        ? { ...orgRest, ...(orgName ? { name: orgName } : {}), ...(units.length ? { units } : {}) }
+        : null;
 
   const titleKey = rows(card?.titles).find(([, t]) => isJobTitle(t))?.[0] ?? freeKey('t', new Set(Object.keys(card?.titles ?? {})));
   const title = form.title.trim();
-  const nextTitle = title ? { kind: 'title', ...card?.titles?.[titleKey], name: title } : null;
+  const storedTitle = card?.titles?.[titleKey];
+  const nextTitle = !title ? null : storedTitle ? (title === was.title ? storedTitle : { ...storedTitle, name: title }) : { kind: 'title', name: title };
 
   const born = card ? birthEntry(card) : undefined;
   const bornKey = born?.[0] ?? freeKey('b', new Set(Object.keys(card?.anniversaries ?? {})));
-  const want = formBirthday(form);
-  const same = !!born && want !== null && want !== 'invalid' && born[1].day === want.day && born[1].month === want.month && born[1].year === want.year;
+  const typed = formBirthday(form);
+  const want = typeof typed === 'string' ? null : typed;
+  const same = !!born && want !== null && born[1].day === want.day && born[1].month === want.month && born[1].year === want.year;
   const nextBorn =
-    want === null || want === 'invalid'
+    want === null
       ? null
       : same
         ? card!.anniversaries![bornKey]!

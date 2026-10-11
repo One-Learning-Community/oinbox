@@ -11,7 +11,7 @@ import { Avatar } from './Avatar';
  * person: who they are to the user (a contact, a colleague, neither) and what can be done about it.
  * On a server without contacts it is plain text.
  */
-export function PersonButton(props: { address: EmailAddress; label: string; class?: string; inMessage?: boolean }) {
+export function PersonButton(props: { address: EmailAddress; label: string; class?: string; inMessage?: boolean; onKeyDown?: (e: KeyboardEvent) => void; keys?: string }) {
   const app = useApp();
   // Read once, as the rest of the app reads the session: a server gains no address book mid-visit.
   if (!app.contacts.available()) return <span class={props.class}>{props.label}</span>;
@@ -71,6 +71,8 @@ export function PersonButton(props: { address: EmailAddress; label: string; clas
             class={`person ${props.class ?? ''}`}
             aria-haspopup="dialog"
             aria-expanded={open()}
+            aria-keyshortcuts={props.keys}
+            onKeyDown={(e) => props.onKeyDown?.(e)}
             // A chip sits in a text field: taking the focus on the way down would commit what is half typed.
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setOpen(!open())}

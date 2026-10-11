@@ -26,4 +26,8 @@ describe('savedEntries', () => {
     expect(savedEntries([bare])).toEqual([{ email: 'bare@x.example', name: '', preferred: true, words: [], contactId: '3' }]);
     expect(savedEntries([p('4', { phones: { p: { number: '555' } } })])).toEqual([]);
   });
+  it('offers nothing that is not an address: other clients store anything in an email field', () => {
+    const odd = p('5', { name: { full: 'Odd One' }, emails: { e: { address: 'not an address' }, f: { address: 'odd@x.example' }, g: { address: '@x.example' } } });
+    expect(savedEntries([odd]).map((e) => e.email)).toEqual(['odd@x.example']);
+  });
 });

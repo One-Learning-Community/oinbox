@@ -2,7 +2,7 @@
 import { Navigate, Route, Router } from '@solidjs/router';
 import { ErrorBoundary, lazy, Show, Suspense, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { accountForPath, createSpaces, homePath, isNotAMailbox, lostAccounts, mailAccounts, startAll, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
+import { accountForPath, createSpaces, homePath, isNotAMailbox, lostAccounts, mailAccounts, notMailboxes, rememberNotMailboxes, startAll, storageKey, type AccountInfo, type AccountSpace, type Spaces } from './app/accounts';
 import { createActions } from './app/actions';
 import { createComposers } from './app/composer';
 import { createDrive } from './app/drive';
@@ -207,7 +207,10 @@ async function boot() {
     }
   }
 
-  const accounts = mailAccounts(client.session);
+  // Shared accounts already found to be no mailboxes (someone sharing only an address book).
+  const notMail = notMailboxes(localStorage, client.session.username);
+  const knownNotMail = [...notMail];
+  const accounts = mailAccounts(client.session, notMail);
   /** A shared address for a mailbox that is no longer the user's goes to their own inbox. */
   const goHomeIfLost = () => {
     const home = homePath(location.pathname, accounts);
@@ -300,10 +303,10 @@ async function boot() {
     freshSession = null;
     saveCachedSession(session);
     // Another user, or other mailboxes (a shared one joined or left): what was built no longer fits.
-    const ids = mailAccounts(session).map((a) => a.id);
+    const ids = mailAccounts(session, notMail).map((a) => a.id);
     if (cachedSession && (cachedSession.username !== session.username || ids.join() !== accounts.map((a) => a.id).join())) {
       // What was remembered of a mailbox that is no longer the user's goes with it.
-      await Promise.all(lostAccounts(accounts, session).map((a) => clearSnapshots(storageKey(cachedSession.username, a))));
+      await Promise.all(lostAccounts(accounts, session, notMail).map((a) => clearSnapshots(storageKey(cachedSession.username, a))));
       location.reload();
       return;
     }
@@ -317,13 +320,41 @@ async function boot() {
       // Someone sharing an address book, not a mailbox: nothing to open, and nothing to complain of.
       if (isNotAMailbox(e)) {
         const onIt = accountForPath(location.pathname, accounts).id === s.info.id;
+        console.warn(`${s.info.address} is shared with this account but is not a mailbox: left out of the mailbox list.`);
         all.hide(s.info.id);
-        if (onIt) history.replaceState(null, '', '/inbox');
+        notMail.add(s.info.id);
+        rememberNotMailboxes(localStorage, session.username, notMail);
+        if (onIt) {
+          history.replaceState(null, '', '/inbox');
+          // On a warm start the router is already on screen, and replaceState alone tells it nothing.
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
         return;
       }
       console.error(`Couldn't open ${s.info.address}`, e);
       app.toast(`Couldn't open ${s.info.label} (${s.info.address}).`, 'error');
     });
+    // One remembered as no mailbox may have become one since (its owner now shares their mail): ask,
+    // and build the app again if so. One that is gone from the session is simply forgotten.
+    void (async () => {
+      let became = false;
+      for (const id of knownNotMail) {
+        if (session.accounts[id]) {
+          try {
+            const b = client.batch();
+            const get = b.call('Mailbox/get', { accountId: id, ids: [] });
+            (await client.send(b)).get(get);
+            became = true;
+          } catch (e) {
+            if (onAuthError(e)) return;
+            continue;
+          }
+        }
+        notMail.delete(id);
+      }
+      rememberNotMailboxes(localStorage, session.username, notMail);
+      if (became) location.reload();
+    })();
     let restored = 0;
     for (const s of all.list()) {
       const rescued = takeRescue(localStorage, s.info.id);

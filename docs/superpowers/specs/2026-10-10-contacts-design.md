@@ -39,7 +39,7 @@ Probed on 0.16.23, 2026-10-10, with throwaway accounts. The full notes are in th
 | Editing | One rozie Dialog for new, edit and add-from-mail. Full-screen on a phone. | Agreed. One form serves all three; cancel is unambiguous. |
 | Fields edited | Given name, surname, photo; emails; phones; organisation, department, job title; postal addresses; birthday; notes. | Agreed. |
 | Other data | Nicknames, links, online services, keywords and anything else on a card are shown read-only and survive a save untouched. | A phone's or an import's data must not be lost by editing a phone number here. |
-| Writes | A save sends only the properties the user changed, each as a whole map. New cards get a `uid`, `kind`, `created`; every save sets `updated` and `name.full`. | Edits made elsewhere to other fields survive. The server does none of this itself. |
+| Writes | A save sends only the properties the user changed, each as a whole map. New cards get a `uid`, `kind`, `created`; every save sets `updated`, and `name.full` when the name was changed. | Edits made elsewhere to other fields survive. The server does none of this itself. |
 | Add from mail | A person popover on names in a message and on recipient chips: Add to contacts, or Open and Edit when already saved. | Agreed. |
 | Suggestions | Written-to first; then saved contacts; then the organisation; then strangers. The saved name wins. One row per address. | Agreed. |
 | Groups | Standard group cards. In the composer a group expands into one chip per member. | Agreed: who receives a message must be visible. |
@@ -78,7 +78,7 @@ One store for the app, built beside `calendar` and `directory`, on the account `
 
 ### Reading and writing a card (`src/contacts/card.ts`)
 
-- **Display name:** given name and surname from the components, found by `kind` and never by position; else `name.full`; else the organisation; else the first email; else "No name". Other name components (a title, a second given name) are kept and shown but not edited.
+- **Display name:** given name and surname from the components, found by `kind` and never by position; else `name.full`; else the organisation; else the first email; else "No name". Two given names or two surnames stored as separate components are shown joined, and a rename replaces only the part that was changed. Other name components (a title, a middle name) are kept and shown but not edited.
 - **Labels:** an email is Work, Personal or Other from its contexts. A phone is Mobile, Work, Home or Other from its features and contexts, Mobile winning. Contexts and features are rewritten only when the user changes the label.
 - **Preferred email:** the lowest `pref`; else the first. Marking one preferred sets `pref: 1` on it and clears the others.
 - **Organisation:** the first organisation's name and its first unit; the job title is the first title of kind `title`.

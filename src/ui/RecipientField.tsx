@@ -37,7 +37,9 @@ export function RecipientField(props: {
   others: EmailAddress[];
   onChange: (v: EmailAddress[]) => void;
 }) {
-  const { recipients } = useApp();
+  const { recipients, contacts } = useApp();
+  /** With an address book a chip's name is a button, and the one stop for Tab on the chip: Delete there removes it. */
+  const named = contacts.available();
   const [text, setText] = createSignal('');
   let handle: ComboboxHandle | undefined;
   let root: HTMLDivElement | undefined;
@@ -134,10 +136,23 @@ export function RecipientField(props: {
             <Show when={props.value[chip.index]}>
               {(a) => (
                 <>
-                  <PersonButton address={a()} label={formatAddress(a())} class="rcpt-chip-label" />
+                  <PersonButton
+                    address={a()}
+                    label={formatAddress(a())}
+                    class="rcpt-chip-label"
+                    keys="Delete"
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      chip.remove();
+                      root?.querySelector('input')?.focus();
+                    }}
+                  />
                   <button
                     type="button"
                     class="rcpt-chip-remove"
+                    tabIndex={named ? -1 : undefined}
                     aria-label={`Remove ${formatAddress(a())}`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => chip.remove()}

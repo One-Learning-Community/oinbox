@@ -144,7 +144,8 @@ export function suggest(
         preferred: entry.preferred,
         ...(colleague ? { group: colleague.group } : {}),
       },
-      entry.words.flatMap((w) => fold(w).split(/[^\p{L}\p{N}]+/u)).filter(Boolean),
+      // Also by the names the organisation and the mail know them by: saving someone as "Bobby" must not hide Robert.
+      [...entry.words, colleague?.name ?? '', known?.name ?? ''].flatMap((w) => fold(w).split(/[^\p{L}\p{N}]+/u)).filter(Boolean),
     );
   }
   for (const entry of opts.directory ?? []) {

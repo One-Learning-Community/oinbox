@@ -18,6 +18,8 @@ export interface ContactsState {
   loaded: boolean;
   /** The last attempt to load it failed and nothing is on screen. */
   failed: boolean;
+  /** The first exchange with the server since the start has ended: what is on screen is as new as can be had. */
+  current: boolean;
 }
 
 export interface Contacts {
@@ -70,7 +72,7 @@ export function createContacts(
   const now = opts.now ?? (() => new Date().toISOString());
   const uid = opts.uid ?? (() => `urn:uuid:${crypto.randomUUID()}`);
   const saveDelayMs = opts.saveDelayMs ?? SAVE_MS;
-  const [state, setState] = createStore<ContactsState>({ cards: {}, books: {}, loaded: false, failed: false });
+  const [state, setState] = createStore<ContactsState>({ cards: {}, books: {}, loaded: false, failed: false, current: false });
   const [dialog, setDialog] = createSignal<ContactDialogState | null>(null);
   let key: string | null = null;
   let cardState = '';
@@ -160,10 +162,10 @@ export function createContacts(
     let firstCardState = '';
     let firstBookState = '';
     let pages = 0;
-    for (let position = 0; ; position += PAGE) {
+    for (let position = 0; ; ) {
       const b = client.batch();
       const ab = position === 0 ? b.call('AddressBook/get', { accountId }) : null;
-      const query = b.call('ContactCard/query', { accountId, position, limit: PAGE });
+      const query = b.call('ContactCard/query', { accountId, position, limit: PAGE, calculateTotal: true });
       const get = b.call('ContactCard/get', { accountId, '#ids': query.ref('/ids') });
       const res = await client.send(b, USING);
       const page = res.get(query); // surfaces a failed query instead of a dangling back-reference
@@ -176,7 +178,9 @@ export function createContacts(
         firstCardState = got.state;
       }
       pages++;
-      if (page.ids.length < PAGE) break;
+      // A server may give shorter pages than asked for: the end is its count, or a page with nothing on it.
+      position += page.ids.length;
+      if (!page.ids.length || (typeof page.total === 'number' ? position >= page.total : page.ids.length < PAGE)) break;
     }
     batch(() => {
       // Every card a new object, not merged into the old one: the search index is kept per object.
@@ -273,6 +277,17 @@ export function createContacts(
     }
   };
 
+  /** A second click while the first is on its way is the same deletion, not another. */
+  const removing = new Map<Id, Promise<ContactWrite>>();
+  const once = (id: Id, work: () => Promise<ContactWrite>): Promise<ContactWrite> => {
+    let going = removing.get(id);
+    if (!going) {
+      going = work().finally(() => removing.delete(id));
+      removing.set(id, going);
+    }
+    return going;
+  };
+
   return {
     available: () => !!accountId(),
     state,
@@ -291,10 +306,16 @@ export function createContacts(
           setState('loaded', true);
         });
       }
-      await sync();
+      try {
+        await sync();
+      } finally {
+        setState('current', true);
+      }
     },
     reload: () => {
       full = true;
+      // Asked for by hand: a second failure is said too.
+      failing = false;
       return sync();
     },
     onStateChange: (change) => {
@@ -334,7 +355,7 @@ export function createContacts(
         advance(res.oldState, res.newState);
         return { ok: true, id };
       }),
-    remove: async (id) => {
+    remove: (id) => once(id, async () => {
       const stored = state.cards[id];
       const copy = stored ? structuredClone(unwrap(stored)) : null;
       const result = await guarded(async (accountId0) => {
@@ -362,7 +383,7 @@ export function createContacts(
       };
       toast('Contact deleted.', 'info', copy ? { label: 'Undo', run: undo } : undefined);
       return result;
-    },
+    }),
     dialog,
     openDialog: (next) => void setDialog(next),
     closeDialog: () => void setDialog(null),

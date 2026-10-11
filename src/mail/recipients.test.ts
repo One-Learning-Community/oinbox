@@ -254,6 +254,11 @@ describe('suggest with saved contacts', () => {
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ name: 'Dr Zoë Probe', saved: true, sent: 1, group: false });
   });
+  it('still finds a colleague saved under another name by the name the organisation gives them', () => {
+    const out = suggest({}, 'rob', { ...opts, saved: [entry('r@x.example', 'Bobby')], directory: [{ email: 'r@x.example', name: 'Robert Roe', group: false }] });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ name: 'Bobby', saved: true });
+  });
   it('finds a saved person by organisation or nickname', () => {
     const saved = [entry('zoe@x.example', 'Zoë Probe', { words: ['Acme Ltd', 'Research', 'Zed'] })];
     expect(suggest({}, 'acm', { ...opts, saved }).map((r) => r.email)).toEqual(['zoe@x.example']);

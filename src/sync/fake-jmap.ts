@@ -22,10 +22,19 @@ function patchCard(card: Record<string, unknown>, patch: Record<string, unknown>
       if (cur === undefined || cur === null || typeof cur !== 'object') return path;
     }
     const last = segs[segs.length - 1]!;
-    if (value === null) delete cur[last];
+    // Stalwart clears a whole property patched to {} as it does one patched to null.
+    if (value === null || (segs.length === 1 && value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length)) delete cur[last];
     else cur[last] = structuredClone(value);
   }
   return null;
+}
+
+/** Stalwart silently drops an online service that has no uri. */
+function dropBareServices(card: Record<string, unknown>) {
+  const services = card.onlineServices as Record<string, { uri?: string }> | undefined;
+  if (!services || typeof services !== 'object') return;
+  for (const [key, s] of Object.entries(services)) if (!s?.uri) delete services[key];
+  if (!Object.keys(services).length) delete card.onlineServices;
 }
 
 export class FakeJmap {
@@ -97,12 +106,22 @@ export class FakeJmap {
   cardLog: { state: number; created: string[]; updated: string[]; destroyed: string[] }[] = [];
   /** Simulates ContactCard/changes answering cannotCalculateChanges. */
   cardChangesUnsupported = false;
+  /** The most ids one ContactCard/query answers with, whatever is asked for. 0: as many as asked. */
+  cardPageLimit = 0;
+  bookState = 1;
+  bookLog: { state: number; updated: string[] }[] = [];
   private nextCardId = 1;
+
+  renameBook(id: string, name: string) {
+    this.books.set(id, { ...this.books.get(id)!, name });
+    this.bookLog.push({ state: ++this.bookState, updated: [id] });
+  }
 
   addCard(card: Partial<ContactCard>): ContactCard {
     const id = `c${this.nextCardId++}`;
     const stored = { '@type': 'Card', version: '1.0', addressBookIds: { b: true }, ...structuredClone(card), id } as ContactCard;
     stored.name = { ...stored.name, full: stored.name?.full ?? fullOf(stored.name?.components) };
+    dropBareServices(stored as unknown as Record<string, unknown>);
     this.cards.set(id, stored);
     this.bumpCards({ created: [id] });
     return stored;
@@ -223,16 +242,17 @@ export class FakeJmap {
     }
     switch (name) {
       case 'AddressBook/get':
-        return [name, { accountId: args.accountId, state: 'ab1', list: [...this.books.values()].map((b) => structuredClone(b)), notFound: [] }];
+        return [name, { accountId: args.accountId, state: `ab${this.bookState}`, list: [...this.books.values()].map((b) => structuredClone(b)), notFound: [] }];
       case 'AddressBook/changes':
-        return [name, { accountId: args.accountId, oldState: args.sinceState, newState: 'ab1', hasMoreChanges: false, created: [], updated: [], destroyed: [] }];
+        return [name, { accountId: args.accountId, oldState: args.sinceState, newState: `ab${this.bookState}`, hasMoreChanges: false, created: [], updated: [...new Set(this.bookLog.filter((l) => l.state > Number(String(args.sinceState).slice(2))).flatMap((l) => l.updated))], destroyed: [] }];
       case 'ContactCard/query': {
         const sort = args.sort as { property: string }[] | undefined;
         if (sort?.length) return ['error', { type: 'unsupportedSort', description: sort[0]!.property }];
         const position = (args.position as number | undefined) ?? 0;
         const all = [...this.cards.keys()];
-        const limit = (args.limit as number | undefined) || all.length;
-        return [name, { accountId: args.accountId, queryState: `k${this.cardState}`, canCalculateChanges: true, position, ids: all.slice(position, position + limit) }];
+        const asked = (args.limit as number | undefined) || all.length;
+        const limit = this.cardPageLimit ? Math.min(asked, this.cardPageLimit) : asked;
+        return [name, { accountId: args.accountId, queryState: `k${this.cardState}`, canCalculateChanges: true, position, ids: all.slice(position, position + limit), ...(args.calculateTotal ? { total: all.length } : {}) }];
       }
       case 'ContactCard/get': {
         if (ids && ids.length > MAX_OBJECTS) return ['error', tooLarge];
@@ -600,7 +620,7 @@ export class FakeJmap {
       if (!books.length) return invalid('Contact has to belong to at least one address book.', ['addressBookIds']);
       const missing = books.find((b) => !this.books.has(b));
       if (missing) return invalid(`addressBookId ${missing} does not exist.`, ['addressBookIds']);
-      const size = JSON.stringify(card).length;
+      const size = new TextEncoder().encode(JSON.stringify(card)).length;
       if (size > MAX_CARD_BYTES) return invalid(`Contact size ${size} exceeds the maximum allowed size of ${MAX_CARD_BYTES} bytes.`);
       const twin = card.uid ? [...this.cards.values()].find((c) => c.uid === card.uid && c.id !== selfId) : undefined;
       if (twin) return invalid(`Contact with UID ${card.uid as string} already exists with id ${twin.id}.`, ['uid']);
@@ -628,6 +648,7 @@ export class FakeJmap {
         const err = failed ? invalid('Patch operation failed.', [failed]) : check(next, id);
         if (err) notUpdated[id] = err;
         else {
+          dropBareServices(next);
           this.cards.set(id, next as unknown as ContactCard);
           this.bumpCards({ updated: [id] });
           updated[id] = null;

@@ -26,10 +26,10 @@ const labelOf = (name: string): string => {
 };
 
 /** The user's own account first, then the shared ones by label. */
-export function mailAccounts(session: Session): AccountInfo[] {
+export function mailAccounts(session: Session, except: ReadonlySet<Id> = new Set()): AccountInfo[] {
   const own = session.primaryAccounts[MAIL];
   return Object.entries(session.accounts)
-    .filter(([, a]) => a.accountCapabilities?.[MAIL])
+    .filter(([id, a]) => a.accountCapabilities?.[MAIL] && (id === own || !except.has(id)))
     .map(([id, a]) => {
       const personal = id === own;
       return { id, address: a.name, personal, label: personal ? 'You' : labelOf(a.name), base: personal ? '' : `/shared/${encodeURIComponent(id)}` };
@@ -128,8 +128,30 @@ export function isNotAMailbox(e: unknown): boolean {
   return e instanceof MethodError && e.type === 'forbidden';
 }
 
+type Kept = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+const notMailboxesKey = (username: string) => `oinbox.notMailboxes:${username}`;
+
+/** The shared accounts found, on an earlier visit, to be no mailboxes: they are not offered again, even for a moment. */
+export function notMailboxes(storage: Kept, username: string): Set<Id> {
+  try {
+    const ids: unknown = JSON.parse(storage.getItem(notMailboxesKey(username)) ?? '[]');
+    return new Set(Array.isArray(ids) ? ids.filter((id): id is Id => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function rememberNotMailboxes(storage: Kept, username: string, ids: ReadonlySet<Id>): void {
+  try {
+    if (ids.size) storage.setItem(notMailboxesKey(username), JSON.stringify([...ids]));
+    else storage.removeItem(notMailboxesKey(username));
+  } catch {
+    // Storage that cannot be written costs a flash of the account on the next start, nothing more.
+  }
+}
+
 /** Accounts the app was built with (from the remembered session) that the server no longer offers. */
-export function lostAccounts(before: AccountInfo[], now: Session): AccountInfo[] {
-  const ids = new Set(mailAccounts(now).map((a) => a.id));
+export function lostAccounts(before: AccountInfo[], now: Session, except: ReadonlySet<Id> = new Set()): AccountInfo[] {
+  const ids = new Set(mailAccounts(now, except).map((a) => a.id));
   return before.filter((a) => !ids.has(a.id));
 }

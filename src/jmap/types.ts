@@ -513,7 +513,7 @@ export interface ContactCard {
   nicknames?: Record<string, { name: string }>;
   emails?: Record<string, CardEmail>;
   phones?: Record<string, CardPhone>;
-  organizations?: Record<string, { name?: string; units?: { name: string }[] }>;
+  organizations?: Record<string, { name?: string; units?: { name: string; sortAs?: string }[] }>;
   titles?: Record<string, { name: string; kind?: string }>;
   addresses?: Record<string, CardAddress>;
   notes?: Record<string, { note: string }>;

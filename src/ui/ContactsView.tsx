@@ -38,7 +38,8 @@ export function ContactsView() {
       onScreen = id;
       return;
     }
-    if (!contacts.state.loaded) return;
+    // Not before the server has been heard: the card may be newer than the copy kept in the browser.
+    if (!contacts.state.loaded || !contacts.state.current) return;
     if (onScreen === id) toast('That contact was deleted.', 'info');
     onScreen = null;
     navigate('/contacts', { replace: true });

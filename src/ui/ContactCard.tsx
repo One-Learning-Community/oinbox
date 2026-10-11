@@ -16,6 +16,9 @@ function birthdayText(b: { day: number; month: number; year?: number }): string 
   return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', timeZone: 'UTC', ...(b.year === undefined ? {} : { year: 'numeric' }) }).format(date);
 }
 
+/** Nothing checks what a card holds as an address: one with `?` or `&` in it must not become a link that says more. */
+const mailto = (address: string) => `mailto:${encodeURIComponent(address).replace(/%40/g, '@')}`;
+
 /** One saved person, read-only. Editing is the dialog's. */
 export function ContactCardView(props: { card: ContactCard; onDelete: () => void }) {
   const { contacts, composers } = useApp();
@@ -64,7 +67,7 @@ export function ContactCardView(props: { card: ContactCard; onDelete: () => void
             <For each={emails()}>
               {(e) => (
                 <div class="contact-row">
-                  <a href={`mailto:${e.address}`} onClick={(ev) => write(ev, e.address)}>{e.address}</a>
+                  <a href={mailto(e.address)} onClick={(ev) => write(ev, e.address)}>{e.address}</a>
                   <Show when={EMAIL_LABELS[e.label]}>
                     <span class="contact-tag">{EMAIL_LABELS[e.label]}</span>
                   </Show>

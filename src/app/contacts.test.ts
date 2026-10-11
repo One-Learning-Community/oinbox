@@ -142,6 +142,50 @@ describe('createContacts', () => {
     expect(contacts.state).toMatchObject({ loaded: true, failed: false });
     expect(contacts.people()).toHaveLength(1);
   });
+  it('says so again when a retry fails too', async () => {
+    const { fake, contacts, toast } = setup();
+    fake.onCall = () => { throw new Error('down'); };
+    await contacts.start('k');
+    await contacts.reload();
+    expect(toast).toHaveBeenCalledTimes(2);
+  });
+  it('loads an address book whole from a server that gives shorter pages than asked for', async () => {
+    const { fake, contacts } = setup();
+    fake.cardPageLimit = 100;
+    for (let i = 0; i < 250; i++) fake.addCard({ name: { full: `P${i}` } });
+    await contacts.start('k');
+    expect(contacts.people()).toHaveLength(250);
+  });
+  it('deletes once when asked twice at once', async () => {
+    const { fake, contacts, toast } = setup();
+    const a = fake.addCard({ uid: 'u-1', name: { full: 'A' } });
+    await contacts.start('k');
+    const [one, two] = await Promise.all([contacts.remove(a.id), contacts.remove(a.id)]);
+    expect([one.ok, two.ok]).toEqual([true, true]);
+    expect(fake.sent.filter(([n, args]) => n === 'ContactCard/set' && args.destroy)).toHaveLength(1);
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+  it('knows when it has caught up with the server, so a card newer than the stored copy can be waited for', async () => {
+    const { fake, contacts } = setup();
+    const a = fake.addCard({ name: { full: 'A' } });
+    const state = `k${fake.cardState}`;
+    const b = fake.addCard({ name: { full: 'B' } });
+    vi.mocked(loadContacts).mockResolvedValue({ cards: [structuredClone(a)], books: [...fake.books.values()], cardState: state, bookState: 'ab1' });
+    let seen: boolean | null = null;
+    fake.onCall = (name) => {
+      if (name === 'ContactCard/changes') seen = contacts.state.loaded && !contacts.state.current;
+    };
+    await contacts.start('k');
+    expect(seen).toBe(true);
+    expect(contacts.state.current).toBe(true);
+    expect(contacts.state.cards[b.id]).toBeDefined();
+  });
+  it('counts as caught up when the server cannot be reached: there is nothing more to wait for', async () => {
+    const { fake, contacts } = setup();
+    fake.onCall = () => { throw new Error('down'); };
+    await contacts.start('k').catch(() => {});
+    expect(contacts.state.current).toBe(true);
+  });
   it('writes nothing to the browser once stopped', async () => {
     const { fake, contacts } = setup({ saveDelayMs: 20 });
     fake.addCard({ name: { full: 'A' } });

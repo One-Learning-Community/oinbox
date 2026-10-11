@@ -2,7 +2,7 @@ import { createRoot } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import { MethodError, RequestError } from '../jmap/client';
 import type { Session } from '../jmap/types';
-import { accountForPath, createSpaces, isNotAMailbox, homePath, lostAccounts, mailAccounts, startAll, storageKey, withinAccount, type AccountSpace } from './accounts';
+import { accountForPath, createSpaces, isNotAMailbox, notMailboxes, rememberNotMailboxes, homePath, lostAccounts, mailAccounts, startAll, storageKey, withinAccount, type AccountSpace } from './accounts';
 
 const MAIL = 'urn:ietf:params:jmap:mail';
 const session = (accounts: Record<string, { name: string; isPersonal: boolean; mail?: boolean }>, primary = 'b') =>
@@ -178,5 +178,35 @@ describe('isNotAMailbox', () => {
     expect(isNotAMailbox(new RequestError(503, 'unavailable'))).toBe(false);
     expect(isNotAMailbox(new TypeError('Failed to fetch'))).toBe(false);
     expect(isNotAMailbox(undefined)).toBe(false);
+  });
+});
+
+describe('remembering which shared accounts are no mailboxes', () => {
+  const storage = () => {
+    const kept = new Map<string, string>();
+    return { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) };
+  };
+  it('keeps them per user, so the next start does not offer them even for a moment', () => {
+    const s = storage();
+    expect(notMailboxes(s, 'alice')).toEqual(new Set());
+    rememberNotMailboxes(s, 'alice', new Set(['be', 'cf']));
+    expect(notMailboxes(s, 'alice')).toEqual(new Set(['be', 'cf']));
+    expect(notMailboxes(s, 'bob')).toEqual(new Set());
+  });
+  it('forgets when none are left, and reads rubbish as none', () => {
+    const s = storage();
+    rememberNotMailboxes(s, 'alice', new Set(['be']));
+    rememberNotMailboxes(s, 'alice', new Set());
+    expect(s.getItem('oinbox.notMailboxes:alice')).toBeNull();
+    s.setItem('oinbox.notMailboxes:alice', '{"not":"a list"}');
+    expect(notMailboxes(s, 'alice')).toEqual(new Set());
+    s.setItem('oinbox.notMailboxes:alice', 'not json');
+    expect(notMailboxes(s, 'alice')).toEqual(new Set());
+  });
+  it('leaves them out of the accounts the app is built with', () => {
+    const sess = { primaryAccounts: { 'urn:ietf:params:jmap:mail': 'b' }, accounts: { b: { name: 'alice@example.test', accountCapabilities: { 'urn:ietf:params:jmap:mail': {} } }, be: { name: 'bob@example.test', accountCapabilities: { 'urn:ietf:params:jmap:mail': {} } } } } as never;
+    expect(mailAccounts(sess, new Set(['be'])).map((a) => a.id)).toEqual(['b']);
+    // Never the user's own, whatever was remembered.
+    expect(mailAccounts(sess, new Set(['b', 'be'])).map((a) => a.id)).toEqual(['b']);
   });
 });

@@ -265,4 +265,38 @@ describe('FakeJmap contacts (as Stalwart 0.16.23)', () => {
     const fake = new FakeJmap();
     expect(fake.handle('ContactCard/get', { accountId: 'a1', ids: [] }, [])[0]).toBe('error');
   });
+  it('measures a card in bytes, not characters', () => {
+    const fake = new FakeJmap();
+    // 200,000 three-byte characters: under the limit counted as characters, over it as bytes.
+    const r = call(fake, 'ContactCard/set', { create: { c: { addressBookIds: book, notes: { n: { note: '€'.repeat(200_000) } } } } });
+    expect(r.notCreated.c.description).toMatch(/^Contact size 6000\d\d exceeds the maximum allowed size of 524288 bytes\.$/);
+  });
+  it('clears a property patched to {} as it does one patched to null', () => {
+    const fake = new FakeJmap();
+    const { id } = fake.addCard({ notes: { n: { note: 'x' } }, emails: { e: { address: 'a@x.example' } } });
+    call(fake, 'ContactCard/set', { update: { [id]: { notes: {} } } });
+    expect(fake.cards.get(id)).not.toHaveProperty('notes');
+    expect(fake.cards.get(id)!.emails).toEqual({ e: { address: 'a@x.example' } });
+  });
+  it('drops an online service that has no uri', () => {
+    const fake = new FakeJmap();
+    const r = call(fake, 'ContactCard/set', { create: { c: { addressBookIds: book, onlineServices: { a: { service: 'Chat', user: 'zoe' }, b: { uri: 'https://chat.example/zoe' } } } } });
+    expect(fake.cards.get(r.created.c.id)!.onlineServices).toEqual({ b: { uri: 'https://chat.example/zoe' } });
+  });
+  it('moves the address book state when a book changes, and says which', () => {
+    const fake = new FakeJmap();
+    const since = call(fake, 'AddressBook/get', {}).state;
+    fake.renameBook('b', 'Friends');
+    expect(call(fake, 'AddressBook/get', {}).state).not.toBe(since);
+    expect(call(fake, 'AddressBook/changes', { sinceState: since })).toMatchObject({ updated: ['b'], created: [], destroyed: [], newState: call(fake, 'AddressBook/get', {}).state });
+    expect(call(fake, 'AddressBook/changes', { sinceState: call(fake, 'AddressBook/get', {}).state }).updated).toEqual([]);
+  });
+  it('counts a query when asked, and can be told to give shorter pages than asked for', () => {
+    const fake = new FakeJmap();
+    for (let i = 0; i < 30; i++) fake.addCard({ name: { full: `P${i}` } });
+    expect(call(fake, 'ContactCard/query', { limit: 10 })).not.toHaveProperty('total');
+    expect(call(fake, 'ContactCard/query', { limit: 10, calculateTotal: true }).total).toBe(30);
+    fake.cardPageLimit = 7;
+    expect(call(fake, 'ContactCard/query', { position: 7, limit: 500 }).ids).toHaveLength(7);
+  });
 });

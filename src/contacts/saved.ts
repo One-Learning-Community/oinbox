@@ -14,12 +14,16 @@ export interface SavedEntry {
   contactId: Id;
 }
 
+const ADDRESS = /^[^\s@]+@[^\s@]+$/;
+
 /** `people` in list order. An address on two cards belongs to the first. */
 export function savedEntries(people: ContactCard[]): SavedEntry[] {
   const seen = new Set<string>();
   const out: SavedEntry[] = [];
   for (const card of people) {
-    const emails = emailsOf(card).filter((e) => e.address.trim());
+    const all = emailsOf(card);
+    // Nothing checks what a client puts in an email field: only what could be written to is offered.
+    const emails = all.filter((e) => ADDRESS.test(e.address.trim()));
     if (!emails.length) continue;
     const shown = displayName(card);
     const org = organizationOf(card);
@@ -30,7 +34,7 @@ export function savedEntries(people: ContactCard[]): SavedEntry[] {
       if (seen.has(key)) continue;
       seen.add(key);
       // A card with no name and no organisation is "called" by its first address: that is not a name.
-      out.push({ email, name: emails.some((x) => x.address.trim() === shown) ? '' : shown, preferred: e.preferred, words, contactId: card.id });
+      out.push({ email, name: all.some((x) => x.address.trim() === shown) ? '' : shown, preferred: e.preferred, words, contactId: card.id });
     }
   }
   return out;

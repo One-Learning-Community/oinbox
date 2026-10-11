@@ -2,6 +2,7 @@ import { Route } from '@solidjs/router';
 import { fireEvent, screen } from '@solidjs/testing-library';
 import { describe, expect, it, vi } from 'vitest';
 import { CONTACTS } from '../jmap/types';
+import { loadContacts } from '../cache/persist';
 import { contactsKit } from './contacts-test-kit';
 import { ContactsView } from './ContactsView';
 
@@ -167,5 +168,23 @@ describe('ContactsView', () => {
     expect(links[1]).toHaveFocus();
     fireEvent.keyDown(links[1]!, { key: 'ArrowUp' });
     expect(links[0]).toHaveFocus();
+  });
+  it('waits for a card newer than the stored copy instead of going back to the list', async () => {
+    const kit = contactsKit();
+    const old = kit.fake.addCard(person('Old', 'Hand'));
+    const state = `k${kit.fake.cardState}`;
+    const fresh = kit.fake.addCard(person('Fresh', 'Face'));
+    vi.mocked(loadContacts).mockResolvedValueOnce({ cards: [structuredClone(old)], books: [...kit.fake.books.values()], cardState: state, bookState: 'ab1' });
+    kit.show(`/contacts/${fresh.id}`, routes);
+    await kit.contacts.start('k');
+    expect(kit.path()).toBe(`/contacts/${fresh.id}`);
+    expect(screen.getByRole('heading', { name: 'Fresh Face' })).toBeInTheDocument();
+  });
+  it('writes an address that holds more than an address safely into its link', async () => {
+    const kit = contactsKit();
+    const odd = kit.fake.addCard(person('Odd', 'One', { emails: { e: { address: 'a&b?subject=x@y.example' } } }));
+    await kit.contacts.start('k');
+    kit.show(`/contacts/${odd.id}`, routes);
+    expect(screen.getByRole('link', { name: 'a&b?subject=x@y.example' })).toHaveAttribute('href', 'mailto:a%26b%3Fsubject%3Dx@y.example');
   });
 });

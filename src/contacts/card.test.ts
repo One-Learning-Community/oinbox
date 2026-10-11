@@ -171,6 +171,34 @@ describe('the patch', () => {
     f.given = 'X';
     expect(Object.keys(patchFor(phone, f, NOW)).sort()).toEqual(['name', 'updated']);
   });
+  it('writes nothing for a card whose oddities the form does not show', () => {
+    const odd = card({
+      name: { full: 'Mary Ann Van Der Berg', components: [{ kind: 'given', value: 'Mary' }, { kind: 'given', value: 'Ann' }, { kind: 'surname', value: 'Van Der' }, { kind: 'surname', value: 'Berg' }] },
+      emails: { e1: { address: ' mary@x.example ' }, e2: { address: '' } },
+      phones: { p1: { number: ' 555 ' }, p2: { number: '' } },
+      addresses: { a1: { full: '' } },
+      organizations: { o1: { name: ' Acme ', units: [{ name: 'Sales', sortAs: 'S' }, { name: 'North' }] } },
+      titles: { t1: { name: 'Seller' } },
+    });
+    expect(patchFor(odd, toForm(odd), NOW)).toEqual({});
+  });
+  it('keeps what else a department and a job title hold when they are renamed', () => {
+    const c = card({ organizations: { o1: { name: 'Acme', units: [{ name: 'Sales', sortAs: 'S' }, { name: 'North' }] } }, titles: { t1: { name: 'Seller' } } });
+    const patch = patchFor(c, { ...toForm(c), department: 'Marketing', title: 'Buyer' }, NOW);
+    expect(patch.organizations).toEqual({ o1: { name: 'Acme', units: [{ name: 'Marketing', sortAs: 'S' }, { name: 'North' }] } });
+    expect(patch.titles).toEqual({ t1: { name: 'Buyer' } });
+  });
+  it('reads every given name and surname, and keeps the ones a rename does not touch', () => {
+    const c = card({ name: { components: [{ kind: 'given', value: 'Mary' }, { kind: 'given', value: 'Ann' }, { kind: 'surname', value: 'Van Der' }, { kind: 'surname', value: 'Berg' }] } });
+    expect(nameParts(c)).toEqual({ given: 'Mary Ann', surname: 'Van Der Berg' });
+    const patch = patchFor(c, { ...toForm(c), surname: 'Roe' }, NOW);
+    expect(patch.name).toEqual({ components: [{ kind: 'given', value: 'Mary' }, { kind: 'given', value: 'Ann' }, { kind: 'surname', value: 'Roe' }], isOrdered: true, full: 'Mary Ann Roe' });
+  });
+  it('says what is wrong with a birthday', () => {
+    const f = toForm();
+    expect(validateForm({ ...f, given: 'A', birthday: { day: '3', month: '', year: '' } }).birthday).toBe('Give both a day and a month.');
+    expect(validateForm({ ...f, given: 'A', birthday: { day: '3', month: '4', year: 'abc' } }).birthday).toBe('Give the year as a number, or leave it empty.');
+  });
   it('measures a card in bytes', () => {
     expect(cardBytes({ a: 'é' })).toBe(new TextEncoder().encode('{"a":"é"}').length);
     expect(MAX_CARD_BYTES).toBe(524_288);
