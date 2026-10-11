@@ -1,6 +1,7 @@
 import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
 import { createMemo, createSignal, Show } from 'solid-js';
 import { useApp } from '../app/context';
+import { expandGroup, groupName } from '../contacts/groups';
 import type { EmailAddress } from '../jmap/types';
 import { formatAddress, parseAddressList } from '../mail/compose';
 import { PersonButton } from './PersonPopover';
@@ -37,7 +38,7 @@ export function RecipientField(props: {
   others: EmailAddress[];
   onChange: (v: EmailAddress[]) => void;
 }) {
-  const { recipients, contacts } = useApp();
+  const { recipients, contacts, toast } = useApp();
   /** With an address book a chip's name is a button, and the one stop for Tab on the chip: Delete there removes it. */
   const named = contacts.available();
   const [text, setText] = createSignal('');
@@ -47,7 +48,8 @@ export function RecipientField(props: {
   const taken = () => new Set([...props.value, ...props.others].map((a) => a.email.toLowerCase()));
   const found = createMemo(() => offer(recipients.suggest(text(), taken()), text()));
   const options = createMemo<Option[]>(() =>
-    found().map((r) => ({ value: r.email, label: r.name ? `${r.name} ${r.email}` : r.email, recipient: r })),
+    // A group's value is never an address: it is not a recipient, only a way to add its members.
+    found().map((r) => (r.list ? { value: `list:${r.list.id}`, label: r.name, recipient: r } : { value: r.email, label: r.name ? `${r.name} ${r.email}` : r.email, recipient: r })),
   );
 
   const addAll = (more: EmailAddress[]) => {
@@ -55,6 +57,22 @@ export function RecipientField(props: {
     setText('');
     handle?.seedQuery('');
   };
+  /**
+   * A contact group is never a recipient: it becomes its members, one chip each, so that everyone
+   * who gets the message can be seen. Those already on the message are not added again.
+   */
+  const addList = (r: Recipient) => {
+    const group = r.list ? contacts.state.cards[r.list.id] : undefined;
+    if (!group) return addAll([]);
+    const name = groupName(group);
+    const { recipients: members, withoutEmail } = expandGroup(group, contacts.people());
+    const have = taken();
+    const fresh = members.filter((a) => !have.has(a.email.toLowerCase()));
+    addAll(fresh);
+    if (!fresh.length) toast(members.length ? `Everyone in ${name} is already on this message.` : `Nobody in ${name} has an email address.`, 'info');
+    else if (withoutEmail) toast(`${withoutEmail} of ${members.length + withoutEmail} in ${name} ${withoutEmail === 1 ? 'has' : 'have'} no email address.`, 'info');
+  };
+  const pick = (r: Recipient) => (r.list ? addList(r) : addAll([toAddress(r)]));
   const commitTyped = (): boolean => {
     const typed = completeAddress(text());
     if (typed) addAll([typed]);
@@ -75,7 +93,7 @@ export function RecipientField(props: {
       // would go to someone the user has only just seen added.
       const active = handle?.activeOption() as Option | null | undefined;
       if (active) {
-        addAll([toAddress(active.recipient)]);
+        pick(active.recipient);
         heldSends.add(e);
       }
     }
@@ -129,7 +147,7 @@ export function RecipientField(props: {
             if (e.text !== undefined) {
               const typed = completeAddress(e.text);
               if (typed) addAll([typed]);
-            } else if (e.selected && e.option) addAll([toAddress((e.option as Option).recipient)]);
+            } else if (e.selected && e.option) pick((e.option as Option).recipient);
             else props.onChange(props.value.filter((a) => (e.value as string[]).includes(a.email)));
           }}
           chipSlot={(chip) => (
@@ -166,10 +184,13 @@ export function RecipientField(props: {
           optionSlot={(o) => {
             const r = () => (o.option as Option).recipient;
             return (
-              <span class="rcpt-option" data-email={r().email}>
+              <span class="rcpt-option" data-email={r().email} data-list={r().list?.id}>
                 <span class="rcpt-name">{r().name || r().email}</span>
-                <Show when={r().name}>
+                <Show when={r().name && r().email}>
                   <span class="rcpt-email">{r().email}</span>
+                </Show>
+                <Show when={r().list}>
+                  {(list) => <span class="rcpt-group">List · {list().count.toLocaleString()} {list().count === 1 ? 'person' : 'people'}</span>}
                 </Show>
                 <Show when={r().group}>
                   <span class="rcpt-group">Group</span>

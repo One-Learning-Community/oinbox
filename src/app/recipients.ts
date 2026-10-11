@@ -1,5 +1,6 @@
 import { batch, createMemo, createSignal } from 'solid-js';
 import { loadRecipients, saveRecipients } from '../cache/persist';
+import { groupName, memberCount } from '../contacts/groups';
 import { savedEntries } from '../contacts/saved';
 import type { ContactCard, EmailAddress } from '../jmap/types';
 import { add, compareRecipients, suggest as rank, type ContactKind, type Recipient, type RecipientCache, type RecipientIndex } from '../mail/recipients';
@@ -26,9 +27,9 @@ export interface Recipients {
 
 /**
  * Recipient suggestions from mail history (Sent recipients, senders of synced mail, messages just sent)
- * from the address book (`contacts`) and, where the server lists one, from the organisation's `directory`.
+ * from the address book (`contacts`: its people, and its groups as lists) and, where the server lists one, from the organisation's `directory`.
  */
-export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: number; directory?: Directory; contacts?: { people: () => ContactCard[] } } = {}): Recipients {
+export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: number; directory?: Directory; contacts?: { people: () => ContactCard[]; groups?: () => ContactCard[] } } = {}): Recipients {
   const index: RecipientIndex = {};
   /** Ids of emails already counted, oldest first. */
   const counted = new Set<string>();
@@ -40,6 +41,10 @@ export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: numbe
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
   const saved = createMemo(() => (opts.contacts ? savedEntries(opts.contacts.people()) : []));
+  const lists = createMemo(() => {
+    const people = opts.contacts?.people() ?? [];
+    return (opts.contacts?.groups?.() ?? []).map((g) => ({ id: g.id, name: groupName(g), count: memberCount(g, people) }));
+  });
 
   const snapshot = (): RecipientCache => ({
     index: Object.fromEntries(
@@ -97,7 +102,7 @@ export function createRecipients(engine: MailEngine, opts: { saveDelayMs?: numbe
       const mine = engine.state.identities
         .filter((i) => !known.has(i.email.toLowerCase()) && (known.add(i.email.toLowerCase()), true))
         .map((i) => ({ email: i.email, name: i.name ?? '', group: false }));
-      return rank(index, query, { exclude, limit: SUGGESTIONS, directory: [...listed, ...mine], saved: saved() });
+      return rank(index, query, { exclude, limit: SUGGESTIONS, directory: [...listed, ...mine], saved: saved(), lists: lists() });
     },
     recordSent: (emailId, addresses) => whenLoaded(() => count(emailId, addresses, 'sent', new Date().toISOString())),
     start: async (user) => {

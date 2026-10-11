@@ -275,3 +275,27 @@ describe('suggest with saved contacts', () => {
     expect(suggest({}, 'shop', { ...opts, exclude: new Set(['noreply@shop.example']), saved })).toHaveLength(0);
   });
 });
+
+describe('suggest with contact groups', () => {
+  const opts = { exclude: new Set<string>(), limit: 6 };
+  const lists = [{ id: 'g1', name: 'Équipe Projet', count: 3 }, { id: 'g2', name: 'Family', count: 1 }];
+  it('offers a group by a prefix of any word of its name, accents aside, with its count', () => {
+    expect(suggest({}, 'proj', { ...opts, lists })).toEqual([{ email: '', name: 'Équipe Projet', sent: 0, received: 0, last: '', list: { id: 'g1', count: 3 } }]);
+    expect(suggest({}, 'equipe p', { ...opts, lists })).toHaveLength(1);
+    expect(suggest({}, 'quipe', { ...opts, lists })).toHaveLength(0);
+  });
+  it('ranks a group with the saved contacts: after people written to, before the organisation', () => {
+    const index = add({}, [{ name: 'Fay Sent', email: 'fay@x.example' }], 'sent', '2026-01-02T00:00:00Z');
+    const saved: SavedEntry[] = [{ email: 'fab@x.example', name: 'Fab Saved', preferred: true, words: [], contactId: 'c1' }];
+    const out = suggest(index, 'fa', { ...opts, lists, saved, directory: [{ email: 'fae@x.example', name: 'Fae Staff', group: false }] });
+    expect(out.map((r) => r.name)).toEqual(['Fay Sent', 'Fab Saved', 'Family', 'Fae Staff']);
+  });
+  it('is not offered for an address that matches nothing of its name, and is not hidden by exclude', () => {
+    expect(suggest({}, 'fam@x.example', { ...opts, lists })).toEqual([]);
+    expect(suggest({}, 'fam', { ...opts, exclude: new Set(['', 'family']), lists })).toHaveLength(1);
+  });
+  it('counts toward the limit like any row', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ id: `g${i}`, name: `Team ${i}`, count: 2 }));
+    expect(suggest({}, 'team', { ...opts, lists: many })).toHaveLength(6);
+  });
+});

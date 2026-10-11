@@ -1,10 +1,11 @@
 import { Route } from '@solidjs/router';
 import { fireEvent, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
+import type { Recipient } from '../mail/recipients';
 import { describe, expect, it, vi } from 'vitest';
 import type { EmailAddress } from '../jmap/types';
 import { contactsKit } from './contacts-test-kit';
-import { RecipientField } from './RecipientField';
+import { RecipientField, pickedSuggestion } from './RecipientField';
 
 vi.mock('../cache/persist', () => ({ loadContacts: vi.fn(async () => undefined), saveContacts: vi.fn(async () => undefined) }));
 
@@ -34,5 +35,68 @@ describe('RecipientField chips', () => {
   it('keeps the remove button in the Tab order where a name is no button', () => {
     field([bob], { contacts: { available: () => false } });
     expect(screen.getByRole('button', { name: 'Remove Bob Example <bob@example.test>' }).tabIndex).toBe(0);
+  });
+});
+
+// jsdom lays nothing out; the list scrolls its highlighted option into view.
+Element.prototype.scrollIntoView = () => {};
+
+describe('RecipientField with a contact group', () => {
+  const team: Recipient = { email: '', name: 'Team', sent: 0, received: 0, last: '', list: { id: '', count: 3 } };
+  async function withGroup(initial: EmailAddress[], others: EmailAddress[] = [], members = ['u-ann', 'u-bob', 'u-cy']) {
+    const kit = contactsKit({ recipients: { suggest: (q: string) => (q.trim() ? [{ ...team, list: { id: groupId, count: members.length } }] : []) } } as never);
+    kit.fake.addCard({ uid: 'u-ann', name: { full: 'Ann' }, emails: { e1: { address: 'ann@home.example' }, e2: { address: 'ann@work.example', pref: 1 } } });
+    kit.fake.addCard({ uid: 'u-bob', name: { full: 'Bob' }, emails: { e1: { address: 'bob@example.test' } } });
+    kit.fake.addCard({ uid: 'u-cy', name: { full: 'Cy' } });
+    const groupId = kit.fake.addCard({ kind: 'group', uid: 'g', name: { full: 'Team' }, members: Object.fromEntries(members.map((m) => [m, true])) }).id;
+    await kit.contacts.start('k');
+    const [value, setValue] = createSignal(initial);
+    kit.show('/', () => <Route path="/" component={() => <RecipientField id="to" label="To" value={value()} others={others} onChange={setValue} />} />);
+    const input = screen.getByRole('combobox');
+    fireEvent.input(input, { target: { value: 'tea' } });
+    return { ...kit, value, input };
+  }
+
+  it('offers the group as a list with its count', async () => {
+    await withGroup([]);
+    const option = await screen.findByRole('option');
+    expect(option).toHaveTextContent('Team');
+    expect(option).toHaveTextContent('List · 3 people');
+  });
+  it('adds one chip per member by preferred address, and says who has none', async () => {
+    const { value, toast, input } = await withGroup([]);
+    fireEvent.mouseDown(await screen.findByRole('option'));
+    expect(value()).toEqual([{ name: 'Ann', email: 'ann@work.example' }, { name: 'Bob', email: 'bob@example.test' }]);
+    expect(toast).toHaveBeenCalledWith('1 of 3 in Team has no email address.', 'info');
+    expect(screen.getByRole('button', { name: 'Remove Ann <ann@work.example>' })).toBeInTheDocument();
+    expect(screen.queryByText(/^list:/)).toBeNull();
+    expect(input).toHaveValue('');
+  });
+  it('adds nobody who is already on the message, in this field or another', async () => {
+    const { value } = await withGroup([bob], [{ name: null, email: 'ANN@work.example' }]);
+    fireEvent.mouseDown(await screen.findByRole('option'));
+    expect(value()).toEqual([bob]);
+  });
+  it('says so when everyone is already there, and when nobody has an address', async () => {
+    const all = await withGroup([bob, { name: 'Ann', email: 'ann@work.example' }]);
+    fireEvent.mouseDown(await screen.findByRole('option'));
+    expect(all.toast).toHaveBeenCalledWith('Everyone in Team is already on this message.', 'info');
+    expect(all.value()).toHaveLength(2);
+  });
+  it('says so when nobody in the group has an address', async () => {
+    const none = await withGroup([], [], ['u-cy']);
+    fireEvent.mouseDown(await screen.findByRole('option'));
+    expect(none.toast).toHaveBeenCalledWith('Nobody in Team has an email address.', 'info');
+    expect(none.value()).toEqual([]);
+  });
+  it('holds a send when Ctrl+Enter picks the highlighted group', async () => {
+    const { value, input } = await withGroup([]);
+    await screen.findByRole('option');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    let held: boolean | null = null;
+    document.addEventListener('keydown', (e) => (held = pickedSuggestion(e)), { once: true });
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+    expect(held).toBe(true);
+    expect(value().map((a) => a.email)).toEqual(['ann@work.example', 'bob@example.test']);
   });
 });

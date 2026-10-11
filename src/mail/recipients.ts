@@ -25,6 +25,19 @@ export interface Recipient {
   contactId?: Id;
   /** Set on a saved contact's preferred address. Never stored. */
   preferred?: boolean;
+  /**
+   * Set on a suggestion that is a contact group, not a person: `email` is then empty, and picking it
+   * adds its members one by one. Never stored, and never a recipient itself.
+   */
+  list?: { id: Id; count: number };
+}
+
+/** A contact group as the suggestions see it. */
+export interface RecipientList {
+  id: Id;
+  name: string;
+  /** How many people it would address. */
+  count: number;
 }
 
 /** Keyed by the lower-cased address. */
@@ -94,7 +107,7 @@ function tokens(r: Recipient): string[] {
 
 /** A suggestion's rank: people written to, then saved contacts, then the organisation, then everyone else. */
 const sortName = (r: Recipient) => (r.name || r.email).toLowerCase();
-const tier = (r: Recipient) => (r.sent > 0 ? 0 : r.saved ? 1 : r.group !== undefined ? 2 : 3);
+const tier = (r: Recipient) => (r.sent > 0 ? 0 : r.saved || r.list ? 1 : r.group !== undefined ? 2 : 3);
 
 /** As `compareRecipients`, with saved people and colleagues not yet written to ahead of strangers, by name. */
 function compareSuggestions(a: Recipient, b: Recipient): number {
@@ -110,12 +123,13 @@ function compareSuggestions(a: Recipient, b: Recipient): number {
 /**
  * People matching `query`: every query word must be a prefix of one of the person's tokens.
  * With a `directory`, the organisation's people and groups are offered too, under the names it gives them;
- * with `saved`, so are saved contacts, under the names they were saved with, whatever else knows the address.
+ * with `saved`, so are saved contacts, under the names they were saved with, whatever else knows the address;
+ * with `lists`, so are contact groups, by their names alone and among the saved contacts.
  */
 export function suggest(
   index: RecipientIndex,
   query: string,
-  opts: { exclude: Set<string>; limit: number; directory?: DirectoryEntry[]; saved?: SavedEntry[] },
+  opts: { exclude: Set<string>; limit: number; directory?: DirectoryEntry[]; saved?: SavedEntry[]; lists?: RecipientList[] },
 ): Recipient[] {
   const words = fold(query.trim()).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
@@ -156,6 +170,10 @@ export function suggest(
     offer(key, known ? { ...known, name: entry.name || known.name, group: entry.group } : { email: entry.email, name: entry.name, sent: 0, received: 0, last: '', group: entry.group });
   }
   for (const [key, r] of Object.entries(index)) if (!listed.has(key)) offer(key, r);
+  for (const list of opts.lists ?? []) {
+    const names = fold(list.name).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (words.every((w) => names.some((x) => x.startsWith(w)))) out.push({ email: '', name: list.name, sent: 0, received: 0, last: '', list: { id: list.id, count: list.count } });
+  }
   return out.sort(compareSuggestions).slice(0, opts.limit);
 }
 
