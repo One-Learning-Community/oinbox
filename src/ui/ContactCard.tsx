@@ -1,8 +1,10 @@
 import { For, Show, createMemo } from 'solid-js';
 import { useApp } from '../app/context';
 import { addressesOf, birthdayOf, displayName, emailsOf, extrasOf, notesOf, organizationOf, phonesOf, photoOf } from '../contacts/card';
-import type { ContactCard } from '../jmap/types';
+import { groupName, groupsHolding } from '../contacts/groups';
+import type { ContactCard, Id } from '../jmap/types';
 import { Avatar } from './Avatar';
+import { GroupPicker } from './GroupPicker';
 import { Icon } from './icons';
 
 const EMAIL_LABELS = { work: 'Work', personal: 'Personal', other: '' } as const;
@@ -21,7 +23,7 @@ const mailto = (address: string) => `mailto:${encodeURIComponent(address).replac
 
 /** One saved person, read-only. Editing is the dialog's. */
 export function ContactCardView(props: { card: ContactCard; onDelete: () => void }) {
-  const { contacts, composers } = useApp();
+  const { contacts, composers, toast } = useApp();
   const name = () => displayName(props.card);
   const org = createMemo(() => organizationOf(props.card));
   const orgLine = () => {
@@ -34,6 +36,16 @@ export function ContactCardView(props: { card: ContactCard; onDelete: () => void
   const addresses = createMemo(() => addressesOf(props.card));
   const birthday = createMemo(() => birthdayOf(props.card));
   const notes = () => notesOf(props.card);
+
+  const groups = createMemo(() => groupsHolding(props.card, contacts.groups()));
+  const join = async (groupId: Id) => {
+    const result = await contacts.addToGroup(groupId, [props.card.id]);
+    if (!result.ok) toast(`Couldn't add to the group: ${result.error}`, 'error');
+  };
+  const leave = async (groupId: Id) => {
+    const result = await contacts.removeFromGroup(groupId, [props.card.id]);
+    if (!result.ok) toast(`Couldn't remove from the group: ${result.error}`, 'error');
+  };
 
   const write = (e: MouseEvent, email: string) => {
     e.preventDefault();
@@ -121,6 +133,24 @@ export function ContactCardView(props: { card: ContactCard; onDelete: () => void
           <dt>Notes</dt>
           <dd class="contact-lines">{notes()}</dd>
         </Show>
+        <dt>Groups</dt>
+        <dd class="contact-groups">
+          <For each={groups()}>
+            {(g) => (
+              <span class="contact-group">
+                {groupName(g)}
+                <button type="button" aria-label={`Remove from ${groupName(g)}`} onClick={() => void leave(g.id)}>×</button>
+              </span>
+            )}
+          </For>
+          <GroupPicker
+            label="Add to group"
+            class="btn tonal contact-group-add"
+            exclude={groups().map((g) => g.id)}
+            onPick={(id) => void join(id)}
+            onNew={() => contacts.openGroupDialog({ kind: 'create', then: [props.card.id] })}
+          />
+        </dd>
         <For each={extrasOf(props.card)}>
           {(x) => (
             <>

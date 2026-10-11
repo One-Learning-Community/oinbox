@@ -488,6 +488,8 @@ async function boot() {
               )}
             />
             <Route path="/contacts" component={ContactsRoute} />
+            <Route path="/contacts/group/:gid" component={ContactsRoute} />
+            <Route path="/contacts/group/:gid/:id" component={ContactsRoute} />
             <Route path="/contacts/:id" component={ContactsRoute} />
             <Route path="/search/:q" component={MailView} />
             <Route path="/search/:q/t/:threadId" component={MailView} />

@@ -704,6 +704,28 @@ a { color: var(--accent); }
 .contacts-table tbody tr:not(.contacts-spacer):hover { background: var(--hover); }
 .contacts-table tr[aria-current='true'] { background: var(--accent-soft); }
 .contacts-spacer { border: 0; }
+/* The selection column: a box per person, and one for everyone shown. */
+.contacts-table .contacts-check { width: 44px; padding: 0 0 0 16px; text-overflow: clip; }
+.contacts-check input { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--accent); cursor: pointer; }
+.contacts-selection { flex-wrap: wrap; min-height: 53px; }
+.contacts-selection .contacts-count { color: var(--text); font-weight: 500; margin-right: auto; }
+.contacts-group { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px 0; }
+.contacts-group h2 { margin: 0; font-size: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contacts-group span { flex: none; color: var(--text-2); font-size: 13px; }
+.contacts-group-notes { padding: 8px 16px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 13px; }
+.contacts-group-notes p { margin: 2px 0; }
+.contact-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.contact-group { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border: 1px solid var(--border); border-radius: 14px; font-size: 13px; }
+.contact-group button { width: 22px; height: 22px; border: 0; border-radius: 50%; background: none; color: var(--text-2); font: inherit; cursor: pointer; }
+.contact-group button:hover, .contact-group button:focus-visible { background: var(--hover); color: var(--text); }
+.contact-group-add { height: 28px; padding: 0 10px; font-size: 13px; }
+@media (pointer: coarse) {
+  .contacts-table .contacts-check { width: 52px; padding-left: 8px; }
+  /* The box stays its size; the label-less cell around it takes the finger. */
+  .contacts-check input { width: 44px; height: 44px; padding: 14px; appearance: auto; }
+  .contact-group button { width: 44px; height: 44px; }
+  .contact-group-add { height: 44px; }
+}
 .contacts-name { display: flex; align-items: center; gap: 12px; min-width: 0; height: 48px; color: var(--text); font-weight: 500; text-decoration: none; }
 .contacts-name > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .contacts-name:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }

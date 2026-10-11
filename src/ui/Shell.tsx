@@ -15,6 +15,8 @@ import { Icon, type IconName } from './icons';
 import { installShortcuts } from './keyboard';
 import { DrivePicker } from './DrivePicker';
 import { ContactDialog } from './ContactDialog';
+import { GroupDialog } from './GroupDialog';
+import { GroupNav } from './GroupNav';
 import { LabelDialog } from './LabelDialog';
 import { LinkDialog } from './LinkDialog';
 import { LabelMenu } from './LabelMenu';
@@ -141,6 +143,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       <HelpDialog />
       <LabelDialog />
       <ContactDialog />
+      <GroupDialog />
       <DrivePicker />
       <LinkDialog />
       <props.confirmHost />
@@ -245,6 +248,7 @@ function Sidebar(props: { current: string }) {
           <Icon name="contacts" />
           <span class="name">Contacts</span>
         </A>
+        <GroupNav current={props.current} />
       </Show>
     </>
   );

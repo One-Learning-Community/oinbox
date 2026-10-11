@@ -1,26 +1,42 @@
 import { A, useNavigate, useParams } from '@solidjs/router';
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on } from 'solid-js';
 import { useApp } from '../app/context';
-import { displayName, emailsOf, organizationOf, phonesOf, photoOf } from '../contacts/card';
+import { displayName, emailsOf, isGroup, organizationOf, phonesOf, photoOf } from '../contacts/card';
+import { groupName, membersOf } from '../contacts/groups';
 import { matchPeople } from '../contacts/search';
-import type { ContactCard } from '../jmap/types';
+import type { ContactCard, Id } from '../jmap/types';
 import { Avatar } from './Avatar';
 import { ContactCardView } from './ContactCard';
+import { GroupPicker } from './GroupPicker';
 import { Icon } from './icons';
 import { createVirtualList } from './virtual';
 
 const ROW_HEIGHT = 48;
 
-/** Route component for /contacts and /contacts/:id: the address book on the left, the open card on the right. */
+/**
+ * Route component for /contacts[/:id] and /contacts/group/:gid[/:id]: the address book, or one group
+ * of it, on the left and the open card on the right.
+ */
 export function ContactsView() {
-  const params = useParams<{ id?: string }>();
-  const { contacts, toast } = useApp();
+  const params = useParams<{ id?: string; gid?: string }>();
+  const { contacts, toast, confirm } = useApp();
   const navigate = useNavigate();
   const [query, setQuery] = createSignal('');
   const [scroller, setScroller] = createSignal<HTMLElement>();
   let body: HTMLTableSectionElement | undefined;
 
-  const people = contacts.people;
+  /** The group on screen, when the address names one that exists. */
+  const group = (): ContactCard | undefined => {
+    const card = params.gid ? contacts.state.cards[params.gid] : undefined;
+    return card && isGroup(card) ? card : undefined;
+  };
+  const members = createMemo(() => {
+    const g = group();
+    return g ? membersOf(g, contacts.people()) : null;
+  });
+  /** Where the list on screen lives: cards opened from a group keep the group in their address. */
+  const base = () => (params.gid ? `/contacts/group/${encodeURIComponent(params.gid)}` : '/contacts');
+  const people = () => (params.gid ? (members()?.people ?? []) : contacts.people());
   const shown = createMemo(() => matchPeople(people(), query()));
   const open = (): ContactCard | undefined => (params.id ? contacts.state.cards[params.id] : undefined);
   const virtual = createVirtualList({ count: () => shown().length, scrollElement: scroller, rowHeight: () => ROW_HEIGHT });
@@ -40,10 +56,75 @@ export function ContactsView() {
     }
     // Not before the server has been heard: the card may be newer than the copy kept in the browser.
     if (!contacts.state.loaded || !contacts.state.current) return;
+    // Made again under a new id to be given a uid (to join a group): the same person, followed there.
+    const now = contacts.movedTo(id);
+    if (now) return void navigate(`${base()}/${now}`, { replace: true });
     if (onScreen === id) toast('That contact was deleted.', 'info');
     onScreen = null;
+    navigate(base(), { replace: true });
+  });
+
+  // The same for a group that is gone.
+  let groupOnScreen: string | null = null;
+  createEffect(() => {
+    const gid = params.gid;
+    if (!gid) {
+      groupOnScreen = null;
+      return;
+    }
+    if (group()) {
+      groupOnScreen = gid;
+      return;
+    }
+    if (!contacts.state.loaded || !contacts.state.current) return;
+    if (groupOnScreen === gid) toast('That group was deleted.', 'info');
+    groupOnScreen = null;
     navigate('/contacts', { replace: true });
   });
+
+  // The selection: ids, and only ever of people who are on screen. A search, a push that deletes
+  // someone, or a card made again under a new id all take people out of it.
+  const [picked, setPicked] = createSignal<ReadonlySet<Id>>(new Set());
+  const selected = createMemo(() => shown().filter((c) => picked().has(c.id)));
+  createEffect(() => {
+    if (selected().length !== picked().size) setPicked(new Set(selected().map((c) => c.id)));
+  });
+  createEffect(on(() => params.gid, () => setPicked(new Set<Id>()), { defer: true }));
+  const toggle = (id: Id) => {
+    const next = new Set(picked());
+    if (!next.delete(id)) next.add(id);
+    setPicked(next);
+  };
+  const allPicked = () => shown().length > 0 && selected().length === shown().length;
+  const toggleAll = () => setPicked(allPicked() ? new Set<Id>() : new Set(shown().map((c) => c.id)));
+  const clear = () => setPicked(new Set<Id>());
+  const selectedIds = () => selected().map((c) => c.id);
+
+  const addTo = async (groupId: Id) => {
+    const ids = selectedIds();
+    const name = groupName(contacts.state.cards[groupId]!);
+    const result = await contacts.addToGroup(groupId, ids);
+    if (result.ok) toast(`Added ${ids.length} to ${name}.`, 'info');
+    else toast(`Couldn't add to ${name}: ${result.error}`, 'error');
+  };
+  const removeFromGroup = async () => {
+    const g = group();
+    if (!g) return;
+    const ids = selectedIds();
+    const result = await contacts.removeFromGroup(g.id, ids);
+    if (result.ok) toast(`Removed ${ids.length} from ${groupName(g)}.`, 'info');
+    else toast(`Couldn't remove from ${groupName(g)}: ${result.error}`, 'error');
+  };
+  const removeSelected = async () => {
+    const ids = selectedIds();
+    const what = (n: number) => `${n.toLocaleString()} contact${n === 1 ? '' : 's'}`;
+    if (!(await confirm({ title: `Delete ${what(ids.length)}?`, message: 'This cannot be undone.', confirmLabel: 'Delete' }))) return;
+    // Deleted here: the open card going is no news.
+    onScreen = null;
+    const result = await contacts.removeMany(ids);
+    if (result.removed) toast(`Deleted ${what(result.removed)}.`, 'info');
+    if (result.error) toast(`Couldn't delete ${result.removed ? 'the rest' : 'the contacts'}: ${result.error}`, 'error');
+  };
 
   const remove = (id: string) => {
     // Deleted here: the store's own toast, with its Undo, says so.
@@ -56,12 +137,22 @@ export function ContactsView() {
     if (query().trim()) return `${shown().length.toLocaleString()} of ${total.toLocaleString()}`;
     return `${total.toLocaleString()} contact${total === 1 ? '' : 's'}`;
   };
+  const groupCount = () => {
+    const m = members();
+    const n = m ? m.people.length + m.addresses.length : 0;
+    return `${n.toLocaleString()} ${n === 1 ? 'person' : 'people'}`;
+  };
 
   /** Arrow keys walk the rows; a row beyond those rendered is scrolled to first. */
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const row = (e.target as Element).closest<HTMLElement>('tr[data-index]');
     if (!row) return;
+    // Space on a person's name selects them; in the box itself the browser does it.
+    if (e.key === ' ' && (e.target as Element).closest('a') && row.dataset.contactId) {
+      e.preventDefault();
+      return toggle(row.dataset.contactId);
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const next = Number(row.dataset.index) + (e.key === 'ArrowDown' ? 1 : -1);
     if (next < 0 || next >= shown().length) return;
     e.preventDefault();
@@ -79,6 +170,28 @@ export function ContactsView() {
   return (
     <div class="contacts-view" classList={{ 'has-card': !!params.id }}>
       <section class="contacts-list" aria-label="Contact list">
+        <Show when={group()}>
+          {(g) => (
+            <div class="contacts-group">
+              <h2>{groupName(g())}</h2>
+              <span>{groupCount()}</span>
+            </div>
+          )}
+        </Show>
+        <Show
+          when={!selected().length}
+          fallback={
+            <div class="contacts-tools contacts-selection" role="toolbar" aria-label="Selected contacts">
+              <span class="contacts-count" role="status">{selected().length.toLocaleString()} selected</span>
+              <GroupPicker label="Add to group" exclude={params.gid ? [params.gid] : []} onPick={(id) => void addTo(id)} onNew={() => contacts.openGroupDialog({ kind: 'create', then: selectedIds() })} />
+              <Show when={group()}>
+                <button type="button" class="btn tonal" onClick={() => void removeFromGroup()}>Remove from group</button>
+              </Show>
+              <button type="button" class="btn tonal" onClick={() => void removeSelected()}>Delete</button>
+              <button type="button" class="btn tonal" onClick={clear}>Clear selection</button>
+            </div>
+          }
+        >
         <div class="contacts-tools">
           <input
             type="search"
@@ -94,6 +207,25 @@ export function ContactsView() {
             <span class="contacts-count" role="status">{count()}</span>
           </Show>
         </div>
+        </Show>
+        <Show when={members()}>
+          {(m) => (
+            <Show when={m().addresses.length || m().unknown}>
+              <div class="contacts-group-notes">
+                <For each={m().addresses}>
+                  {(address) => (
+                    <p>
+                      <span>{address}</span> <span class="contact-tag">Address only</span>
+                    </p>
+                  )}
+                </For>
+                <Show when={m().unknown}>
+                  <p>{m().unknown === 1 ? '1 member of this group is not in your contacts.' : `${m().unknown.toLocaleString()} members of this group are not in your contacts.`}</p>
+                </Show>
+              </div>
+            </Show>
+          )}
+        </Show>
         <Switch>
           <Match when={!contacts.state.loaded && contacts.state.failed}>
             <div class="list-empty">
@@ -103,6 +235,9 @@ export function ContactsView() {
           </Match>
           <Match when={!contacts.state.loaded}>
             <div class="list-empty" role="status">Loading contacts…</div>
+          </Match>
+          <Match when={params.gid && !people().length}>
+            <div class="list-empty">{members()?.addresses.length ? 'Nobody in this group is in your contacts.' : 'Nobody is in this group yet.'}</div>
           </Match>
           <Match when={!people().length}>
             <div class="list-empty">
@@ -118,6 +253,16 @@ export function ContactsView() {
               <table class="contacts-table" aria-label="Contacts" aria-rowcount={shown().length + 1}>
                 <thead>
                   <tr aria-rowindex={1}>
+                    <th scope="col" class="contacts-check">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all"
+                        checked={allPicked()}
+                        // A property, not an attribute: there is no markup for "some of them".
+                        ref={(el) => createEffect(() => (el.indeterminate = selected().length > 0 && !allPicked()))}
+                        onChange={toggleAll}
+                      />
+                    </th>
                     <th scope="col">Name</th>
                     <th scope="col">Email</th>
                     <th scope="col" class="contacts-extra">Phone</th>
@@ -141,11 +286,14 @@ export function ContactsView() {
                               aria-rowindex={item.index + 2}
                               aria-current={card().id === params.id ? 'true' : undefined}
                               onClick={(e) => {
-                                if (!(e.target as Element).closest('a')) navigate(`/contacts/${card().id}`);
+                                if (!(e.target as Element).closest('a, .contacts-check')) navigate(`${base()}/${card().id}`);
                               }}
                             >
+                              <td class="contacts-check">
+                                <input type="checkbox" aria-label={`Select ${name()}`} checked={picked().has(card().id)} onChange={() => toggle(card().id)} />
+                              </td>
                               <td>
-                                <A href={`/contacts/${card().id}`} class="contacts-name">
+                                <A href={`${base()}/${card().id}`} class="contacts-name">
                                   <Avatar name={name()} seed={email() || name()} photo={photoOf(card())} size={32} />
                                   <span>{name()}</span>
                                 </A>
@@ -173,7 +321,7 @@ export function ContactsView() {
         <Show when={open()} fallback={<div class="list-empty">{params.id ? 'Loading contacts…' : 'Select a contact'}</div>}>
           {(card) => (
             <>
-              <A href="/contacts" class="contact-back">
+              <A href={base()} class="contact-back">
                 <Icon name="back" /> Back to contacts
               </A>
               <ContactCardView card={card()} onDelete={() => remove(card().id)} />
