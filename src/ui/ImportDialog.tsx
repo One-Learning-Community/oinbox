@@ -1,6 +1,6 @@
 import { Dialog } from '@rozie-ui/dialog-solid';
 import { Switch as Toggle } from '@rozie-ui/switch-solid';
-import { For, Match, Show, Switch, createMemo, createSignal } from 'solid-js';
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from 'solid-js';
 import { useApp } from '../app/context';
 import type { ImportResult, VcardBlock } from '../app/contacts-import';
 import { findDuplicates, peekVcard, splitVcards, type VcardPeek } from '../contacts/vcard';
@@ -36,6 +36,20 @@ function ImportSteps() {
   const [progress, setProgress] = createSignal<{ done: number; total: number } | null>(null);
   const [result, setResult] = createSignal<(ImportResult & { skipped: number }) | null>(null);
   let stop: AbortController | null = null;
+  let form: HTMLDivElement | undefined;
+
+  /** Where the dialog is: each step's own button takes the focus, which the last step's button took with it. */
+  const step = () => (result() ? 'done' : progress() ? 'running' : found()?.blocks.length && contacts.state.current ? 'preview' : 'pick');
+  createEffect(() => {
+    const now = step();
+    if (now !== 'pick') queueMicrotask(() => form?.querySelector<HTMLElement>('[data-step-button]')?.focus());
+  });
+  /** What a screen reader is told as the steps change. */
+  const said = () => {
+    const r = result();
+    if (r) return `Import finished: ${r.imported.toLocaleString()} imported.${r.quota ? ` The server's upload limit was reached: ${r.left.toLocaleString()} not imported.` : ''}${r.failed.length ? ` ${r.failed.length.toLocaleString()} could not be saved.` : ''}`;
+    return progress() ? 'Importing…' : '';
+  };
 
   const check = createMemo(() => {
     const f = found();
@@ -93,15 +107,19 @@ function ImportSteps() {
 
   return (
     <Dialog open class="import-dialog" onOpenChange={(open) => !open && close()} ariaLabelledby="import-dialog-title">
-      <div class="import-form">
+      <div class="import-form" ref={form}>
         <h2 id="import-dialog-title">Import contacts</h2>
+        <span class="sr-only" role="status">{said()}</span>
         <Switch>
           <Match when={result()}>
             {(r) => (
-              <div class="import-result" role="status">
+              <div class="import-result">
                 <p>Imported {contacts_(r().imported)}.</p>
                 <Show when={r().skipped}>
                   <p>Skipped {r().skipped.toLocaleString()} already in your contacts.</p>
+                </Show>
+                <Show when={r().withoutPhoto}>
+                  {(n) => <p>{n() === 1 ? '1 was saved without a photo that was too large.' : `${n().toLocaleString()} were saved without photos that were too large.`}</p>}
                 </Show>
                 <Show when={r().cancelled && r().left}>
                   <p>Stopped: {r().left.toLocaleString()} {r().left === 1 ? 'was' : 'were'} not imported.</p>
@@ -129,7 +147,7 @@ function ImportSteps() {
                   </ul>
                 </Show>
                 <div class="dialog-actions">
-                  <button type="button" class="primary" onClick={() => contacts.closeImport()}>Done</button>
+                  <button type="button" class="primary" data-step-button onClick={() => contacts.closeImport()}>Done</button>
                 </div>
               </div>
             )}
@@ -138,9 +156,9 @@ function ImportSteps() {
             {(p) => (
               <>
                 <progress max={p().total} value={p().done} aria-label="Import progress" />
-                <p role="status">Imported {p().done.toLocaleString()} of {p().total.toLocaleString()}</p>
+                <p>{p().done.toLocaleString()} of {p().total.toLocaleString()} done</p>
                 <div class="dialog-actions">
-                  <button type="button" onClick={() => stop?.abort()}>Stop</button>
+                  <button type="button" data-step-button onClick={() => stop?.abort()}>Stop</button>
                 </div>
               </>
             )}
@@ -177,7 +195,7 @@ function ImportSteps() {
                     The server reads each contact as an uploaded file, and counts it against the same hourly allowance as your attachments (usually {USUAL_ALLOWANCE.toLocaleString()} files an hour; your administrator may have set another).
                   </p>
                   <Show when={wanted() > USUAL_ALLOWANCE}>
-                    <p class="import-warning" role="status">
+                    <p class="import-warning">
                       This is more than the usual allowance. The import will stop when the server's limit is reached; import the same files again later and the contacts already here are skipped.
                     </p>
                   </Show>
@@ -187,7 +205,10 @@ function ImportSteps() {
             <div class="dialog-actions">
               <button type="button" onClick={() => contacts.closeImport()}>Cancel</button>
               <Show when={found()?.blocks.length}>
-                <button type="button" class="primary" disabled={!wanted()} onClick={() => void run()}>Import {wanted().toLocaleString()}</button>
+                {/* Duplicates are told from the address book: before it has been heard from, everyone would look new. */}
+                <Show when={contacts.state.current} fallback={<span class="import-quiet" role="status">Checking your contacts…</span>}>
+                  <button type="button" class="primary" data-step-button disabled={!wanted()} onClick={() => void run()}>Import {wanted().toLocaleString()}</button>
+                </Show>
               </Show>
             </div>
           </Match>

@@ -86,7 +86,7 @@ describe('ImportDialog', () => {
     choose(people(250));
     fireEvent.click(await dialog().findByRole('button', { name: 'Import 250' }));
     expect(await dialog().findByRole('progressbar')).toBeInTheDocument();
-    expect(dialog().getByRole('status')).toHaveTextContent('Imported 0 of 250');
+    expect(dialog().getByText('0 of 250 done')).toBeInTheDocument();
     fireEvent.click(dialog().getByRole('button', { name: 'Stop' }));
     expect(await dialog().findByText('Imported 100 contacts.')).toBeInTheDocument();
     expect(dialog().getByText('Stopped: 150 were not imported.')).toBeInTheDocument();
@@ -108,6 +108,28 @@ describe('ImportDialog', () => {
     fireEvent.click(await dialog().findByRole('button', { name: 'Import 1' }));
     expect(await dialog().findByText(/^You can import it in about an hour: /)).toBeInTheDocument();
     expect(dialog().getByText("The server's upload limit was reached: 1 contact was not imported.")).toBeInTheDocument();
+  });
+  it('says when a photo was too large to keep, and puts the focus on each step\'s button', async () => {
+    const { choose, dialog } = await opened();
+    choose(vc('FN:Snap', 'UID:u-snap', `PHOTO:data:image/png;base64,${'A'.repeat(600_000)}`));
+    const go = await dialog().findByRole('button', { name: 'Import 1' });
+    await vi.waitFor(() => expect(go).toHaveFocus());
+    fireEvent.click(go);
+    expect(await dialog().findByText('1 was saved without a photo that was too large.')).toBeInTheDocument();
+    await vi.waitFor(() => expect(dialog().getByRole('button', { name: 'Done' })).toHaveFocus());
+    // The summary is in a region that was there before it was filled, so a screen reader says it.
+    expect(dialog().getByRole('status')).toHaveTextContent('Import finished: 1 imported.');
+  });
+  it('does not offer to import before the address book has been heard from: everything would look new', async () => {
+    const kit = contactsKit();
+    kit.fake.addCard({ uid: 'u-0', name: { full: 'P0' } });
+    kit.show('/contacts', () => <Route path="/contacts" component={() => <ImportDialog />} />);
+    kit.contacts.openImport();
+    fireEvent.change(await screen.findByLabelText('vCard files'), { target: { files: [new File([people(2)], 'f.vcf')] } });
+    expect(await screen.findByText('Checking your contacts…')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Import \d/ })).toBeNull();
+    await kit.contacts.start('k');
+    expect(await screen.findByRole('button', { name: 'Import 1' })).toBeInTheDocument();
   });
   it('refuses files too large to read at once, and says when a file holds no contacts', async () => {
     const { input, choose, dialog } = await opened();
@@ -175,5 +197,11 @@ describe('export', () => {
     empty.show('/contacts', () => <Route path="/contacts" component={ContactsView} />);
     fireEvent.click(screen.getAllByRole('button', { name: 'Import…' }).at(-1)!);
     expect(empty.contacts.importOpen()).toBe(true);
+    // With nobody to export there is no file to make.
+    vi.mocked(downloadText).mockClear();
+    fireEvent.click(screen.getAllByRole('button', { name: 'More contact actions' }).at(-1)!);
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Export all' }));
+    expect(downloadText).not.toHaveBeenCalled();
+    expect(empty.toast).toHaveBeenCalledWith('There are no contacts to export.', 'info');
   });
 });

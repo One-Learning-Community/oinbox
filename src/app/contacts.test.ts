@@ -347,6 +347,28 @@ describe('createContacts: groups and bulk work', () => {
     expect(await contacts.removeMany(ids)).toEqual({ removed: 620 });
     expect(sets(fake).filter((a) => a.destroy).map((a) => (a.destroy as string[]).length)).toEqual([500, 120]);
   });
+  it('loses neither of two additions to a group made at the same moment', async () => {
+    const { fake, contacts } = setup();
+    const ann = person(fake, 'Ann', 'u-ann');
+    const bob = person(fake, 'Bob', 'u-bob');
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' } });
+    await contacts.start('k');
+    await Promise.all([contacts.addToGroup(g.id, [ann.id]), contacts.addToGroup(g.id, [bob.id])]);
+    expect(fake.cards.get(g.id)!.members).toEqual({ 'u-ann': true, 'u-bob': true });
+  });
+  it('clears from a group the members that are no longer anyone, keeping people and bare addresses', async () => {
+    const { fake, contacts } = setup();
+    person(fake, 'Ann', 'u-ann');
+    const inner = fake.addCard({ kind: 'group', uid: 'g-inner', name: { full: 'Inner' } });
+    const g = fake.addCard({ kind: 'group', uid: 'g1', name: { full: 'Team' }, members: { 'u-ann': true, 'u-gone': true, 'g-inner': true, 'mailto:x@y.example': true } });
+    await contacts.start('k');
+    expect((await contacts.pruneGroup(g.id)).ok).toBe(true);
+    expect(fake.cards.get(g.id)!.members).toEqual({ 'u-ann': true, 'mailto:x@y.example': true });
+    expect(inner.id).toBeTruthy();
+    const before = sets(fake).length;
+    await contacts.pruneGroup(g.id);
+    expect(sets(fake)).toHaveLength(before);
+  });
   it('holds the group dialog', async () => {
     const { contacts } = setup();
     expect(contacts.groupDialog()).toBeNull();
@@ -468,7 +490,7 @@ describe('createContacts: importing vCards through the server', () => {
     const huge = { text: vc('FN:Huge', `NOTE:${'x'.repeat(7_000_001)}`), name: 'Huge', uid: '' };
     const photo = { text: vc('FN:Snap', 'UID:u-snap', `PHOTO:data:image/png;base64,${'A'.repeat(600_000)}`), name: 'Snap', uid: 'u-snap' };
     const r = await contacts.importVcards([huge, photo, block(1)]);
-    expect(r).toEqual({ imported: 2, failed: [{ name: 'Huge', error: 'This card is too large to import.' }], cancelled: false, left: 0 });
+    expect(r).toEqual({ imported: 2, failed: [{ name: 'Huge', error: 'This card is too large to import.' }], cancelled: false, left: 0, withoutPhoto: 1 });
     expect([...fake.cards.values()].find((c) => c.uid === 'u-snap')).not.toHaveProperty('media');
   });
   it('keeps the uid a card was told apart by when its text has none', async () => {
@@ -505,6 +527,14 @@ describe('createContacts: importing vCards through the server', () => {
     expect(r.imported + r.failed.length + r.left).toBe(162);
     expect(r.left).toBeGreaterThan(0);
     expect(contacts.people()).toHaveLength(r.imported);
+  });
+  it('measures a batch in bytes, as the server does: text outside Latin is two or three a character', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    // 60 cards of 60,000 two-byte characters: 3.6 million characters, 7.2 MB.
+    const blocks = Array.from({ length: 60 }, (_, i) => ({ text: vc(`FN:Wide ${i}`, `UID:u-${i}`, `NOTE:${'é'.repeat(60_000)}`), name: `Wide ${i}`, uid: `u-${i}` }));
+    expect((await contacts.importVcards(blocks)).imported).toBe(60);
+    expect(calls(fake, 'Blob/upload').length).toBeGreaterThan(1);
   });
   it('holds whether the import dialog is open', () => {
     const { contacts } = counted();

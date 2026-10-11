@@ -42,9 +42,12 @@ export function ContactCardView(props: { card: ContactCard; onDelete: () => void
     const result = await contacts.addToGroup(groupId, [props.card.id]);
     if (!result.ok) toast(`Couldn't add to the group: ${result.error}`, 'error');
   };
+  let groupLine: HTMLElement | undefined;
   const leave = async (groupId: Id) => {
     const result = await contacts.removeFromGroup(groupId, [props.card.id]);
-    if (!result.ok) toast(`Couldn't remove from the group: ${result.error}`, 'error');
+    if (!result.ok) return void toast(`Couldn't remove from the group: ${result.error}`, 'error');
+    // The chip, and the button on it that was pressed, are gone.
+    queueMicrotask(() => groupLine?.querySelector<HTMLElement>('.contact-group-add')?.focus());
   };
 
   const write = (e: MouseEvent, email: string) => {
@@ -134,7 +137,7 @@ export function ContactCardView(props: { card: ContactCard; onDelete: () => void
           <dd class="contact-lines">{notes()}</dd>
         </Show>
         <dt>Groups</dt>
-        <dd class="contact-groups">
+        <dd class="contact-groups" ref={groupLine}>
           <For each={groups()}>
             {(g) => (
               <span class="contact-group">

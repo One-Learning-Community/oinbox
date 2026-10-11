@@ -14,7 +14,7 @@ import { createImporter, type ImportOptions, type ImportResult, type VcardBlock 
 export type ContactDialogState = { kind: 'new'; seed?: { name?: string; email?: string } } | { kind: 'edit'; id: Id };
 /** `then`: people to put in the group once it is made. */
 export type GroupDialogState = { kind: 'create'; then?: Id[] } | { kind: 'rename'; id: Id };
-export type ContactWrite = { ok: true; id: Id } | { ok: false; error: string };
+export type ContactWrite = { ok: true; id: Id; /** After addToGroup: how many were not in it before. */ added?: number } | { ok: false; error: string };
 
 export interface ContactsState {
   cards: Record<Id, ContactCard>;
@@ -59,6 +59,8 @@ export interface Contacts {
   /** Add people to a group. A person's card with no uid is first replaced by a copy that has one. */
   addToGroup(groupId: Id, cardIds: Id[]): Promise<ContactWrite>;
   removeFromGroup(groupId: Id, cardIds: Id[]): Promise<ContactWrite>;
+  /** Take out of a group the members that are no one's card any more. Bare addresses another client wrote stay. */
+  pruneGroup(groupId: Id): Promise<ContactWrite>;
   /** Delete several people in one go. No undo: the caller confirms first. */
   removeMany(ids: Id[]): Promise<{ removed: number; error?: string }>;
   /** Reactive: the card that took this one's place when it was given a uid, if any. */
@@ -369,6 +371,18 @@ export function createContacts(
     return { ok: true, uid: copy.uid };
   };
 
+  /** One change to a group's members at a time: each writes the whole map, and two at once would lose one. */
+  const groupWork = new Map<Id, Promise<unknown>>();
+  const inTurn = (groupId: Id, work: () => Promise<ContactWrite>): Promise<ContactWrite> => {
+    const next = (groupWork.get(groupId) ?? Promise.resolve()).then(work, work);
+    const settled = next.catch(() => undefined);
+    groupWork.set(groupId, settled);
+    void settled.then(() => {
+      if (groupWork.get(groupId) === settled) groupWork.delete(groupId);
+    });
+    return next;
+  };
+
   /** A second click while the first is on its way is the same deletion, not another. */
   const removing = new Map<Id, Promise<ContactWrite>>();
   const once = (id: Id, work: () => Promise<ContactWrite>): Promise<ContactWrite> => {
@@ -488,7 +502,7 @@ export function createContacts(
         return { ok: true, id };
       }),
     addToGroup: (groupId, cardIds) =>
-      guarded(async (accountId0) => {
+      inTurn(groupId, () => guarded(async (accountId0) => {
         if (!groupCard(groupId)) return { ok: false, error: NO_GROUP };
         const uids: string[] = [];
         for (const id of cardIds) {
@@ -501,17 +515,28 @@ export function createContacts(
         // Read again: making the copies took requests, and the group may have changed meanwhile.
         const group = groupCard(groupId);
         if (!group) return { ok: false, error: NO_GROUP };
-        if (uids.every((u) => group.members?.[u] === true)) return { ok: true, id: groupId };
-        return patchCard(accountId0, groupId, { members: membersWith(group, uids), updated: now() }, NO_GROUP);
-      }),
+        const added = new Set(uids.filter((u) => group.members?.[u] !== true)).size;
+        if (!added) return { ok: true, id: groupId, added: 0 };
+        const saved = await patchCard(accountId0, groupId, { members: membersWith(group, uids), updated: now() }, NO_GROUP);
+        return saved.ok ? { ...saved, added } : saved;
+      })),
+    pruneGroup: (groupId) =>
+      inTurn(groupId, () => guarded(async (accountId0) => {
+        const group = groupCard(groupId);
+        if (!group) return { ok: false, error: NO_GROUP };
+        const uids = new Set(people().map((p) => p.uid));
+        const gone = Object.keys(group.members ?? {}).filter((key) => !/^mailto:/i.test(key) && !uids.has(key));
+        if (!gone.length) return { ok: true, id: groupId };
+        return patchCard(accountId0, groupId, { members: membersWithout(group, gone), updated: now() }, NO_GROUP);
+      })),
     removeFromGroup: (groupId, cardIds) =>
-      guarded(async (accountId0) => {
+      inTurn(groupId, () => guarded(async (accountId0) => {
         const group = groupCard(groupId);
         if (!group) return { ok: false, error: NO_GROUP };
         const uids = cardIds.map((id) => state.cards[id]?.uid).filter((u): u is string => !!u && group.members?.[u] === true);
         if (!uids.length) return { ok: true, id: groupId };
         return patchCard(accountId0, groupId, { members: membersWithout(group, uids), updated: now() }, NO_GROUP);
-      }),
+      })),
     removeMany: async (ids) => {
       const accountId0 = accountId();
       if (!accountId0) return { removed: 0, error: UNAVAILABLE };

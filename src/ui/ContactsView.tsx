@@ -27,6 +27,7 @@ export function ContactsView() {
   const [query, setQuery] = createSignal('');
   const [scroller, setScroller] = createSignal<HTMLElement>();
   let body: HTMLTableSectionElement | undefined;
+  let search: HTMLInputElement | undefined;
 
   /** The group on screen, when the address names one that exists. */
   const group = (): ContactCard | undefined => {
@@ -97,6 +98,15 @@ export function ContactsView() {
     if (selected().length !== picked().size) setPicked(new Set(selected().map((c) => c.id)));
   });
   createEffect(on(() => params.gid, () => setPicked(new Set<Id>()), { defer: true }));
+  // The toolbar goes when the selection empties, and the button just pressed with it: the focus
+  // would fall to the page, so it is put on the search box that takes the toolbar's place.
+  createEffect(on(() => selected().length > 0, (has, had) => {
+    if (!had || has) return;
+    queueMicrotask(() => {
+      const at = document.activeElement;
+      if (!at || at === document.body || !at.isConnected) search?.focus();
+    });
+  }, { defer: true }));
   const toggle = (id: Id) => {
     const next = new Set(picked());
     if (!next.delete(id)) next.add(id);
@@ -111,7 +121,7 @@ export function ContactsView() {
     const ids = selectedIds();
     const name = groupName(contacts.state.cards[groupId]!);
     const result = await contacts.addToGroup(groupId, ids);
-    if (result.ok) toast(`Added ${ids.length} to ${name}.`, 'info');
+    if (result.ok) toast(result.added ? `Added ${result.added} to ${name}.` : `They are already in ${name}.`, 'info');
     else toast(`Couldn't add to ${name}: ${result.error}`, 'error');
   };
   const removeFromGroup = async () => {
@@ -121,6 +131,12 @@ export function ContactsView() {
     const result = await contacts.removeFromGroup(g.id, ids);
     if (result.ok) toast(`Removed ${ids.length} from ${groupName(g)}.`, 'info');
     else toast(`Couldn't remove from ${groupName(g)}: ${result.error}`, 'error');
+  };
+  const prune = async () => {
+    const g = group();
+    if (!g) return;
+    const result = await contacts.pruneGroup(g.id);
+    if (!result.ok) toast(`Couldn't change ${groupName(g)}: ${result.error}`, 'error');
   };
   /** One vCard file of these cards, saved by the browser. */
   const exportCards = (cards: ContactCard[]) => {
@@ -135,6 +151,7 @@ export function ContactsView() {
   /** Everything, with the groups; or the group on screen, with its own card so it is a group where it is imported. */
   const exportAll = () => {
     const g = group();
+    if (g ? !members()?.people.length : !contacts.people().length && !contacts.groups().length) return void toast('There are no contacts to export.', 'info');
     exportCards(g ? [...(members()?.people ?? []), g] : [...contacts.people(), ...contacts.groups()]);
   };
 
@@ -192,6 +209,8 @@ export function ContactsView() {
 
   return (
     <div class="contacts-view" classList={{ 'has-card': !!params.id }}>
+      {/* Always here, and filled when the selection changes: a region that arrives already filled is not read out. */}
+      <span class="sr-only" role="status" data-testid="contacts-selection-status">{selected().length ? `${selected().length.toLocaleString()} ${selected().length === 1 ? 'contact' : 'contacts'} selected` : ''}</span>
       <section class="contacts-list" aria-label="Contact list">
         <Show when={group()}>
           {(g) => (
@@ -204,8 +223,8 @@ export function ContactsView() {
         <Show
           when={!selected().length}
           fallback={
-            <div class="contacts-tools contacts-selection" role="toolbar" aria-label="Selected contacts">
-              <span class="contacts-count" role="status">{selected().length.toLocaleString()} selected</span>
+            <div class="contacts-tools contacts-selection" role="group" aria-label="Selected contacts">
+              <span class="contacts-count">{selected().length.toLocaleString()} selected</span>
               <GroupPicker label="Add to group" exclude={params.gid ? [params.gid] : []} onPick={(id) => void addTo(id)} onNew={() => contacts.openGroupDialog({ kind: 'create', then: selectedIds() })} />
               <Show when={group()}>
                 <button type="button" class="btn tonal" onClick={() => void removeFromGroup()}>Remove from group</button>
@@ -218,6 +237,7 @@ export function ContactsView() {
         >
         <div class="contacts-tools">
           <input
+            ref={search}
             type="search"
             class="contacts-search"
             aria-label="Search contacts"
@@ -255,7 +275,10 @@ export function ContactsView() {
                   )}
                 </For>
                 <Show when={m().unknown}>
-                  <p>{m().unknown === 1 ? '1 member of this group is not in your contacts.' : `${m().unknown.toLocaleString()} members of this group are not in your contacts.`}</p>
+                  <p>
+                    {m().unknown === 1 ? '1 member of this group is not in your contacts.' : `${m().unknown.toLocaleString()} members of this group are not in your contacts.`}{' '}
+                    <button type="button" class="link-btn" onClick={() => void prune()}>Remove from the group</button>
+                  </p>
                 </Show>
               </div>
             </Show>
@@ -325,7 +348,13 @@ export function ContactsView() {
                                 if (!(e.target as Element).closest('a, .contacts-check')) navigate(`${base()}/${card().id}`);
                               }}
                             >
-                              <td class="contacts-check">
+                              <td
+                                class="contacts-check"
+                                onClick={(e) => {
+                                  // The whole cell is the target, not only the box in it.
+                                  if (!(e.target instanceof HTMLInputElement)) toggle(card().id);
+                                }}
+                              >
                                 <input type="checkbox" aria-label={`Select ${name()}`} checked={picked().has(card().id)} onChange={() => toggle(card().id)} />
                               </td>
                               <td>

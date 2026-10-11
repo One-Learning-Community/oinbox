@@ -121,6 +121,13 @@ describe('a group on the Contacts page', () => {
     expect(screen.getByText('Address only')).toBeInTheDocument();
     expect(screen.getByText('1 member of this group is not in your contacts.')).toBeInTheDocument();
   });
+  it('clears the members that are no longer in the contacts when asked', async () => {
+    const { open, team, fake } = await seeded();
+    open(`/contacts/group/${team.id}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from the group' }));
+    await vi.waitFor(() => expect(fake.cards.get(team.id)!.members).toEqual({ 'u-ann': true, 'u-bob': true, 'mailto:ext@else.example': true }));
+    await vi.waitFor(() => expect(screen.queryByText(/not in your contacts/)).toBeNull());
+  });
   it('says so when a group has nobody', async () => {
     const { open, empty } = await seeded();
     open(`/contacts/group/${empty.id}`);
@@ -166,6 +173,35 @@ describe('a selection in the contact list', () => {
     await pick('Add to group', 'Empty');
     await vi.waitFor(() => expect(fake.cards.get(empty.id)!.members).toEqual({ 'u-ann': true, 'u-cy': true }));
     await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Added 2 to Empty.', 'info'));
+  });
+  it('says how many were added, not how many were ticked', async () => {
+    const { open, toast } = await seeded();
+    open('/contacts');
+    tick('Ann');
+    tick('Cy');
+    await pick('Add to group', 'Team');
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Added 1 to Team.', 'info'));
+    toast.mockClear();
+    await pick('Add to group', 'Team');
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('They are already in Team.', 'info'));
+  });
+  it('leaves the focus somewhere when the toolbar goes, and says the count where a screen reader hears it', async () => {
+    const { open } = await seeded();
+    open('/contacts');
+    const said = screen.getByTestId('contacts-selection-status');
+    expect(said).toHaveAttribute('role', 'status');
+    expect(said).toHaveTextContent('');
+    tick('Ann');
+    expect(said).toHaveTextContent('1 contact selected');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    await vi.waitFor(() => expect(screen.getByRole('searchbox', { name: 'Search contacts' })).toHaveFocus());
+    expect(said).toHaveTextContent('');
+  });
+  it('ticks a person from anywhere in the box\'s cell', async () => {
+    const { open } = await seeded();
+    open('/contacts');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Bob' }).closest('td')!);
+    expect(screen.getByRole('checkbox', { name: 'Select Bob' })).toBeChecked();
   });
   it('makes a new group of the selected from the picker', async () => {
     const { open, fake, toast } = await seeded();
@@ -264,6 +300,7 @@ describe('groups on a card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove from Team' }));
     await vi.waitFor(() => expect(fake.cards.get(team.id)!.members).not.toHaveProperty('u-ann'));
     await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Remove from Team' })).toBeNull());
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Add to group' })).toHaveFocus());
   });
   it('adds the person to a group they are not in', async () => {
     const { open, fake, empty, ann } = await seeded();

@@ -87,7 +87,7 @@ describe('ContactsView', () => {
   it('says it is loading before the first answer', () => {
     const { show } = contactsKit();
     show('/contacts', routes);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading contacts…');
+    expect(screen.getByText('Loading contacts…')).toHaveAttribute('role', 'status');
   });
 
   it('opens a card beside the list and marks its row', async () => {

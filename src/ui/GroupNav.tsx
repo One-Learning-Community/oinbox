@@ -55,7 +55,9 @@ function GroupMenu(props: { group: ContactCard; count: number; here: boolean }) 
     // First, so the page does not take the deletion for one made elsewhere.
     if (props.here) navigate('/contacts', { replace: true });
     const result = await contacts.removeGroup(props.group.id);
-    if (!result.ok) toast(`Couldn't delete the group: ${result.error}`, 'error');
+    if (!result.ok) return void toast(`Couldn't delete the group: ${result.error}`, 'error');
+    // The row and its menu are gone: the focus goes to what is nearest, not to the page.
+    queueMicrotask(() => document.querySelector<HTMLElement>('.nav-add[aria-label="New group"]')?.focus());
   };
 
   return (

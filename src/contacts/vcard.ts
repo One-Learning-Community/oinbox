@@ -137,6 +137,13 @@ const entries = <T>(map: Record<string, T> | undefined | null): T[] =>
 /** No line longer than 75 octets of UTF-8; a continuation starts with a space, and no character is split. */
 function fold(line: string): string {
   const encoder = new TextEncoder();
+  // Plain ASCII, as a photo's base64 is: a character is an octet, and there is nothing to measure.
+  if (/^[\x00-\x7f]*$/.test(line)) {
+    if (line.length <= 75) return line;
+    const cut = [line.slice(0, 75)];
+    for (let i = 75; i < line.length; i += 74) cut.push(` ${line.slice(i, i + 74)}`);
+    return cut.join('\r\n');
+  }
   if (encoder.encode(line).length <= 75) return line;
   const out: string[] = [];
   let current = '';

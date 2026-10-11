@@ -22,6 +22,8 @@ export interface ImportResult {
   quota?: { message: string; retryAfter: number | null };
   /** Cards not sent at all: after a stop, a lost connection, or the allowance running out. */
   left: number;
+  /** Cards saved without a photo that put them over the server's size for one card. Absent when none. */
+  withoutPhoto?: number;
 }
 
 export interface ImportOptions {
@@ -34,8 +36,11 @@ export interface ImportOptions {
 /** Stalwart's limits: 10 blobs a parse, and a request of 10 MB at most. */
 const PARSE_IDS = 10;
 const BATCH_CARDS = 100;
-const BATCH_CHARS = 4_000_000;
-const MAX_BLOCK_CHARS = 7_000_000;
+const BATCH_BYTES = 4_000_000;
+const MAX_BLOCK_BYTES = 7_000_000;
+const encoder = new TextEncoder();
+/** What a text weighs in a request: as JSON, in UTF-8. A character outside Latin is two or three bytes, a line end four. */
+const weight = (text: string) => encoder.encode(JSON.stringify(text)).length;
 const SET_BYTES = 4_500_000;
 const USING = [CORE, BLOB, CONTACTS, CONTACTS_PARSE];
 
@@ -65,7 +70,7 @@ function appleGroup(card: ParsedCard, known: (uid: string) => boolean): void {
 
 export function createImporter(client: JmapClient, deps: Deps) {
   /** A parsed card made ready to save. */
-  const prepare = (parsed: ParsedCard, block: VcardBlock, bookId: Id, newUids: Map<VcardBlock, string>, moved: Map<string, string>, known: (uid: string) => boolean): Partial<ContactCard> => {
+  const prepare = (parsed: ParsedCard, block: VcardBlock, bookId: Id, newUids: Map<VcardBlock, string>, moved: Map<string, string>, known: (uid: string) => boolean): { card: Partial<ContactCard>; stripped: boolean } => {
     appleGroup(parsed, known);
     const { vCard: _v, ...card } = parsed;
     const now = deps.now();
@@ -77,13 +82,15 @@ export function createImporter(client: JmapClient, deps: Deps) {
     card.updated ??= now;
     card.addressBookIds = { [bookId]: true };
     if (card.members) card.members = Object.fromEntries(Object.entries(card.members).map(([key, on]) => [moved.get(key) ?? key, on]));
+    let stripped = false;
     if (cardBytes(card) > MAX_CARD_BYTES && card.media) {
       // Almost always the photo. Without it the person is still saved.
       const media = Object.fromEntries(Object.entries(card.media).filter(([, m]) => !String(m?.uri ?? '').startsWith('data:')));
+      stripped = Object.keys(media).length < Object.keys(card.media).length;
       if (Object.keys(media).length) card.media = media;
       else delete card.media;
     }
-    return card;
+    return { card, stripped };
   };
 
   /** One batch: upload, parse, save. Throws when a request fails as a whole. */
@@ -120,17 +127,18 @@ export function createImporter(client: JmapClient, deps: Deps) {
       for (const call of calls) Object.assign(parsed, res2.get(call).parsed ?? {});
     }
 
-    const cards: { card: Partial<ContactCard>; name: string }[] = [];
+    const cards: { card: Partial<ContactCard>; name: string; stripped: boolean }[] = [];
     batch.forEach((block, i) => {
       const blob = blobOf(i);
       if (!blob) return;
       const got = parsed[blob];
       if (!got) return void failed.push({ name: block.name, error: 'This card could not be read.' });
-      const card = prepare(got, block, bookId, newUids, moved, known);
-      cards.push({ card, name: displayName(card as ContactCard) === 'No name' ? block.name : displayName(card as ContactCard) });
+      const { card, stripped } = prepare(got, block, bookId, newUids, moved, known);
+      cards.push({ card, stripped, name: displayName(card as ContactCard) === 'No name' ? block.name : displayName(card as ContactCard) });
     });
 
     let imported = 0;
+    let withoutPhoto = 0;
     let lost: string | undefined;
     for (let i = 0; i < cards.length; ) {
       // Up to 100 cards of half a megabyte each would be too much for one request.
@@ -156,12 +164,13 @@ export function createImporter(client: JmapClient, deps: Deps) {
         break;
       }
       imported += Object.keys(saved.created ?? {}).length;
+      withoutPhoto += Object.keys(saved.created ?? {}).filter((key) => cards[Number(key.slice(1))]?.stripped).length;
       for (const [key, err] of Object.entries(saved.notCreated ?? {})) {
         failed.push({ name: cards[Number(key.slice(1))]!.name, error: err.description ?? `The server refused the card (${err.type}).` });
       }
     }
     const sent = batch.filter((_, i) => blobOf(i)).length + Object.values(uploaded.notCreated ?? {}).filter((e) => e.type !== 'overQuota').length;
-    return { imported, failed, quota, sent, lost };
+    return { imported, failed, quota, sent, lost, withoutPhoto };
   };
 
   return async (blocks: VcardBlock[], opts: ImportOptions = {}): Promise<ImportResult> => {
@@ -192,24 +201,26 @@ export function createImporter(client: JmapClient, deps: Deps) {
         break;
       }
       const batch: VcardBlock[] = [];
-      let chars = 0;
+      let bytes = 0;
       while (at < total && batch.length < BATCH_CARDS) {
         const block = blocks[at]!;
-        if (block.text.length > MAX_BLOCK_CHARS) {
+        const size = weight(block.text);
+        if (size > MAX_BLOCK_BYTES) {
           result.failed.push({ name: block.name, error: 'This card is too large to import.' });
           at++;
           done++;
           continue;
         }
-        if (batch.length && chars + block.text.length > BATCH_CHARS) break;
+        if (batch.length && bytes + size > BATCH_BYTES) break;
         batch.push(block);
-        chars += block.text.length;
+        bytes += size;
         at++;
       }
       if (batch.length) {
         try {
           const out = await importBatch(accountId, bookId, batch, newUids, moved, known);
           result.imported += out.imported;
+          if (out.withoutPhoto) result.withoutPhoto = (result.withoutPhoto ?? 0) + out.withoutPhoto;
           result.failed.push(...out.failed);
           done += out.sent;
           if (out.lost && !out.quota) break;
