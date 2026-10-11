@@ -43,7 +43,7 @@ Probed on 0.16.23, 2026-10-10, with throwaway accounts. The full notes are in th
 | Add from mail | A person popover on names in a message and on recipient chips: Add to contacts, or Open and Edit when already saved. | Agreed. |
 | Suggestions | Written-to first; then saved contacts; then the organisation; then strangers. The saved name wins. One row per address. | Agreed. |
 | Groups | Standard group cards. In the composer a group expands into one chip per member. | Agreed: who receives a message must be visible. |
-| Import | The browser splits the file; the server parses each card. Preview, duplicates skipped by default. | Agreed. Stalwart parses one card per blob, and parses vCard better than we would. |
+| Import | The browser splits the file; the server parses each card. Preview, duplicates skipped by default and never uploaded. The upload allowance is said, and its end is reported. | Agreed. Stalwart parses one card per blob, and parses vCard better than we would. |
 | Export | vCard 4.0 written in the browser. | JMAP has no export. |
 | Address books | No management. New cards go to the default book. Cards in any other book of the user's are shown and edited where they are. | One book is what people have; a second made by another client must not hide its cards. |
 
@@ -55,7 +55,7 @@ src/contacts/card.ts     pure: reading a card (display name, emails, phones…),
 src/contacts/search.ts   pure: sort order and the type-ahead filter
 src/contacts/photo.ts    downscale a picked image to a data: URI
 src/contacts/groups.ts   pure (slice 2): members of a group, who a group expands to
-src/contacts/vcard.ts    pure (slice 2): split a .vcf, write vCard 4.0, find duplicates
+src/contacts/vcard.ts    pure (slice 2): split a .vcf, peek at uid and email, write vCard 4.0, find duplicates
 src/app/contacts.ts      the store: load, changes, push, cache, create / update / delete, dialog state
 src/mail/recipients.ts   suggest() takes saved contacts (and, in slice 2, groups) beside the directory
 src/ui/ContactsView.tsx  the page: list, search, card
@@ -145,13 +145,14 @@ A group matches as a suggestion by its name and is marked "List · 5 people". Pi
 ### Import (`src/ui/ImportDialog.tsx`, `src/contacts/vcard.ts`)
 
 1. The user picks one or more `.vcf` files (25 MB in all at most).
-2. The browser cuts them into cards at `BEGIN:VCARD` / `END:VCARD`.
-3. Cards are parsed by the server in batches: `Blob/upload` for a batch, then `ContactCard/parse` of those blobs, in one request.
-4. A preview: cards read, cards that could not be read, and likely duplicates. A duplicate has the `uid` of an existing card, or failing that an email address an existing person has. "Skip duplicates" is on by default.
-5. Import saves in batches (at most 100 cards and 5 MB a request), showing progress. Cancel stops after the batch in flight; what is saved stays. A photo that puts a card over the size limit is downscaled as a picked photo is.
-6. The result: imported, skipped, failed (with the names of those that failed).
+2. The browser cuts them into cards at `BEGIN:VCARD` / `END:VCARD`, and reads each card's `UID`, `EMAIL` and `FN` lines: enough to name it and to know a duplicate. Nothing is sent yet.
+3. A preview: cards found, cards cut short, and likely duplicates. A duplicate has the `uid` of an existing card, or failing that an email address an existing person has. "Skip duplicates" is on by default, and a skipped card is never uploaded.
+4. Import, in batches of at most 100 cards: `Blob/upload` for the batch and `ContactCard/parse` of those blobs (10 a call) in one request, then `ContactCard/set`. Progress is shown. Stop ends it after the batch in flight; what is saved stays. A card over the size limit is saved without its photo.
+5. The result: imported, skipped, not imported, and failed (with the names of those that failed).
 
 Imported cards go to the default book, get a `uid` if they have none, and keep whatever the parser produced. Group cards are imported as groups.
+
+**The upload allowance.** Each card parsed is an upload, and Stalwart counts it against the account's hourly allowance (1,000 files and 50 MB by default), the one attachments use. The server announces that limit nowhere, so the preview says it in words, with the usual figure, and warns when the import is larger. When the server refuses (`overQuota`), the import stops: the result gives the server's own message, how many cards were left, and the time until the allowance is back (read from the `Retry-After` of a refused upload). Choosing the same files again later imports only what is missing, because duplicates are skipped before anything is uploaded. Chosen on 2026-10-11 over a parser of our own: Stalwart's reads vCard better than ours would.
 
 ### Export
 
@@ -186,6 +187,6 @@ The dev stack needs no new fixture: every account has an empty default book.
 ## Risks
 
 - **A very large address book.** Everything is in memory and in IndexedDB. Ten thousand cards with photos is about 200 MB; without photos, a few MB. If that proves real, the cache can drop photos first.
-- **Import and the upload quota.** Whether `Blob/upload` counts against Stalwart's 1,000 uploads an hour is not known; it is measured when import is built, and an import that would exceed it says so.
+- **Import and the upload quota.** Measured: every imported card is one of the account's 1,000 uploads an hour. A large import stops at the limit and, until the hour is out, the person may be unable to attach files. Accepted on 2026-10-11; an operator can raise `Jmap.maxUploadCount`.
 - **Addresses lose their components when edited here.** A phone then shows the address as one label. Accepted for a free-text field.
 - **Undo of a delete makes a new id.** A CardDAV client sees a delete and a create.
