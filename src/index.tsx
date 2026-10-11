@@ -353,7 +353,11 @@ async function boot() {
         notMail.delete(id);
       }
       rememberNotMailboxes(localStorage, session.username, notMail);
-      if (became) location.reload();
+      if (became) {
+        // The person may have begun a message since the page came up.
+        rescueDrafts();
+        location.reload();
+      }
     })();
     let restored = 0;
     for (const s of all.list()) {

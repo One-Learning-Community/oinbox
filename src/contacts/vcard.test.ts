@@ -26,7 +26,7 @@ describe('splitVcards', () => {
 describe('peekVcard', () => {
   it('reads a card as Google writes one', () => {
     expect(peekVcard(vc('FN:Zoë Probe', 'N:Probe;Zoë;;;', 'item1.EMAIL;TYPE=INTERNET:Zoe@Work.example', 'item1.X-ABLabel:Work', 'EMAIL;TYPE=INTERNET;TYPE=HOME:zoe@home.example')))
-      .toEqual({ uid: '', emails: ['zoe@work.example', 'zoe@home.example'], name: 'Zoë Probe', group: false });
+      .toMatchObject({ emails: ['zoe@work.example', 'zoe@home.example'], name: 'Zoë Probe', group: false });
   });
   it('reads a uid folded over two lines', () => {
     expect(peekVcard(vc('FN:A', 'UID:urn:uuid:11111111-1111-4111-8111-\r\n 111111111111')).uid).toBe('urn:uuid:11111111-1111-4111-8111-111111111111');
@@ -35,6 +35,13 @@ describe('peekVcard', () => {
     expect(peekVcard(vc('N:Probe\\, Jr;Zoë;;;')).name).toBe('Zoë Probe, Jr');
     expect(peekVcard(vc('EMAIL:only@x.example')).name).toBe('only@x.example');
     expect(peekVcard(vc('TEL:555')).name).toBe('No name');
+  });
+  it('gives a card with no UID one made from its text, the same every time, so the same file is known again', () => {
+    const a = peekVcard(vc('FN:Phone Only', 'TEL:555 0100')).uid;
+    expect(a).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(peekVcard(vc('FN:Phone Only', 'TEL:555 0100')).uid).toBe(a);
+    expect(peekVcard(vc('FN:Phone Only', 'TEL:555 0101')).uid).not.toBe(a);
+    expect(findDuplicates([peekVcard(vc('FN:Phone Only', 'TEL:555 0100'))], [{ id: 'c', addressBookIds: { b: true }, uid: a }])).toEqual({ fresh: [], duplicates: [0] });
   });
   it('leaves out what is no address, and knows a group as Apple and as vCard 4 write one', () => {
     expect(peekVcard(vc('FN:A', 'EMAIL:not an address', 'email:ok@x.example')).emails).toEqual(['ok@x.example']);
@@ -98,7 +105,7 @@ describe('toVcard', () => {
       'TITLE:Head of Research',
       "ADR;TYPE=home;LABEL=\"1 High St\\nLeeds 'LS1'\":;;1 High St\\nLeeds \"LS1\";;;;",
       'BDAY:--0314',
-      'NOTE:Likes tea\; hates coffee\\nSecond line',
+      'NOTE:Likes tea\\; hates coffee\\nSecond line',
       'URL:https://zoe.example',
       'CATEGORIES:vip,friend',
       'PHOTO:data:image/png;base64,iVBORw0KGgo=',
@@ -114,6 +121,13 @@ describe('toVcard', () => {
   it('writes a card with nothing to call it by, and an address kept as parts', () => {
     expect(toVcard(card({}))).toBe('BEGIN:VCARD\r\nVERSION:4.0\r\nFN:No name\r\nEND:VCARD\r\n');
     expect(toVcard(card({ name: { full: 'A' }, addresses: { a: { components: [{ kind: 'name', value: '12 High St' }, { kind: 'locality', value: 'Leeds' }] } } }))).toContain('ADR;LABEL="12 High St, Leeds":;;12 High St\\, Leeds;;;;');
+  });
+  it('escapes a semicolon wherever one would cut a value in two', () => {
+    const text = toVcard(card({ name: { components: [{ kind: 'surname', value: 'Smith; Jones' }, { kind: 'given', value: 'A' }] }, organizations: { o: { name: 'Smith; Jones LLP' } }, addresses: { a: { full: '1 High St; Flat 2' } } }));
+    expect(text).toContain('\r\nN:Smith\\; Jones;A;;;\r\n');
+    expect(text).toContain('\r\nORG:Smith\\; Jones LLP\r\n');
+    expect(text).toContain(':;;1 High St\\; Flat 2;;;;\r\n');
+    expect(peekVcard(splitVcards(text).blocks[0]!).name).toBe('A Smith; Jones');
   });
   it('folds a long line at 75 octets without splitting a character, and it unfolds to the original', () => {
     const note = 'é'.repeat(100);

@@ -253,6 +253,12 @@ describe('createContacts: groups and bulk work', () => {
     expect((await contacts.renameGroup(g.id, ' New ')).ok).toBe(true);
     expect(fake.cards.get(g.id)).toMatchObject({ name: { full: 'New' }, updated: NOW, members: { 'u-ann': true } });
     expect(contacts.groups()[0]!.name?.full).toBe('New');
+    // A group a phone made has a name in parts, which are what is shown: a rename must replace them.
+    const apple = fake.addCard({ kind: 'group', uid: 'g2', name: { full: 'Apple', components: [{ kind: 'surname', value: 'Apple' }] } });
+    await contacts.reload();
+    await contacts.renameGroup(apple.id, 'Pears');
+    expect(contacts.groups().map((x) => x.name)).toContainEqual({ full: 'Pears' });
+    fake.cards.delete(apple.id);
     fake.cards.delete(g.id);
     expect(await contacts.renameGroup(g.id, 'Newer')).toEqual({ ok: false, error: 'This group no longer exists.' });
     expect(await contacts.renameGroup('nope', 'Newer')).toEqual({ ok: false, error: 'This group no longer exists.' });
@@ -453,7 +459,7 @@ describe('createContacts: importing vCards through the server', () => {
     const { contacts } = counted();
     await contacts.start('k');
     await contacts.importVcards([{ text: vc('FN:Crew', 'X-ADDRESSBOOKSERVER-KIND:group', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:A', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:B'), name: 'Crew', uid: '' }]);
-    expect(contacts.groups()[0]).toMatchObject({ kind: 'group', members: { 'urn:uuid:A': true, 'urn:uuid:B': true } });
+    expect(contacts.groups()[0]).toMatchObject({ kind: 'group', members: { A: true, B: true } });
     expect(contacts.people()).toEqual([]);
   });
   it('fails a card too large to send, alone, and saves one too large to store without its photo', async () => {
@@ -464,6 +470,41 @@ describe('createContacts: importing vCards through the server', () => {
     const r = await contacts.importVcards([huge, photo, block(1)]);
     expect(r).toEqual({ imported: 2, failed: [{ name: 'Huge', error: 'This card is too large to import.' }], cancelled: false, left: 0 });
     expect([...fake.cards.values()].find((c) => c.uid === 'u-snap')).not.toHaveProperty('media');
+  });
+  it('keeps the uid a card was told apart by when its text has none', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    await contacts.importVcards([{ text: vc('FN:Phone Only', 'TEL:555'), name: 'Phone Only', uid: 'urn:uuid:from-text' }]);
+    expect([...fake.cards.values()][0]!.uid).toBe('urn:uuid:from-text');
+  });
+  it('links an Apple group to its members, which it names with a prefix their own cards do not have', async () => {
+    const { fake, contacts } = counted();
+    fake.addCard({ uid: 'IN-BOOK', name: { full: 'Already' } });
+    await contacts.start('k');
+    await contacts.importVcards([
+      { text: vc('FN:Ann', 'UID:ABCD-1'), name: 'Ann', uid: 'ABCD-1' },
+      { text: vc('FN:Crew', 'X-ADDRESSBOOKSERVER-KIND:group', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:ABCD-1', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:IN-BOOK', 'X-ADDRESSBOOKSERVER-MEMBER:urn:uuid:ELSEWHERE'), name: 'Crew', uid: '' },
+    ]);
+    expect(contacts.groups()[0]!.members).toEqual({ 'ABCD-1': true, 'IN-BOOK': true, ELSEWHERE: true });
+  });
+  it('counts what was saved before a later request of the same batch was lost', async () => {
+    const { fake, contacts } = counted();
+    await contacts.start('k');
+    // Twelve cards of half a megabyte each: more than one request may carry, so they are saved in two.
+    const big = Array.from({ length: 12 }, (_, i) => ({ text: vc(`FN:Big ${i}`, `UID:u-${i}`, `NOTE:${'é'.repeat(250_000)}`), name: `Big ${i}`, uid: `u-${i}` }));
+    let sets = 0;
+    fake.onCall = (name, args) => {
+      if (name === 'ContactCard/set' && args.create && ++sets === 2) throw new Error('offline');
+    };
+    const r = await contacts.importVcards([...big, ...many(150)]);
+    expect(sets).toBe(2);
+    expect(r.imported).toBeGreaterThan(0);
+    expect(r.failed.length).toBeGreaterThan(0);
+    expect(r.failed.every((f) => f.error === 'offline')).toBe(true);
+    // Every card is saved, named as failed, or counted as not sent: none twice, none lost.
+    expect(r.imported + r.failed.length + r.left).toBe(162);
+    expect(r.left).toBeGreaterThan(0);
+    expect(contacts.people()).toHaveLength(r.imported);
   });
   it('holds whether the import dialog is open', () => {
     const { contacts } = counted();

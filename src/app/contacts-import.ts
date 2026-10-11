@@ -44,29 +44,35 @@ interface Deps {
   bookId: () => Id | undefined;
   now: () => string;
   uid: () => string;
+  /** Whether a card with this uid is in the address book. */
+  hasUid: (uid: string) => boolean;
   /** Bring what was saved into the store. */
   catchUp: () => Promise<void>;
 }
 
-/** What Stalwart's parser leaves under `vCard` and does not understand: a group as Apple's Contacts writes one. */
-function appleGroup(card: ParsedCard): void {
+/**
+ * What Stalwart's parser leaves under `vCard` and does not understand: a group as Apple's Contacts
+ * writes one. It names a member `urn:uuid:<UID>` where the member's own card says `UID:<UID>`.
+ */
+function appleGroup(card: ParsedCard, known: (uid: string) => boolean): void {
   const props = Array.isArray(card.vCard?.properties) ? card.vCard.properties : [];
   const values = (name: string) => props.filter((p) => Array.isArray(p) && p[0] === name).map((p) => String(p[3] ?? '').trim()).filter(Boolean);
   if (!card.kind && values('x-addressbookserver-kind').some((k) => k.toLowerCase() === 'group')) card.kind = 'group';
   const members = values('x-addressbookserver-member');
-  if (members.length) card.members = { ...card.members, ...Object.fromEntries(members.map((m) => [m, true])) };
+  const key = (m: string) => (known(m) ? m : m.replace(/^urn:uuid:/i, ''));
+  if (members.length) card.members = { ...card.members, ...Object.fromEntries(members.map((m) => [key(m), true])) };
 }
 
 export function createImporter(client: JmapClient, deps: Deps) {
   /** A parsed card made ready to save. */
-  const prepare = (parsed: ParsedCard, block: VcardBlock, bookId: Id, newUids: Map<VcardBlock, string>, moved: Map<string, string>): Partial<ContactCard> => {
-    appleGroup(parsed);
+  const prepare = (parsed: ParsedCard, block: VcardBlock, bookId: Id, newUids: Map<VcardBlock, string>, moved: Map<string, string>, known: (uid: string) => boolean): Partial<ContactCard> => {
+    appleGroup(parsed, known);
     const { vCard: _v, ...card } = parsed;
     const now = deps.now();
     card['@type'] = 'Card';
     card.version ??= '1.0';
     card.kind ??= 'individual';
-    card.uid = newUids.get(block) ?? (card.uid || deps.uid());
+    card.uid = newUids.get(block) ?? (card.uid || block.uid || deps.uid());
     card.created ??= now;
     card.updated ??= now;
     card.addressBookIds = { [bookId]: true };
@@ -81,7 +87,7 @@ export function createImporter(client: JmapClient, deps: Deps) {
   };
 
   /** One batch: upload, parse, save. Throws when a request fails as a whole. */
-  const importBatch = async (accountId: Id, bookId: Id, batch: VcardBlock[], newUids: Map<VcardBlock, string>, moved: Map<string, string>) => {
+  const importBatch = async (accountId: Id, bookId: Id, batch: VcardBlock[], newUids: Map<VcardBlock, string>, moved: Map<string, string>, known: (uid: string) => boolean) => {
     const failed: { name: string; error: string }[] = [];
     const b = client.batch();
     const upload = b.call('Blob/upload', { accountId, create: Object.fromEntries(batch.map((block, i) => [`b${i}`, { data: [{ 'data:asText': block.text }], type: 'text/vcard' }])) });
@@ -120,11 +126,12 @@ export function createImporter(client: JmapClient, deps: Deps) {
       if (!blob) return;
       const got = parsed[blob];
       if (!got) return void failed.push({ name: block.name, error: 'This card could not be read.' });
-      const card = prepare(got, block, bookId, newUids, moved);
+      const card = prepare(got, block, bookId, newUids, moved, known);
       cards.push({ card, name: displayName(card as ContactCard) === 'No name' ? block.name : displayName(card as ContactCard) });
     });
 
     let imported = 0;
+    let lost: string | undefined;
     for (let i = 0; i < cards.length; ) {
       // Up to 100 cards of half a megabyte each would be too much for one request.
       const create: Record<string, Partial<ContactCard>> = {};
@@ -136,16 +143,25 @@ export function createImporter(client: JmapClient, deps: Deps) {
         create[`c${i}`] = cards[i]!.card;
         bytes += size;
       }
-      const b3 = client.batch();
-      const set = b3.call('ContactCard/set', { accountId, create });
-      const saved = (await client.send(b3, [CORE, CONTACTS])).get(set);
+      let saved;
+      try {
+        const b3 = client.batch();
+        const set = b3.call('ContactCard/set', { accountId, create });
+        saved = (await client.send(b3, [CORE, CONTACTS])).get(set);
+      } catch (e) {
+        if (e instanceof UnauthorizedError) throw e;
+        // What an earlier request of this batch saved is saved: only these cards, and those after, are not.
+        lost = (e as Error).message;
+        failed.push(...cards.slice(first).map((c) => ({ name: c.name, error: lost! })));
+        break;
+      }
       imported += Object.keys(saved.created ?? {}).length;
       for (const [key, err] of Object.entries(saved.notCreated ?? {})) {
         failed.push({ name: cards[Number(key.slice(1))]!.name, error: err.description ?? `The server refused the card (${err.type}).` });
       }
     }
     const sent = batch.filter((_, i) => blobOf(i)).length + Object.values(uploaded.notCreated ?? {}).filter((e) => e.type !== 'overQuota').length;
-    return { imported, failed, quota, sent };
+    return { imported, failed, quota, sent, lost };
   };
 
   return async (blocks: VcardBlock[], opts: ImportOptions = {}): Promise<ImportResult> => {
@@ -164,6 +180,9 @@ export function createImporter(client: JmapClient, deps: Deps) {
       newUids.set(block, fresh);
       if (block.uid && !moved.has(block.uid)) moved.set(block.uid, fresh);
     }
+
+    const inFile = new Set(blocks.map((b) => b.uid).filter(Boolean));
+    const known = (uid: string) => inFile.has(uid) || deps.hasUid(uid);
 
     let at = 0;
     let done = 0;
@@ -189,10 +208,11 @@ export function createImporter(client: JmapClient, deps: Deps) {
       }
       if (batch.length) {
         try {
-          const out = await importBatch(accountId, bookId, batch, newUids, moved);
+          const out = await importBatch(accountId, bookId, batch, newUids, moved, known);
           result.imported += out.imported;
           result.failed.push(...out.failed);
           done += out.sent;
+          if (out.lost && !out.quota) break;
           if (out.quota) {
             result.quota = { message: out.quota, retryAfter: await client.uploadRetryAfter(accountId) };
             at -= batch.length - out.sent;

@@ -349,18 +349,23 @@ export function createContacts(
     const copy = { ...rest, uid: uid(), updated: now() };
     const made = await createCard(accountId, copy);
     if (!made.ok) return made;
-    const b = client.batch();
-    const set = b.call('ContactCard/set', { accountId, destroy: [id] });
-    const res = (await client.send(b, USING)).get(set);
-    const err = res.notDestroyed?.[id];
-    // Left behind, the old card is a duplicate the person can see and delete; the group has the new one.
-    if (!err || err.type === 'notFound') {
-      batch(() => {
-        setMoved(new Map(moved()).set(id, made.id));
-        put([], [id]);
-      });
+    // Left behind (refused, or the request lost), the old card is a duplicate the person can see and
+    // delete; the group gets the new one either way, or a second try would make a second copy.
+    try {
+      const b = client.batch();
+      const set = b.call('ContactCard/set', { accountId, destroy: [id] });
+      const res = (await client.send(b, USING)).get(set);
+      const err = res.notDestroyed?.[id];
+      if (!err || err.type === 'notFound') {
+        batch(() => {
+          setMoved(new Map(moved()).set(id, made.id));
+          put([], [id]);
+        });
+      }
+      advance(res.oldState, res.newState);
+    } catch (e) {
+      if (e instanceof UnauthorizedError) throw e;
     }
-    advance(res.oldState, res.newState);
     return { ok: true, uid: copy.uid };
   };
 
@@ -468,7 +473,8 @@ export function createContacts(
       guarded(async (accountId0) => {
         const group = groupCard(id);
         if (!group) return { ok: false, error: NO_GROUP };
-        return patchCard(accountId0, id, { name: { ...group.name, full: name.trim() }, updated: now() }, NO_GROUP);
+        // The whole name: parts a phone gave it would otherwise go on being what is shown.
+        return patchCard(accountId0, id, { name: { full: name.trim() }, updated: now() }, NO_GROUP);
       }),
     removeGroup: (id) =>
       guarded(async (accountId0) => {
@@ -530,7 +536,14 @@ export function createContacts(
       }
       return { removed };
     },
-    importVcards: createImporter(client, { accountId, bookId: () => defaultBook()?.id, now, uid, catchUp: () => sync() }),
+    importVcards: createImporter(client, {
+      accountId,
+      bookId: () => defaultBook()?.id,
+      now,
+      uid,
+      hasUid: (wanted) => Object.values(state.cards).some((c) => c.uid === wanted),
+      catchUp: () => sync(),
+    }),
     importOpen,
     openImport: () => void setImportOpen(true),
     closeImport: () => void setImportOpen(false),

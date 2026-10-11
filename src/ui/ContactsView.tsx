@@ -41,7 +41,11 @@ export function ContactsView() {
   const base = () => (params.gid ? `/contacts/group/${encodeURIComponent(params.gid)}` : '/contacts');
   const people = () => (params.gid ? (members()?.people ?? []) : contacts.people());
   const shown = createMemo(() => matchPeople(people(), query()));
-  const open = (): ContactCard | undefined => (params.id ? contacts.state.cards[params.id] : undefined);
+  /** The person on screen. A group's card is no person, whatever the address says. */
+  const open = (): ContactCard | undefined => {
+    const card = params.id ? contacts.state.cards[params.id] : undefined;
+    return card && !isGroup(card) ? card : undefined;
+  };
   const virtual = createVirtualList({ count: () => shown().length, scrollElement: scroller, rowHeight: () => ROW_HEIGHT });
 
   // A card that is gone (deleted on another device, or an old address) has nothing to show: back to

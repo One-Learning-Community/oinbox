@@ -31,6 +31,7 @@ export function splitVcards(text: string): { blocks: string[]; unreadable: numbe
 
 /** What can be told of a card without parsing it: enough to name it and to know a duplicate. */
 export interface VcardPeek {
+  /** The card's UID, or one made from its text when it has none. Never empty. */
   uid: string;
   /** Lower case. */
   emails: string[];
@@ -68,6 +69,30 @@ function contentLines(block: string): [string, string][] {
   return out;
 }
 
+/** A 53-bit hash of a text (cyrb53), as 14 hex digits. */
+function hash(text: string, seed: number): string {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+}
+
+/**
+ * A uid for a card whose text has none, made from the text: the same file gives the same uids, so
+ * a card with neither UID nor email (a phone number and a name) is still known when the file is
+ * chosen a second time.
+ */
+function textUid(block: string): string {
+  const h = hash(block, 1) + hash(block, 2) + hash(block, 3);
+  return `urn:uuid:${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(12, 15)}-8${h.slice(15, 18)}-${h.slice(18, 30)}`;
+}
+
 export function peekVcard(block: string): VcardPeek {
   const lines = contentLines(block);
   const first = (name: string) => lines.find(([n]) => n === name)?.[1] ?? '';
@@ -75,7 +100,7 @@ export function peekVcard(block: string): VcardPeek {
   const [surname = '', given = ''] = parts(first('N'));
   const name = unescape(first('FN')).trim() || [given, surname].filter(Boolean).join(' ') || emails[0] || 'No name';
   const kind = (first('KIND') || first('X-ADDRESSBOOKSERVER-KIND')).trim().toLowerCase();
-  return { uid: first('UID').trim(), emails, name, group: kind === 'group' };
+  return { uid: first('UID').trim() || textUid(block), emails, name, group: kind === 'group' };
 }
 
 /** Indexes into the peeks given. */
@@ -101,7 +126,7 @@ export function findDuplicates(peeks: VcardPeek[], existing: ContactCard[]): Dup
   return { fresh, duplicates };
 }
 
-const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\;').replace(/\r\n|\n|\r/g, '\\n');
+const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\r\n|\n|\r/g, '\\n');
 /** A value written as it is (a URI, an address, a number): only made unable to start a line of its own. */
 const plain = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
 const two = (n: number) => String(n).padStart(2, '0');
