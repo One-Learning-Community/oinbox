@@ -41,7 +41,7 @@ export function uniquePills(pills: Pill[]): Pill[] {
   });
 }
 
-/** The pills and words of a simple query, or null when the query uses OR or brackets. */
+/** The pills and words of a simple query, or null when the query uses OR or brackets, or has a quote inside a word. */
 export function readQuery(input: string): SimpleQuery | null {
   const pills: Pill[] = [];
   const words: string[] = [];
@@ -52,11 +52,15 @@ export function readQuery(input: string): SimpleQuery | null {
       continue;
     }
     if (tok.t === 'op') {
+      // A quote in the middle of a value cannot be written back, so the search stays plain text.
+      if (tok.v.includes('"')) return null;
       // Nothing after the colon yet: text the user is still typing.
       if (tok.v) pills.push({ name: tok.name, value: tok.v, negated });
       else words.push(`${negated ? '-' : ''}${tok.name}:`);
     } else if (tok.t === 'word') {
-      if (negated) pills.push({ name: 'word', value: tok.v, negated: true });
+      if (tok.v.includes('"')) return null;
+      // A negation with nothing in it (-"") searches for nothing, and is no pill.
+      if (negated) tok.v && pills.push({ name: 'word', value: tok.v, negated: true });
       // A word that was quoted may be an OR or an operator in disguise: it goes back quoted.
       else if (tok.v) words.push(quoted(tok.v, tok.quoted));
     } else {

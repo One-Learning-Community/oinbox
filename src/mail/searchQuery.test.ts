@@ -42,6 +42,17 @@ describe('readQuery', () => {
   it.each(['from:bob OR from:nora', 'a | b', '(a b)', '{a b}', 'a )', 'from:bob -(x)'])('says %s is not simple', (q) => {
     expect(readQuery(q)).toBeNull();
   });
+  it.each(['ab"cd', 'foo"bar baz" from:bob', 'from:a"b', '-ab"cd'])('says %s is not simple: a quote inside a word cannot be written back', (q) => {
+    expect(readQuery(q)).toBeNull();
+  });
+  it('still reads a quoted phrase and a quoted value as simple', () => {
+    expect(readQuery('"quoted phrase"')).toEqual({ pills: [], words: '"quoted phrase"' });
+    expect(readQuery('subject:"lunch plans"')).toEqual({ pills: [pill('subject', 'lunch plans')], words: '' });
+  });
+  it('makes no pill of a negation with nothing in it', () => {
+    expect(readQuery('-""')).toEqual({ pills: [], words: '' });
+    expect(readQuery('-"" from:bob lunch')).toEqual({ pills: [pill('from', 'bob')], words: 'lunch' });
+  });
   it('keeps a negated word that only looks like syntax a negated word', () => {
     expect(readQuery('-"OR" -"from:bob"')).toEqual({ pills: [pill('word', 'OR', true), pill('word', 'from:bob', true)], words: '' });
   });
