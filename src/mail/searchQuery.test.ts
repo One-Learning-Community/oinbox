@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseSearch, type SearchContext } from './search';
-import { pillError, pillText, readQuery, uniquePills, writeQuery } from './searchQuery';
+import { pillError, pillLabel, pillText, readQuery, uniquePills, writeQuery } from './searchQuery';
 
 const ctx: SearchContext = {
   mailboxIdByRole: (role) => ({ inbox: 'I', sent: 'S', trash: 'T', junk: 'J', drafts: 'D', archive: 'A' })[role],
@@ -93,5 +93,43 @@ describe('pillError', () => {
   it('is null for a pill the parser accepts', () => {
     expect(pillError(pill('label', 'Client work'), ctx)).toBeNull();
     expect(pillError(pill('word', 'draft', true), ctx)).toBeNull();
+  });
+});
+
+describe('pillLabel', () => {
+  const person = (a: string) => (a === 'nora@customer.test' ? 'Nora Quinn' : undefined);
+  const say = (name: string, value: string, negated = false) => pillLabel(pill(name, value, negated), { person, locale: 'en-GB' });
+
+  it('names a person the app knows, and shows the address of one it does not', () => {
+    expect(say('from', 'nora@customer.test')).toBe('from: Nora Quinn');
+    expect(say('to', 'who@elsewhere.test')).toBe('to: who@elsewhere.test');
+    expect(say('cc', 'NORA@customer.test')).toBe('cc: NORA@customer.test');
+  });
+  it('names the system mailboxes', () => {
+    expect(say('in', 'inbox')).toBe('in: Inbox');
+    expect(say('in', 'bin')).toBe('in: Trash');
+    expect(say('in', 'spam')).toBe('in: Spam');
+    expect(say('in', 'anywhere')).toBe('in: All mail');
+    expect(say('in', 'Finance/2026')).toBe('in: Finance/2026');
+    expect(say('label', 'Finance/2026')).toBe('label: Finance/2026');
+  });
+  it('spells out an age and a date', () => {
+    expect(say('newer_than', '7d')).toBe('newer than: 7 days');
+    expect(say('older_than', '1m')).toBe('older than: 1 month');
+    expect(say('newer_than', '2y')).toBe('newer than: 2 years');
+    expect(say('after', '2026/09/01')).toBe('after: 1 Sept 2026');
+    expect(say('before', '2026-9-1')).toBe('before: 1 Sept 2026');
+  });
+  it('shows a value it cannot read as it was typed', () => {
+    expect(say('after', 'tuesday')).toBe('after: tuesday');
+    expect(say('newer_than', 'soon')).toBe('newer than: soon');
+  });
+  it('says not for a negated pill', () => {
+    expect(say('from', 'bob', true)).toBe('not from: bob');
+    expect(say('word', 'draft', true)).toBe('not: draft');
+  });
+  it('shows other operators as they are', () => {
+    expect(say('has', 'attachment')).toBe('has: attachment');
+    expect(say('larger', '5M')).toBe('larger: 5M');
   });
 });

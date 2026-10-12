@@ -73,3 +73,35 @@ export function pillError(p: Pill, ctx: SearchContext): string | null {
   if (p.name === 'word') return null;
   return parseSearch(pillText({ ...p, negated: false }), ctx).errors[0] ?? null;
 }
+
+const PEOPLE = new Set(['from', 'to', 'cc', 'bcc', 'deliveredto']);
+const DATES = new Set(['before', 'after', 'older', 'newer']);
+const PLACES: Record<string, string> = {
+  inbox: 'Inbox', sent: 'Sent', drafts: 'Drafts', draft: 'Drafts', archive: 'Archive', trash: 'Trash', bin: 'Trash', spam: 'Spam', junk: 'Spam',
+  anywhere: 'All mail', all: 'All mail',
+};
+const UNITS: Record<string, string> = { d: 'day', m: 'month', y: 'year' };
+
+function valueLabel(p: Pill, opts: { person?: (address: string) => string | undefined; locale?: string }): string {
+  if (PEOPLE.has(p.name)) return opts.person?.(p.value) ?? p.value;
+  if (p.name === 'in') return PLACES[p.value.toLowerCase()] ?? p.value;
+  if (p.name === 'older_than' || p.name === 'newer_than') {
+    const m = /^(\d+)([dmy])$/i.exec(p.value);
+    if (!m) return p.value;
+    const n = Number(m[1]);
+    return `${n} ${UNITS[m[2]!.toLowerCase()]}${n === 1 ? '' : 's'}`;
+  }
+  if (DATES.has(p.name)) {
+    const m = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(p.value);
+    if (!m) return p.value;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(opts.locale, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  return p.value;
+}
+
+/** The pill as the box shows it: `from: Nora Quinn`, `not: draft`, `newer than: 7 days`. */
+export function pillLabel(p: Pill, opts: { person?: (address: string) => string | undefined; locale?: string } = {}): string {
+  const name = p.name === 'word' ? '' : p.name.replace(/_/g, ' ');
+  const lead = p.negated ? (name ? `not ${name}` : 'not') : name;
+  return `${lead}: ${valueLabel(p, opts)}`;
+}
