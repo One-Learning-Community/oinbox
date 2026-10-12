@@ -671,7 +671,7 @@ a { color: var(--accent); }
   .link-btn, .images-banner button, .msg-toggle, .toast-action, .toast-close, .compose-retry { min-height: 44px; min-width: 44px; }
   .images-banner button { text-align: left; }
   .compose-format button { min-width: 44px; height: 44px; }
-  .search-box input, .compose-subject, .rozie-combobox-input, .settings input, .settings textarea, .settings select, .event-form input[type='text'], .event-form select { min-height: 44px; }
+  .search-box-form input, .compose-subject, .rozie-combobox-input, .settings input, .settings textarea, .settings select, .event-form input[type='text'], .event-form select { min-height: 44px; }
   .row .row-check, .toolbar label:has(input[type='checkbox']) { min-width: 44px; min-height: 44px; }
   /* The whole calendar row is the target; the checkbox itself is 12px and invisible. */
   .cal-toggle { min-height: 44px; display: flex; align-items: center; }
