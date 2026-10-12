@@ -25,7 +25,11 @@ const quoted = (v: string, always = false): string => {
 
 /** The pill as query text: `from:bob`, `-label:"Client work"`, `-draft`. */
 export function pillText(p: Pill): string {
-  return (p.negated ? '-' : '') + (p.name === 'word' ? quoted(p.value) : `${p.name}:${quoted(p.value)}`);
+  if (p.name !== 'word') return (p.negated ? '-' : '') + `${p.name}:${quoted(p.value)}`;
+  // A word is written bare only when the tokenizer reads it back as that one plain word.
+  const toks = tokenize(p.value);
+  const bare = !p.value.includes('"') && toks.length === 1 && toks[0]!.t === 'word' && toks[0]!.v === p.value;
+  return (p.negated ? '-' : '') + quoted(p.value, !bare);
 }
 
 /** The pills without any that says what an earlier one says. */

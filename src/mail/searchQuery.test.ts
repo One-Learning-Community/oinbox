@@ -42,6 +42,9 @@ describe('readQuery', () => {
   it.each(['from:bob OR from:nora', 'a | b', '(a b)', '{a b}', 'a )', 'from:bob -(x)'])('says %s is not simple', (q) => {
     expect(readQuery(q)).toBeNull();
   });
+  it('keeps a negated word that only looks like syntax a negated word', () => {
+    expect(readQuery('-"OR" -"from:bob"')).toEqual({ pills: [pill('word', 'OR', true), pill('word', 'from:bob', true)], words: '' });
+  });
   it('keeps words that only look like syntax', () => {
     expect(readQuery('"OR" "from:bob" follow-up -')).toEqual({ pills: [], words: '"OR" "from:bob" follow-up -' });
   });
@@ -56,6 +59,12 @@ describe('writeQuery', () => {
     expect(pillText(pill('subject', 'the "big" one'))).toBe('subject:"the big one"');
     expect(pillText(pill('word', 'two words', true))).toBe('-"two words"');
   });
+  it('quotes a negated word that would otherwise read as syntax', () => {
+    expect(pillText(pill('word', 'OR', true))).toBe('-"OR"');
+    expect(pillText(pill('word', 'from:bob', true))).toBe('-"from:bob"');
+    expect(pillText(pill('word', '-x', true))).toBe('-"-x"');
+    expect(pillText(pill('word', 'draft', true))).toBe('-draft');
+  });
   it('writes nothing for an empty query', () => {
     expect(writeQuery({ pills: [], words: '  ' })).toBe('');
   });
@@ -66,7 +75,7 @@ describe('round trip', () => {
     'from:bob', 'to:nora@customer.test', 'cc:carol', 'bcc:dan', 'subject:"lunch plans"', 'has:attachment', 'is:unread', 'is:starred',
     'in:inbox', 'in:anywhere', 'label:work', 'label:"Client work"', 'before:2026/09/01', 'after:2026/08/01', 'older:2026/09/01', 'newer:2026/08/01',
     'older_than:7d', 'newer_than:1m', 'larger:5M', 'smaller:100K', 'size:1M', 'deliveredto:alice', 'list:announce', 'filename:report.pdf',
-    '-from:bob', '-is:unread', '-draft', 'invoice', '"quarterly report"',
+    '-from:bob', '-is:unread', '-draft', '-"OR"', '-"|"', '-"from:bob"', '-"-x"', 'invoice', '"quarterly report"',
     'invoice from:bob urgent -label:work has:attachment "exact phrase" -spam',
   ];
   it.each(SIMPLE)('reads back what it wrote: %s', (q) => {
