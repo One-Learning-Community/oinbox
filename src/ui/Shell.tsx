@@ -4,7 +4,7 @@ import { branding } from '../app/branding';
 import { useApp } from '../app/context';
 import { createNotifier, notifications, tabTitle } from '../app/notify';
 import type { Mailbox } from '../jmap/types';
-import { isLabel, labelPath, mailboxSlug, resolveView, searchSlug, sidebarMailboxes } from '../sync/selectors';
+import { isLabel, labelPath, mailboxSlug, resolveView, sidebarMailboxes } from '../sync/selectors';
 import { bannerText, vacationStatus } from '../mail/settings';
 import { AccountSwitcher } from './AccountSwitcher';
 import { BrandMark } from './Brand';
@@ -24,6 +24,7 @@ import { LabelMenu } from './LabelMenu';
 import { missingViewText } from './nav';
 import { PaneBoundary } from './PaneBoundary';
 import { useAccountPath } from './path';
+import { SearchBox } from './SearchBox';
 import { HelpDialog, MailboxPicker } from './Overlays';
 import { latestReplyable } from './Conversation';
 import { ThreadList } from './ThreadList';
@@ -150,48 +151,6 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
       <LinkDialog />
       <props.confirmHost />
     </div>
-  );
-}
-
-function SearchBox() {
-  const navigate = useNavigate();
-  const path = useAccountPath();
-  // Mirror the current search route into the box (back/forward, deep links).
-  const routeQuery = () => {
-    const m = /^\/search\/([^/]+)/.exec(path());
-    return m ? decodeURIComponent(m[1]!) : '';
-  };
-  const [text, setText] = createSignal(routeQuery());
-  createEffect(on(routeQuery, (q) => setText(q)));
-
-  const submit = (e: SubmitEvent) => {
-    e.preventDefault();
-    const q = text().trim();
-    navigate(q ? `/${searchSlug(q)}` : '/inbox');
-    (document.activeElement as HTMLElement | null)?.blur();
-  };
-
-  return (
-    <form class="search-box" role="search" onSubmit={submit}>
-      <button class="icon-btn" type="submit" aria-label="Search" style={{ width: '36px', height: '36px' }}>
-        <Icon name="search" />
-      </button>
-      <input
-        id="search-input"
-        type="search"
-        placeholder="Search mail"
-        aria-label="Search mail"
-        autocomplete="off"
-        value={text()}
-        onInput={(e) => setText(e.currentTarget.value)}
-        onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
-      />
-      <Show when={text()}>
-        <button class="icon-btn" type="button" aria-label="Clear search" style={{ width: '36px', height: '36px' }} onClick={() => { setText(''); if (routeQuery()) navigate('/inbox'); }}>
-          <Icon name="close" />
-        </button>
-      </Show>
-    </form>
   );
 }
 

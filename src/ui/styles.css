@@ -108,6 +108,31 @@ a { color: var(--accent); }
 }
 .search-box:focus-within { background: var(--surface); box-shadow: var(--shadow); outline: 2px solid var(--accent); outline-offset: -2px; }
 .search-box input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 16px; color: var(--text); outline: none; min-width: 0; }
+/* The search box with pills: rozie Combobox, drawn to sit inside the rounded box. */
+.search-pills { height: auto; min-height: 48px; }
+.search-pills .rozie-combobox { flex: 1; min-width: 0; }
+.search-pills {
+  --rozie-combobox-bg: transparent;
+  --rozie-combobox-color: var(--text);
+  --rozie-combobox-border-width: 0;
+  --rozie-combobox-focus-ring-width: 0;
+  --rozie-combobox-font: inherit;
+  --rozie-combobox-inline-padding: 6px 0;
+  --rozie-combobox-inline-input-padding: 4px 0;
+  --rozie-combobox-inline-input-min-width: 100px;
+  --rozie-combobox-chip-gap: 4px;
+  --rozie-combobox-chip-bg: var(--chip);
+  --rozie-combobox-chip-color: var(--text);
+  --rozie-combobox-list-bg: var(--surface);
+  --rozie-combobox-list-border-color: var(--border);
+  --rozie-combobox-list-shadow: var(--shadow);
+  --rozie-combobox-option-active-bg: var(--hover);
+  --rozie-combobox-option-color: var(--text);
+}
+/* On a phone the plain box is 44px high (.topbar .search-box); with pills it grows instead. */
+.topbar .search-pills { height: auto; min-height: 44px; }
+.search-pill { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.search-pill-error { color: var(--danger-text); text-decoration: underline wavy; }
 .topbar .spacer { flex: 1; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; }
 .status-dot.online { background: #1e8e3e; }

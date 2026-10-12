@@ -1,0 +1,249 @@
+import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
+import { useNavigate } from '@solidjs/router';
+import { createEffect, createMemo, createSignal, on, onMount, Show, type JSX } from 'solid-js';
+import { useApp } from '../app/context';
+import { suggesting, suggestions, type Suggestion } from '../app/searchSuggest';
+import { pillError, pillLabel, pillText, readQuery, uniquePills, writeQuery, type Pill, type SimpleQuery } from '../mail/searchQuery';
+import { labelPath, searchContext, searchSlug } from '../sync/selectors';
+import { Icon } from './icons';
+import { useAccountPath } from './path';
+
+interface Option {
+  value: string;
+  label: string;
+  suggestion: Suggestion;
+}
+
+/** A bare "in:" should list every label, not only the first few the default limit allows. */
+const MAILBOX_SUGGESTIONS = 50;
+const NOBODY = new Set<string>();
+const BUTTON = { width: '36px', height: '36px' };
+
+/**
+ * The search box. A search whose terms are simply ANDed shows its operators as pills and its
+ * words as text; one with OR or brackets is plain text, as it always was. Either way the query
+ * string in the address is what is searched for.
+ */
+export function SearchBox() {
+  const navigate = useNavigate();
+  const path = useAccountPath();
+  // Mirror the current search route into the box (back/forward, deep links).
+  const routeQuery = () => {
+    const m = /^\/search\/([^/]+)/.exec(path());
+    return m ? decodeURIComponent(m[1]!) : '';
+  };
+  const simple = createMemo(() => readQuery(routeQuery()));
+  const go = (q: string) => navigate(q.trim() ? `/${searchSlug(q)}` : '/inbox');
+
+  return (
+    <Show when={simple()} fallback={<PlainBox query={routeQuery()} go={go} />}>
+      {(q) => <PillBox query={q()} searching={!!routeQuery()} go={go} />}
+    </Show>
+  );
+}
+
+/** A search with OR or brackets: the text field of old. */
+function PlainBox(props: { query: string; go: (q: string) => void; end?: (query: () => SimpleQuery | null) => JSX.Element }) {
+  const [text, setText] = createSignal(props.query);
+  createEffect(on(() => props.query, (q) => setText(q), { defer: true }));
+
+  const submit = (e: SubmitEvent) => {
+    e.preventDefault();
+    props.go(text());
+    (document.activeElement as HTMLElement | null)?.blur();
+  };
+
+  return (
+    <form class="search-box" role="search" onSubmit={submit}>
+      <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
+        <Icon name="search" />
+      </button>
+      <input
+        id="search-input"
+        type="search"
+        placeholder="Search mail"
+        aria-label="Search mail"
+        autocomplete="off"
+        value={text()}
+        onInput={(e) => setText(e.currentTarget.value)}
+        onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
+      />
+      <Show when={text()}>
+        <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={() => { setText(''); if (props.query) props.go(''); }}>
+          <Icon name="close" />
+        </button>
+      </Show>
+      {props.end?.(() => readQuery(text()))}
+    </form>
+  );
+}
+
+/** A simple search: rozie Combobox holds the pills as chips and the words in its input. */
+function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string) => void; end?: (query: () => SimpleQuery | null) => JSX.Element }) {
+  const { engine, recipients } = useApp();
+  const [pills, setPills] = createSignal<Pill[]>(props.query.pills);
+  const [text, setText] = createSignal(props.query.words);
+  let handle: ComboboxHandle | undefined;
+  let root: HTMLFormElement | undefined;
+  const input = () => root?.querySelector<HTMLInputElement>('input.rozie-combobox-input') ?? null;
+
+  /** Sets the words, here and in Combobox's input (which says nothing when it is written to). */
+  const write = (t: string) => {
+    setText(t);
+    handle?.seedQuery(t);
+  };
+  createEffect(on(() => props.query, (q) => { setPills(q.pills); write(q.words); }, { defer: true }));
+  onMount(() => {
+    // Combobox takes no id for its input; the "/" shortcut and the tests find the box by this one.
+    const el = input();
+    if (el) el.id = 'search-input';
+  });
+
+  const ctx = createMemo(() => searchContext(engine.state.mailboxes));
+  const person = (address: string) => {
+    const key = address.toLowerCase();
+    return recipients.suggest(address, NOBODY).find((r) => r.email.toLowerCase() === key)?.name || undefined;
+  };
+
+  const at = createMemo(() => suggesting(text()));
+  const options = createMemo<Option[]>(() => {
+    const a = at();
+    if (!a) return [];
+    const have = new Set(pills().map(pillText));
+    const mailboxes = Object.values(engine.state.mailboxes);
+    const limit = a.name === 'in' || a.name === 'label' ? MAILBOX_SUGGESTIONS : undefined;
+    return suggestions(a, { people: (q) => recipients.suggest(q, NOBODY), mailboxes, path: (m) => labelPath(m, engine.state.mailboxes) }, limit)
+      // Combobox toggles a value it already holds, so what is already a pill is never offered.
+      .filter((s) => !have.has(pillText(s.pill)))
+      .map((s) => ({ value: pillText(s.pill), label: s.label, suggestion: s }));
+  });
+
+  const add = (more: Pill[]) => setPills(uniquePills([...pills(), ...more]));
+
+  const onSearch = (typed: string) => {
+    // A space ends a value, unless it is inside quotes still open.
+    if (/\s$/.test(typed) && (typed.split('"').length - 1) % 2 === 0) {
+      const q = readQuery(typed);
+      if (q?.pills.length) {
+        add(q.pills);
+        return write(q.words ? `${q.words} ` : '');
+      }
+    }
+    setText(typed);
+  };
+
+  const submit = (e: SubmitEvent) => {
+    e.preventDefault();
+    const typed = text().trim();
+    const q = readQuery(typed);
+    if (q) {
+      const all = uniquePills([...pills(), ...q.pills]);
+      setPills(all);
+      write(q.words);
+      props.go(writeQuery({ pills: all, words: q.words }));
+    } else {
+      // OR or a bracket was typed: the whole search becomes plain text.
+      props.go(`${writeQuery({ pills: pills(), words: '' })} ${typed}`);
+    }
+    input()?.blur();
+  };
+
+  // Runs before Combobox's own handler, which would drop the last pill outright.
+  const onBackspace = (e: KeyboardEvent) => {
+    const el = input();
+    if (e.key !== 'Backspace' || e.target !== el || el?.value !== '' || !pills().length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const last = pills()[pills().length - 1]!;
+    setPills(pills().slice(0, -1));
+    write(pillText(last));
+  };
+
+  const clear = () => {
+    setPills([]);
+    write('');
+    if (props.searching) props.go('');
+    else input()?.focus();
+  };
+
+  return (
+    <form
+      ref={(el) => {
+        root = el;
+        el.addEventListener('keydown', onBackspace, true);
+      }}
+      class="search-box search-pills"
+      role="search"
+      onSubmit={submit}
+      // Combobox takes Escape only to close a list that is showing.
+      onKeyDown={(e) => e.key === 'Escape' && !e.defaultPrevented && input()?.blur()}
+    >
+      <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
+        <Icon name="search" />
+      </button>
+      <Combobox
+        // Combobox hands over its handle once it has mounted, which is after this component's onMount.
+        ref={(h) => {
+          handle = h;
+          h.seedQuery(props.query.words);
+        }}
+        multiple
+        disableFilter
+        block
+        chipLayout="inline"
+        disableOpenOnFocus
+        hideEmpty
+        idBase="search"
+        ariaLabel="Search mail"
+        placeholder={pills().length ? '' : 'Search mail'}
+        value={pills().map(pillText)}
+        options={options()}
+        onSearch={(e) => onSearch(e.query)}
+        onChange={(e) => {
+          if (e.selected && e.option) {
+            add([(e.option as Option).suggestion.pill]);
+            write(at()?.before ?? '');
+          } else {
+            const kept = new Set(e.value as string[]);
+            const next = pills().filter((p) => kept.has(pillText(p)));
+            setPills(next);
+            if (props.searching) props.go(writeQuery({ pills: next, words: text() }));
+          }
+        }}
+        chipSlot={(chip) => (
+          <Show when={pills()[chip.index]}>
+            {(p) => {
+              const label = () => pillLabel(p(), { person, locale: navigator.language });
+              const bad = () => pillError(p(), ctx());
+              return (
+                <>
+                  <span class="search-pill" classList={{ 'search-pill-error': !!bad() }} title={bad() ?? pillText(p())}>{label()}</span>
+                  <button type="button" class="rcpt-chip-remove" aria-label={`Remove ${label()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => chip.remove()}>
+                    ×
+                  </button>
+                </>
+              );
+            }}
+          </Show>
+        )}
+        optionSlot={(o) => {
+          const s = () => (o.option as Option).suggestion;
+          return (
+            <span class="rcpt-option">
+              <span class="rcpt-name">{s().label}</span>
+              <Show when={s().detail}>
+                <span class="rcpt-email">{s().detail}</span>
+              </Show>
+            </span>
+          );
+        }}
+      />
+      <Show when={pills().length || text()}>
+        <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={clear}>
+          <Icon name="close" />
+        </button>
+      </Show>
+      {props.end?.(() => readQuery(writeQuery({ pills: pills(), words: text() })))}
+    </form>
+  );
+}
