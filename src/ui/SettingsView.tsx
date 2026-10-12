@@ -1,13 +1,15 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, For, lazy, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { identityLabel } from '../app/settings';
 import { versionLabel } from '../app/version';
 import type { Id } from '../jmap/types';
 import { signatureForCompose } from '../mail/settings';
-import { IdentityDialog } from './IdentityDialog';
 import { NotificationsSection } from './NotificationsSection';
 import { PasswordSection } from './PasswordSection';
 import { VacationForm } from './VacationForm';
+
+// The signature editor is TipTap, half of the app's script: load it when the dialog is first opened.
+const IdentityDialog = lazy(() => import('./IdentityDialog').then((m) => ({ default: m.IdentityDialog })));
 
 export function SettingsView() {
   // Read here, inside the context: a prop is evaluated where it is used, which may be an event handler.

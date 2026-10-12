@@ -12,6 +12,15 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 ### Changed
 
 - Search: `to:` now also finds mail the person was copied on. `cc:` still matches Cc alone.
+- The app starts with about half the script it did (484 kB, 144 kB compressed, from 906 kB and 276 kB): the signature editor in Settings no longer brings the text editor into the first download. It arrives when a message or a signature is first written.
+- Phones: the theme and sign-out buttons are in the drawer, and the search has their room in the top bar. The calendar's toolbar is two rows, the title with the arrows and then the rest, and a week's columns are headed "Mon 12". An open message's date has a line of its own. The drawer is 56px short of the screen on narrow phones, so there is somewhere to tap to close it.
+- Phones: the on-screen keyboard shows "@" in the recipient fields and "Search" on its Return key in the search box, and neither capitalises nor corrects what is typed there.
+
+### Fixed
+
+- iPhone: tapping a text field no longer zooms the page in. Every field's text is 16px on touch screens.
+- Phones: a new message fits the part of the screen the on-screen keyboard leaves, with its title bar and Send in sight and the rest scrolling between them. Not yet checked on a device (docs/beta-audit.md, P1). On a phone turned on its side the composer scrolls, where Send could not be reached.
+- Phones: the identity dialog's fields and its Save button ran past the dialog's right edge. "Cc/Bcc" sat across the line under the To field. The field for the next recipient took a row of its own beside a short chip. The calendar form's select was 24px high. A grey strip, the closed drawer's shadow, showed at the left edge of every screen, and the closed drawer's links could still be reached with Tab. A tapped row in the list kept its hover shadow.
 
 ## 0.1.0-beta.4
 

@@ -80,6 +80,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+/* A phone turned on its side keeps the text its size, and a double tap is two taps, not a zoom (pinching still zooms). */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
 body { background: var(--bg); color: var(--text); font: 14px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
 /* A search match. The browser's own yellow in the light theme; amber in the dark one, where that yellow glares. */
 mark { background: var(--mark-bg); color: var(--mark-text); }
@@ -184,6 +186,9 @@ a { color: var(--accent); }
   color: var(--text); text-decoration: none; font-size: 14px; white-space: nowrap;
 }
 .nav-item:hover { background: var(--hover); }
+button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+/* Theme and sign-out, in the drawer on a phone; on a wide screen they are in the top bar. */
+.nav-foot { display: none; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--border); }
 .nav-item.active { background: var(--accent-soft); font-weight: 700; }
 .nav-item svg { width: 20px; height: 20px; flex: none; color: var(--text-2); }
 .nav-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
@@ -231,7 +236,10 @@ a { color: var(--accent); }
 }
 .row.unread { background: var(--unread-row); }
 .row.unread .who, .row.unread .subject, .row.unread .date { font-weight: 700; color: var(--text); }
-.row:hover { box-shadow: inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px 0 rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%); z-index: 1; }
+/* Only where there is a pointer to hover with: on a touch screen the last row tapped would keep the shadow. */
+@media (hover: hover) {
+  .row:hover { box-shadow: inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, 0 1px 2px 0 rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%); z-index: 1; }
+}
 .row.cursor { box-shadow: inset 4px 0 0 var(--accent); }
 .row.selected { background: var(--selected); }
 .row .star { color: var(--text-3); width: 32px; height: 32px; }
@@ -346,7 +354,12 @@ a { color: var(--accent); }
      (a press on it leaves the focus where it is: keepFocus in SearchBox.tsx). */
   .topbar .search-box-form:not(:focus-within) > .search-clear { display: none; }
   .topbar .hide-mobile { display: none; }
-  .msg-head .msg-date { font-size: 11px; max-width: 30%; white-space: normal; text-align: right; }
+  /* An open message's date is long ("Sep 25, 2026, 5:28 PM (17 days ago)"): beside the name it wrapped onto three
+     lines, so it has a line of its own, under the name and the recipients (52px: the avatar and its gap). */
+  .msg:not(.collapsed) .msg-head { flex-wrap: wrap; row-gap: 0; }
+  .msg:not(.collapsed) .msg-head .msg-date { order: 1; flex-basis: 100%; padding-left: 52px; }
+  /* The name and the address share a line when both fit, level with each other, and take two when they do not. */
+  .msg-meta > div:first-child { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; }
   .msg-head .addr { display: none; }
   /* The sender's address is the way to their card, so it stays, cut short if it must be. */
   .msg-head .person.addr { display: inline-block; max-width: 100%; margin-left: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
@@ -357,10 +370,13 @@ a { color: var(--accent); }
   .brand { width: auto; }
   .brand span { display: none; }
   .sidebar {
-    position: fixed; inset: 0 auto 0 0; width: 280px; z-index: 20; background: var(--bg); padding-top: 16px;
-    transform: translateX(-100%); transition: transform .2s ease; box-shadow: var(--shadow);
+    position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100vw - 56px)); z-index: 20; background: var(--bg); padding-top: 16px;
+    overscroll-behavior: contain;
+    /* Closed, it is off the screen and out of reach of Tab and of a screen reader; its shadow would show at the screen's edge. */
+    transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility .2s;
   }
-  .sidebar.open { transform: none; }
+  .sidebar.open { transform: none; visibility: visible; box-shadow: var(--shadow); }
+  .nav-foot { display: block; }
   .scrim { position: fixed; inset: 0; z-index: 19; background: rgb(0 0 0 / 40%); }
   .main { margin: 0; border-radius: 0; }
   .row { flex-wrap: wrap; align-content: center; gap: 0 8px; padding: 8px 12px; }
@@ -419,7 +435,9 @@ a { color: var(--accent); }
 .link-btn:hover { color: var(--text); text-decoration: underline; }
 .compose-dock { position: fixed; right: 16px; bottom: 0; z-index: 30; display: flex; align-items: flex-end; gap: 16px; pointer-events: none; }
 .composer { display: flex; flex-direction: column; background: var(--surface); color: var(--text); pointer-events: auto; }
-.compose-dock .composer { width: 540px; max-height: min(640px, calc(100vh - 80px)); border-radius: 12px 12px 0 0; box-shadow: 0 8px 10px 1px rgb(0 0 0 / 14%), 0 3px 14px 2px rgb(0 0 0 / 12%), 0 5px 5px -3px rgb(0 0 0 / 20%); }
+.compose-dock .composer { width: 540px; max-height: min(640px, calc(100dvh - 80px)); border-radius: 12px 12px 0 0; box-shadow: 0 8px 10px 1px rgb(0 0 0 / 14%), 0 3px 14px 2px rgb(0 0 0 / 12%), 0 5px 5px -3px rgb(0 0 0 / 20%); }
+/* In a window too short for it (a phone on its side) the composer scrolls, so that Send can be reached. */
+@media (max-height: 560px) { .compose-dock .composer { overflow-y: auto; } .compose-dock .composer > * { flex: none; } }
 .composer.inline { margin: 8px 16px 16px 68px; border-radius: 12px; box-shadow: var(--shadow); }
 .composer.dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
 .composer-title { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 16px; background: var(--surface-2); border-radius: 12px 12px 0 0; font-weight: 500; }
@@ -487,9 +505,17 @@ a { color: var(--accent); }
 @media (pointer: coarse) { .account-button, .account-item { min-height: 44px; } }
 /* A height, not a min-height: WebKit sizes a native select from its line and ignores the minimum. */
 @media (pointer: coarse) { .compose-field select { height: 44px; } }
+/* On a phone the field for the next address stays beside a chip while 64px are left, instead of taking a row of its own. */
+@media (max-width: 800px) { .recipient-field { --rozie-combobox-inline-input-min-width: 64px; } }
 @media (max-width: 800px) {
-  .compose-dock { inset: 0; right: 0; }
-  .compose-dock .composer { width: 100%; height: 100%; max-height: none; border-radius: 0; }
+  /* The whole screen, less what an on-screen keyboard covers (visible.ts). */
+  .compose-dock { inset: var(--covered-top, 0px) 0 var(--covered-bottom, 0px) 0; }
+  /* What is left above a keyboard is short: the message scrolls as one, under its title, and Send stays in sight. */
+  .compose-dock .composer { width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .compose-dock .composer > * { flex: none; }
+  .compose-dock .composer-title { position: sticky; top: 0; z-index: 1; border-radius: 0; }
+  .compose-dock .compose-body { flex: 1 0 auto; overflow: visible; }
+  .compose-dock .composer-actions { position: sticky; bottom: 0; z-index: 1; background: var(--surface); }
   .composer.inline { margin: 8px; }
   .reply-bar { padding-left: 16px; flex-wrap: wrap; }
 }
@@ -534,7 +560,7 @@ a { color: var(--accent); }
   --rozie-combobox-bg: var(--surface);
   --rozie-combobox-color: var(--text);
   --rozie-dialog-max-width: min(640px, calc(100vw - 32px));
-  --rozie-dialog-max-height: 80vh;
+  --rozie-dialog-max-height: 80dvh;
   --rozie-dialog-bg: var(--surface);
   --rozie-dialog-color: var(--text);
   --rozie-dialog-border: 0;
@@ -638,6 +664,8 @@ a { color: var(--accent); }
 .identity-actions { display: flex; gap: 8px; flex: none; }
 .btn[aria-disabled='true'] { opacity: 0.6; cursor: default; }
 .settings-form { display: flex; flex-direction: column; gap: 4px; width: min(560px, 86vw); }
+/* In a dialog: the screen less the dialog's margins (16px a side) and padding (24px a side). */
+.rozie-dialog .settings-form { width: min(560px, calc(100vw - 80px)); }
 .password-form #password-next-hint { margin-bottom: 10px; }
 .settings-form .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
 .settings-form input, .settings-form textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px; }
@@ -678,6 +706,19 @@ a { color: var(--accent); }
 @media (pointer: coarse) { .connection-banner button { min-height: 44px; } }
 
 .fc-event.cancelled { opacity: 0.5; text-decoration: line-through; }
+/* Phone: the calendar's toolbar is two rows, the title with the arrows, then Today and New event with the views.
+   FullCalendar groups them as arrows+today+new | title | views; the first group is dissolved so its parts can be placed. */
+@media (max-width: 800px) {
+  .calendar-host { padding: 8px; }
+  .calendar-view .fc .fc-header-toolbar { flex-wrap: wrap; gap: 8px 6px; margin-bottom: 8px; }
+  .calendar-view .fc .fc-header-toolbar > .fc-toolbar-chunk:first-child { display: contents; }
+  .calendar-view .fc .fc-header-toolbar > .fc-toolbar-chunk:nth-child(2) { order: 1; flex: 1 1 calc(100% - 110px); min-width: 0; }
+  .calendar-view .fc .fc-header-toolbar > .fc-toolbar-chunk:first-child > .fc-button-group { order: 2; }
+  .calendar-view .fc .fc-header-toolbar > .fc-toolbar-chunk:first-child > .fc-button { order: 3; margin-left: 0; }
+  .calendar-view .fc .fc-header-toolbar > .fc-toolbar-chunk:last-child { order: 4; margin-left: auto; }
+  .calendar-view .fc .fc-toolbar-title { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .calendar-view .fc .fc-button { padding-left: 10px; padding-right: 10px; }
+}
 
 .invite-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
 .invite-card h3 { margin: 0 0 4px; font-size: 16px; }
@@ -704,6 +745,16 @@ a { color: var(--accent); }
   /* The whole calendar row is the target; the checkbox itself is 12px and invisible. */
   .cal-toggle { min-height: 44px; display: flex; align-items: center; }
   .cal-toggle input { inset: 0; width: 100%; height: 100%; margin: 0; }
+  /* A height, not a min-height: WebKit sizes a native select from its line and ignores the minimum. */
+  .event-form select, .link-field select { height: 44px; }
+  /* iOS Safari zooms the page in when a field whose text is under 16px takes the focus, and does not zoom back.
+     Every field, whatever its own rule says: hence !important. */
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']), select, textarea, [contenteditable='true'] { font-size: 16px !important; }
+  /* The search field's row stays 24px (--sb-row) at that size: a 20px line and the 2px of padding above and below. */
+  .search-pills input.rozie-combobox-input { line-height: 20px; }
+  /* Under the last row of the To field, at its right end, not across the line below it: 44px, the row's 4px of padding and the border. */
+  .compose-cc-toggle { margin: -49px 16px 5px 0; }
+  .recipient-field .rcpt-chip-remove { min-height: 44px; min-width: 32px; }
 }
 
 /* ---- Phone: the search field takes the top bar while it is in use (P4) ---- */
@@ -865,7 +916,7 @@ div.import-warning { display: flex; flex-direction: column; gap: 6px; }
 
 /* The contact dialog: a long form whose body scrolls while the title and the buttons stay put. */
 .rozie-dialog.contact-dialog { --rozie-dialog-max-width: 600px; }
-.contact-form { display: flex; flex-direction: column; width: min(552px, calc(100vw - 80px)); max-height: calc(80vh - 40px); }
+.contact-form { display: flex; flex-direction: column; width: min(552px, calc(100vw - 80px)); max-height: calc(80dvh - 40px); }
 .contact-form-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px 4px 2px 2px; }
 /* The body scrolls: its rows keep their height and are never squeezed to fit. */
 .contact-form-body > * { flex: none; }

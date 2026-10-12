@@ -159,7 +159,12 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
   onMount(() => {
     // Combobox takes no id for its input; the "/" shortcut and the tests find the box by this one.
     const el = input();
-    if (el) el.id = 'search-input';
+    if (!el) return;
+    el.id = 'search-input';
+    // Nor attributes for it. An on-screen keyboard must not capitalise `from:` or correct an address, and its Return key says Search.
+    el.autocapitalize = 'off';
+    el.setAttribute('autocorrect', 'off');
+    el.enterKeyHint = 'search';
   });
 
   const ctx = createMemo(() => searchContext(engine.state.mailboxes));

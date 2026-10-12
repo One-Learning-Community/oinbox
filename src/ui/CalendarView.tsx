@@ -75,6 +75,8 @@ export function CalendarView() {
   };
   const options = {
     ...CALENDAR_OPTIONS,
+    // A phone's week has about 40px for a day: the weekday and the day, without the month.
+    ...(window.innerWidth < 700 ? { views: { timeGridWeek: { dayHeaderFormat: { weekday: 'short' as const, day: 'numeric' as const } } } } : {}),
     customButtons: { newEvent: { text: 'New event', hint: 'New event', click: (_e: MouseEvent, el: HTMLElement) => newEvent(el) } },
   };
 

@@ -38,6 +38,7 @@ import { MailView, Shell } from './ui/Shell';
 import { SignIn } from './ui/SignIn';
 import { createNav } from './ui/nav';
 import { createToasts } from './ui/Toasts';
+import { trackCoveredStrips } from './ui/visible';
 import './ui/styles.css';
 
 // FullCalendar is large: load it on first visit to /calendar.
@@ -59,6 +60,7 @@ const auth = new OAuth({
 
 async function boot() {
   const theme = createTheme();
+  trackCoveredStrips();
   await startBranding((url) => fetch(url, { cache: 'no-cache' }), localStorage, document);
 
   if (location.pathname === '/auth/callback') {

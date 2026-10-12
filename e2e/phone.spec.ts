@@ -40,6 +40,14 @@ const smallTargets = (page: Page) =>
       .map(({ el, r }) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 28)}" ${Math.round(r.width)}×${Math.round(r.height)}`),
   );
 
+/** Visible fields whose text is under 16px: iOS Safari zooms the page in when one of them takes the focus. */
+const smallText = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('input:not([type=hidden], [type=checkbox], [type=radio], [type=file]), select, textarea, [contenteditable=true]')]
+      .filter((el) => el.checkVisibility() && parseFloat(getComputedStyle(el).fontSize) < 16)
+      .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]} "${el.getAttribute('aria-label') ?? el.getAttribute('placeholder') ?? ''}" ${getComputedStyle(el).fontSize}`),
+  );
+
 /** Open a seeded thread by subject. The list is virtualised, so an old thread may not be in the DOM to tap. */
 const openSeeded = async (page: Page, subject: string) => {
   const mail = (await emailsBySubject(subject))[0]!;
@@ -282,4 +290,109 @@ test('@phone touch targets in an open thread and in the composer are at least 44
   await page.waitForTimeout(800);
   const composer = await smallTargets(page);
   expect({ thread, composer }).toEqual({ thread: [], composer: [] });
+});
+
+test('@phone no field has text under 16px, so focusing one does not zoom the page', async ({ page }) => {
+  const found: Record<string, string[]> = {};
+  await openInbox(page);
+  await page.getByRole('button', { name: 'Search options' }).tap();
+  await expect(page.getByRole('dialog').getByLabel('From')).toBeVisible();
+  found.search = await smallText(page);
+  await page.goto('/settings');
+  await page.getByRole('button', { name: /^Edit / }).first().tap();
+  await expect(page.getByRole('dialog').locator('[contenteditable="true"]')).toBeVisible();
+  found.settings = await smallText(page);
+  await page.goto('/calendar');
+  await page.getByRole('button', { name: 'New event' }).tap();
+  await expect(page.getByRole('form', { name: 'Event' })).toBeVisible();
+  found.calendar = await smallText(page);
+  // The calendar form's select is a native one: WebKit gives it our height only when it is a height.
+  expect((await page.getByRole('form', { name: 'Event' }).getByLabel('Calendar').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await openSeeded(page, 'Lunch Friday?');
+  await page.getByRole('button', { name: 'Reply', exact: true }).last().tap();
+  await expect(bodyEditor(page.locator('.conv .composer.inline'))).toBeVisible();
+  found.reply = await smallText(page);
+  await page.locator('.conv .composer.inline').getByRole('button', { name: 'Discard draft' }).tap();
+  // Nothing was typed, so there may be nothing to confirm.
+  const confirm = page.getByRole('dialog').getByRole('button', { name: 'Discard' });
+  if (await confirm.isVisible().catch(() => false)) await confirm.tap();
+  expect(found).toEqual({ search: [], settings: [], calendar: [], reply: [] });
+});
+
+test('@phone the drawer holds the theme and sign-out, and is out of reach while closed', async ({ page }) => {
+  await openInbox(page);
+  // Closed: not on screen, not in the Tab order, and no shadow at the screen's edge.
+  await expect(page.locator('.sidebar')).toBeHidden();
+  await expect(page.locator('.topbar').getByTitle('Toggle theme')).toBeHidden();
+  // The search has the room the two buttons had: its placeholder is whole.
+  expect(await page.locator('#search-input').evaluate((el: HTMLInputElement) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Menu' }).tap();
+  const drawer = page.locator('.sidebar.open');
+  await expect(drawer.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  const before = await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
+  await drawer.getByRole('button', { name: /^(Dark|Light) theme$/ }).tap();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).not.toBe(before);
+  // Changing the theme leaves the drawer open, to change it back.
+  await drawer.getByRole('button', { name: /^(Dark|Light) theme$/ }).tap();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(before);
+  await noSidewaysScroll(page, 'drawer');
+});
+
+test('@phone the identity dialog keeps its fields inside it', async ({ page }) => {
+  await page.goto('/settings');
+  await page.getByRole('button', { name: /^Edit / }).first().tap();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible();
+  const d = (await dialog.boundingBox())!;
+  for (const part of [dialog.getByRole('button', { name: 'Save' }), dialog.locator('.signature-editor'), dialog.getByRole('textbox').first()]) {
+    const b = (await part.boundingBox())!;
+    expect(b.x + b.width, 'inside the dialog, with room to spare').toBeLessThanOrEqual(d.x + d.width - 8);
+  }
+  await dialog.getByRole('button', { name: 'Cancel' }).tap();
+});
+
+test('@phone with an on-screen keyboard up, the composer fits what is left and Send stays in sight', async ({ page }) => {
+  await openInbox(page);
+  await page.getByRole('button', { name: 'Menu' }).tap();
+  await page.getByRole('button', { name: 'Compose' }).tap();
+  const c = floatingComposer(page);
+  await expect(bodyEditor(c)).toBeVisible();
+  // What src/ui/visible.ts sets when iOS draws a 336px keyboard over the page (its own test covers the arithmetic).
+  await page.evaluate(() => document.documentElement.style.setProperty('--covered-bottom', '336px'));
+  await bodyEditor(c).pressSequentially('one\ntwo\nthree\nfour\nfive\nsix\nseven\neight');
+  const send = (await c.getByRole('button', { name: 'Send', exact: true }).boundingBox())!;
+  expect(send.y + send.height, 'Send is above the keyboard').toBeLessThanOrEqual(844 - 336);
+  const close = (await c.getByRole('button', { name: /close/i }).first().boundingBox())!;
+  expect(close.y, 'the title bar stays at the top').toBeGreaterThanOrEqual(0);
+  expect(close.y).toBeLessThan(60);
+  // The fields above the text can still be reached, by scrolling the message.
+  await c.getByRole('textbox', { name: 'Subject' }).scrollIntoViewIfNeeded();
+  await expect(c.getByRole('textbox', { name: 'Subject' })).toBeInViewport();
+  await page.evaluate(() => document.documentElement.style.removeProperty('--covered-bottom'));
+  await c.getByRole('button', { name: 'Discard draft' }).tap();
+  await page.getByRole('dialog').getByRole('button', { name: 'Discard' }).tap();
+});
+
+test('@phone the calendar toolbar is two rows and the week\'s day names are whole', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto('/calendar');
+  await expect(page.locator('.fc-timeGridDay-view')).toBeVisible();
+  await page.getByRole('button', { name: 'week', exact: true }).tap();
+  await expect(page.locator('.fc-timeGridWeek-view')).toBeVisible();
+  const title = (await page.locator('.fc-toolbar-title').boundingBox())!;
+  expect(title.height, 'the title is one line').toBeLessThan(32);
+  const bar = (await page.locator('.fc-header-toolbar').boundingBox())!;
+  expect(bar.height, 'two rows of 44px buttons').toBeLessThanOrEqual(100);
+  const cut = await page.locator('.fc-col-header-cell').evaluateAll((cells) => cells.filter((c) => c.scrollWidth > c.clientWidth + 1).length);
+  expect(cut, 'day names cut short').toBe(0);
+  await noSidewaysScroll(page, 'calendar week at 360px');
+  expect(await smallTargets(page)).toEqual([]);
+});
+
+test('@phone an open message shows its date on one line', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await openSeeded(page, 'Lunch Friday?');
+  const date = (await page.locator('article.msg:not(.collapsed) .msg-date').last().boundingBox())!;
+  expect(date.height).toBeLessThan(24);
+  await noSidewaysScroll(page, 'conversation at 360px');
 });

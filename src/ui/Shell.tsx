@@ -86,8 +86,9 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         <A href="/settings" class="icon-btn" aria-label="Settings" title="Settings">
           <Icon name="settings" />
         </A>
+        {/* On a phone these two are in the drawer, and the search has their room. */}
         <button
-          class="icon-btn"
+          class="icon-btn hide-mobile"
           title="Toggle theme"
           onClick={() => app.setTheme(app.isDark() ? 'light' : 'dark')}
         >
@@ -96,7 +97,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         <button class="icon-btn hide-mobile" title="Keyboard shortcuts (?)" onClick={() => app.nav.setHelpOpen(true)}>
           <Icon name="keyboard" />
         </button>
-        <button class="icon-btn" title={`Sign out ${app.client.session.username}`} onClick={() => app.signOut()}>
+        <button class="icon-btn hide-mobile" title={`Sign out ${app.client.session.username}`} onClick={() => app.signOut()}>
           <Icon name="logout" />
         </button>
       </header>
@@ -127,6 +128,16 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
         <PaneBoundary name="sidebar">
           <Sidebar current={path()} />
         </PaneBoundary>
+        <div class="nav-foot">
+          <button type="button" class="nav-item" onClick={() => app.setTheme(app.isDark() ? 'light' : 'dark')}>
+            <Icon name="theme" />
+            <span class="name">{app.isDark() ? 'Light theme' : 'Dark theme'}</span>
+          </button>
+          <button type="button" class="nav-item" title={`Sign out ${app.client.session.username}`} onClick={() => app.signOut()}>
+            <Icon name="logout" />
+            <span class="name">Sign out</span>
+          </button>
+        </div>
       </nav>
       <main class="main">
         <ConnectionBanner connection={app.connection} onSignIn={app.signIn} />

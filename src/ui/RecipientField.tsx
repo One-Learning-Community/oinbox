@@ -1,5 +1,5 @@
 import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
-import { createMemo, createSignal, Show } from 'solid-js';
+import { createMemo, createSignal, onMount, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { expandGroup, groupName } from '../contacts/groups';
 import type { EmailAddress } from '../jmap/types';
@@ -110,6 +110,16 @@ export function RecipientField(props: {
       addAll(pasted);
     }
   };
+
+  onMount(() => {
+    // Combobox takes no attributes for its input. An on-screen keyboard shows "@" for an address, and neither capitalises nor corrects one.
+    const el = root?.querySelector('input');
+    if (!el) return;
+    el.inputMode = 'email';
+    el.autocapitalize = 'off';
+    el.setAttribute('autocorrect', 'off');
+    el.spellcheck = false;
+  });
 
   return (
     <div class="compose-field">
