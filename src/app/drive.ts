@@ -190,6 +190,8 @@ export function createDrive(deps: {
     offered: () => config().enabled,
     /** Past this many megabytes of attachments, a message's files are offered as a link. */
     linkOverMb: () => config().linkOverMb,
+    /** Where OpenCloud's own web UI is, or '' when the operator named no such address. */
+    webUrl: () => config().webUrl,
     setConfig,
     /** What the picker is open for, or null. */
     request,

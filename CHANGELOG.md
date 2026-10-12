@@ -2,6 +2,12 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Drive: a link to OpenCloud in the sidebar, under Contacts, for operators who name its public address in `OINBOX_DRIVE_URL` (docs/operating.md, "Drive"). It opens OpenCloud's own web UI in a new tab, where the user signs in again.
+
 ## 0.1.0-beta.4
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.

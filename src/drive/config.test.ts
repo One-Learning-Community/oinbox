@@ -5,11 +5,23 @@ const answer = (body: string, status = 200) => () => Promise.resolve(new Respons
 
 describe('parseDriveConfig', () => {
   it('takes enabled and the link threshold', () => {
-    expect(parseDriveConfig({ enabled: true, linkOverMb: 35 })).toEqual({ enabled: true, linkOverMb: 35 });
+    expect(parseDriveConfig({ enabled: true, linkOverMb: 35 })).toEqual({ enabled: true, linkOverMb: 35, webUrl: '' });
   });
   it('takes the threshold as text too, which is how the server writes it', () => {
-    expect(parseDriveConfig({ enabled: true, linkOverMb: '35' })).toEqual({ enabled: true, linkOverMb: 35 });
-    expect(parseDriveConfig({ enabled: true, linkOverMb: '20MB' })).toEqual({ enabled: true, linkOverMb: 20 });
+    expect(parseDriveConfig({ enabled: true, linkOverMb: '35' })).toEqual({ enabled: true, linkOverMb: 35, webUrl: '' });
+    expect(parseDriveConfig({ enabled: true, linkOverMb: '20MB' })).toEqual({ enabled: true, linkOverMb: 20, webUrl: '' });
+  });
+  it("takes OpenCloud's own address, for the link to it", () => {
+    expect(parseDriveConfig({ enabled: true, webUrl: 'https://drive.example.com' }).webUrl).toBe('https://drive.example.com');
+    expect(parseDriveConfig({ enabled: true, webUrl: ' http://localhost:9201/ ' }).webUrl).toBe('http://localhost:9201/');
+  });
+  it('has no address for anything a browser would not open as a web page elsewhere', () => {
+    for (const webUrl of ['', ' ', 'drive.example.com', '/drive/', 'javascript:alert(1)', 'data:text/html,x', 'ftp://drive.example.com', 'https://', 7, null, undefined, {}]) {
+      expect(parseDriveConfig({ enabled: true, webUrl }).webUrl).toBe('');
+    }
+  });
+  it('has no address when Drive is off', () => {
+    expect(parseDriveConfig({ enabled: false, webUrl: 'https://drive.example.com' }).webUrl).toBe('');
   });
   it('is on only for a true boolean', () => {
     for (const enabled of ['true', 1, {}, null, undefined]) expect(parseDriveConfig({ enabled }).enabled).toBe(false);
@@ -30,7 +42,7 @@ describe('loadDriveConfig', () => {
       return Promise.resolve(new Response('{"enabled":true,"linkOverMb":20}'));
     });
     expect(asked).toBe('/drive.json');
-    expect(config).toEqual({ enabled: true, linkOverMb: 20 });
+    expect(config).toEqual({ enabled: true, linkOverMb: 20, webUrl: '' });
   });
   it('is off when the file is missing', async () => {
     expect(await loadDriveConfig(answer('not found', 404))).toEqual(NO_DRIVE);

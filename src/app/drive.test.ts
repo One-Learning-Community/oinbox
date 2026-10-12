@@ -11,7 +11,7 @@ const setup = () => {
   const server = new FakeDrive();
   const toast = vi.fn();
   const drive = createDrive({ client: server.client(), toast });
-  drive.setConfig({ enabled: true, linkOverMb: 20 });
+  drive.setConfig({ enabled: true, linkOverMb: 20, webUrl: '' });
   return { server, toast, drive };
 };
 
@@ -70,7 +70,7 @@ describe('createDrive', () => {
   it('is not offered until the configuration says so', () => {
     const drive = createDrive({ client: new FakeDrive().client(), toast: vi.fn() });
     expect(drive.offered()).toBe(false);
-    drive.setConfig({ enabled: true, linkOverMb: 20 });
+    drive.setConfig({ enabled: true, linkOverMb: 20, webUrl: '' });
     expect(drive.offered()).toBe(true);
   });
 
@@ -388,8 +388,15 @@ describe('attaching from Drive: asked first whether it should be a link', () => 
   it('exposes the threshold it was configured with', () => {
     const { drive } = arrange();
     expect(drive.linkOverMb()).toBe(20);
-    drive.setConfig({ enabled: true, linkOverMb: 35 });
+    drive.setConfig({ enabled: true, linkOverMb: 35, webUrl: '' });
     expect(drive.linkOverMb()).toBe(35);
+  });
+
+  it("exposes OpenCloud's own address once it is configured with one", () => {
+    const { drive } = arrange();
+    expect(drive.webUrl()).toBe('');
+    drive.setConfig({ enabled: true, linkOverMb: 20, webUrl: 'https://drive.example.com' });
+    expect(drive.webUrl()).toBe('https://drive.example.com');
   });
 });
 

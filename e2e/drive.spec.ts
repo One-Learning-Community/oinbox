@@ -81,6 +81,22 @@ test('without a Drive the tile downloads and has no menu', async ({ page }) => {
   expect(driveRequests).toEqual([]);
 });
 
+test("with OpenCloud's own address set, the sidebar links to it in a new tab", async ({ page }) => {
+  await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 20, webUrl: 'https://drive.example.test/' } }));
+  await openInbox(page);
+  const link = page.getByRole('navigation').getByRole('link', { name: 'Drive' });
+  await expect(link).toHaveAttribute('href', 'https://drive.example.test/');
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
+test('with a Drive but no address for it, the sidebar has no Drive link', async ({ page }) => {
+  await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 20 } }));
+  await openInbox(page);
+  await expect(page.getByRole('navigation').getByRole('link', { name: 'Contacts' })).toBeVisible();
+  await expect(page.getByRole('navigation').getByRole('link', { name: 'Drive' })).toHaveCount(0);
+});
+
 test('a Drive that is down says so and leaves mail alone', async ({ page }) => {
   await page.route('**/drive.json', (route) => route.fulfill({ json: { enabled: true, linkOverMb: 20 } }));
   await page.route('**/drive/graph/**', (route) => route.fulfill({ status: 503, body: '' }));

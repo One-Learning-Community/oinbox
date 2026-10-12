@@ -6,6 +6,10 @@ services:
     environment:
       # OpenCloud shares this container's network (below), so it is on localhost.
       OINBOX_DRIVE_UPSTREAM: "localhost:9201"
+      # OpenCloud's own address as the browser reaches it (the port published below), for the sidebar's Drive link.
+      # This stack does not set OpenCloud's web UI up to sign in through Stalwart (docs/operating.md, "Drive"):
+      # the link opens it, and it stops at its sign-in page.
+      OINBOX_DRIVE_URL: "http://localhost:9201"
     ports:
       # OpenCloud's own address, for opening a mailed Drive link as its recipient would. (9200 is often taken.)
       - "9201:9201"

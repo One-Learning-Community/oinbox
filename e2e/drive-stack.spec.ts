@@ -10,7 +10,9 @@ test('the stack says whether there is a Drive, as JSON, never cached', async ({ 
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/json');
   expect(res.headers()['cache-control']).toBe('no-cache');
-  expect(await res.json()).toEqual({ enabled: await driveOn(), linkOverMb: '20' });
+  // The Drive override of the dev stack names OpenCloud's own address; the default stack and CI name none.
+  const on = await driveOn();
+  expect(await res.json()).toEqual({ enabled: on, linkOverMb: '20', webUrl: on ? 'http://localhost:9201' : '' });
 });
 
 test('with no OpenCloud, a Drive request is answered 404 and never with the app page', async () => {

@@ -196,7 +196,7 @@ function SearchBox() {
 }
 
 function Sidebar(props: { current: string }) {
-  const { engine, hasCalendars, hasContacts, nav } = useApp();
+  const { drive, engine, hasCalendars, hasContacts, nav } = useApp();
   const groups = createMemo(() => sidebarMailboxes(engine.state.mailboxes));
   const isActive = (slug: string) => props.current === `/${slug}` || props.current.startsWith(`/${slug}/t/`);
 
@@ -251,6 +251,16 @@ function Sidebar(props: { current: string }) {
           <span class="name">Contacts</span>
         </A>
         <GroupNav current={props.current} />
+      </Show>
+      {/* OpenCloud's own pages are kept off this origin (deploy/routes.caddy), so Drive is a link out, not a view. */}
+      <Show when={drive.webUrl()}>
+        {(url) => (
+          <a href={url()} class="nav-item" target="_blank" rel="noopener noreferrer" title="Opens Drive in a new tab">
+            <Icon name="drive" />
+            <span class="name">Drive</span>
+            <Icon name="openInNew" class="external" />
+          </a>
+        )}
       </Show>
     </>
   );

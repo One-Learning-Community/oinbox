@@ -12,7 +12,7 @@ function setup(arrange: (server: FakeDrive) => void = () => {}, files = 1) {
   arrange(server);
   const toast = vi.fn();
   const drive = createDrive({ client: server.client(), toast });
-  drive.setConfig({ enabled: true, linkOverMb: 20 });
+  drive.setConfig({ enabled: true, linkOverMb: 20, webUrl: '' });
   render(() => (
     <AppContext.Provider value={{ drive } as unknown as App}>
       <DrivePicker />

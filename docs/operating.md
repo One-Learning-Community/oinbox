@@ -107,6 +107,7 @@ The release image is configured by environment variables. All are optional.
 | `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
 | `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
 | `OINBOX_DRIVE_UPSTREAM` | none | Where an OpenCloud's HTTP listener is, as `host:port`. Set, the app offers Drive; unset, it shows none. See "Drive". |
+| `OINBOX_DRIVE_URL` | none | OpenCloud's own public address (`https://drive.example.com`). Set, with Drive on, the sidebar has a Drive link that opens OpenCloud's web UI in a new tab; unset, there is no link. See "Drive". |
 | `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Past this many megabytes of attachments, a message's files are offered as a Drive link instead. A file larger than Stalwart's own upload limit is always offered as one. A number; anything else counts as 20. |
 
 ### Branding
@@ -140,6 +141,18 @@ oinbox can use an [OpenCloud](https://opencloud.eu) that runs beside Stalwart as
 - OpenCloud able to reach Stalwart at that public URL from where it runs.
 
 OpenCloud need not run beside oinbox. Any `host:port` the oinbox container reaches over plain HTTP on a private network will do: a separate service in the same VPC, for example. (Reaching it through its own public HTTPS address has not been tested.)
+
+**A link to OpenCloud itself (optional)**
+
+Set `OINBOX_DRIVE_URL` to OpenCloud's public address, the one in its `OC_URL`, and the sidebar gets a Drive entry under Contacts that opens OpenCloud's web UI in a new tab. It is a link and nothing more: OpenCloud's pages are never shown inside oinbox or served from the mail address. The value must be an `http://` or `https://` address without double quotes or backquotes; anything else shows no link. Behind your own proxy, put it in `drive.json` as `"webUrl"`.
+
+The link is only useful if OpenCloud's web UI can sign people in through Stalwart, which needs three things beyond the settings above:
+
+- an OAuth client named `web` registered in Stalwart, with the redirect `<OC_URL>/oidc-callback.html`;
+- Stalwart's origin in the `connect-src` of OpenCloud's content security policy (a file named by `PROXY_CSP_CONFIG_FILE_LOCATION` is merged onto the default policy);
+- Stalwart answering cross-origin requests from OpenCloud's address, since OpenCloud's page asks Stalwart for its discovery document and its tokens from the browser.
+
+Users are asked for their password again when they follow the link. Stalwart's sign-in keeps no session in the browser, and oinbox does not hand its own sign-in to another address.
 
 Behind your own proxy, do what `deploy/examples/nginx.conf` shows: proxy only `/drive/graph/`, `/drive/dav/spaces/` and `/drive/ocs/v1.php/cloud/capabilities` to OpenCloud with the prefix removed, answer 404 for anything else under `/drive/`, send OpenCloud `X-Forwarded-Proto: https`, hide `WWW-Authenticate` on the way back, replace its `Content-Security-Policy` with `sandbox; default-src 'none'` and set `X-Content-Type-Options: nosniff`, do not buffer or limit request bodies, and set `"enabled": true` in the `drive.json` that ships with the static files. The two headers and the 404 matter: OpenCloud serves files its users uploaded, and on the mail origin a file that the browser ran as a page could read the mail sign-in.
 

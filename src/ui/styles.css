@@ -17,6 +17,8 @@
   --chip: #e1e3e1;
   --warn-bg: #fdefc3;
   --warn-text: #3d2e00;
+  --mark-bg: yellow;
+  --mark-text: black;
   --danger-text: #b3261e;
   --cal-default: #0b57d0;
   --shadow: 0 1px 2px rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%);
@@ -43,6 +45,8 @@
   --chip: #44464b;
   --warn-bg: #4a3b12;
   --warn-text: #fde9a8;
+  --mark-bg: #e0a030;
+  --mark-text: #1f1400;
   --danger-text: #f2b8b5;
   --shadow: 0 1px 3px rgb(0 0 0 / 50%);
   color-scheme: dark;
@@ -66,6 +70,8 @@
     --chip: #44464b;
     --warn-bg: #4a3b12;
     --warn-text: #fde9a8;
+  --mark-bg: #e0a030;
+  --mark-text: #1f1400;
     --danger-text: #f2b8b5;
     --shadow: 0 1px 3px rgb(0 0 0 / 50%);
     color-scheme: dark;
@@ -75,6 +81,8 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); font: 14px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
+/* A search match. The browser's own yellow in the light theme; amber in the dark one, where that yellow glares. */
+mark { background: var(--mark-bg); color: var(--mark-text); }
 button { font: inherit; color: inherit; }
 a { color: var(--accent); }
 
@@ -114,6 +122,7 @@ a { color: var(--accent); }
 .nav-item svg { width: 20px; height: 20px; flex: none; color: var(--text-2); }
 .nav-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .nav-item .count { font-size: 12px; font-weight: 700; }
+.nav-item svg.external { width: 16px; height: 16px; }
 .nav-section { display: flex; align-items: center; justify-content: space-between; margin: 16px 6px 4px 26px; font-size: 14px; color: var(--text-2); }
 .nav-add, .nav-more { width: 28px; height: 28px; }
 .nav-row { position: relative; }
