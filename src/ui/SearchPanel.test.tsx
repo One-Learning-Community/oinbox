@@ -50,6 +50,13 @@ describe('SearchPanel', () => {
     expect(asked()).toBe('from:bob subject:lunch is:unread larger:5M invoice');
   });
 
+  it('searches for the same thing when opened and sent untouched, with negated words that look like syntax', () => {
+    const { field, search, asked } = panel('-"OR" -"from:bob" lunch');
+    expect(field("Doesn't have").value).toBe('"OR" "from:bob"');
+    search();
+    expect(asked()).toBe('-"OR" -"from:bob" lunch');
+  });
+
   it('offers people for From and To', () => {
     const { field } = panel(null);
     fireEvent.input(field('From'), { target: { value: 'no' } });

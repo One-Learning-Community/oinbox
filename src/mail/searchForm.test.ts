@@ -25,6 +25,9 @@ describe('formFromQuery', () => {
     expect(f.from).toBe('a');
     expect(f.rest.map((p) => `${p.negated ? '-' : ''}${p.name}:${p.value}`)).toEqual(['larger:5M', 'cc:carol', '-from:bob', 'newer_than:3d', 'from:b', 'is:read']);
   });
+  it('quotes a "doesn\'t have" word that would read as something else', () => {
+    expect(form('-"OR" -"from:bob" -"(a)" -"-x" -"out of office" -draft').without).toBe('"OR" "from:bob" "(a)" "-x" "out of office" draft');
+  });
   it('reads a label with a space', () => {
     expect(form('label:"Client work"').where).toBe('label:"Client work"');
   });
@@ -35,6 +38,7 @@ describe('queryFromForm', () => {
     'from:nora@customer.test', 'to:bob', 'subject:"lunch plans"', 'in:inbox', 'label:"Client work"', 'in:anywhere', 'has:attachment', 'is:unread', 'is:starred',
     'newer_than:7d', 'newer_than:1m', 'newer_than:1y', 'after:2026/09/01 before:2026/10/01', 'after:2026/09/01', 'before:2026/10/01',
     '-draft -spam', 'invoice "exact phrase"',
+    '-"OR" -"from:bob" lunch', '-"OR"', '-"from:bob"', '-"(a)"', '-"-x"',
     'from:a larger:5M cc:carol -from:bob invoice',
   ])('writes back what it was given: %s', (q) => {
     expect(readQuery(back(q))).toEqual(readQuery(q));

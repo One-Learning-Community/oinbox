@@ -33,7 +33,8 @@ const day = (v: string): string | null => {
   return m ? `${m[1]}-${m[2]!.padStart(2, '0')}-${m[3]!.padStart(2, '0')}` : null;
 };
 const slashed = (d: string) => d.replace(/-/g, '/');
-const phrase = (v: string) => (/\s/.test(v) ? `"${v}"` : v);
+// A "doesn't have" word as the field shows it: quoted whenever it would not read back as that one plain word.
+const phrase = (v: string) => pillText({ name: 'word', value: v, negated: false });
 
 /** The form for a simple query. The first pill of a kind fills its field; the rest are kept aside. */
 export function formFromQuery(q: SimpleQuery): SearchForm {
