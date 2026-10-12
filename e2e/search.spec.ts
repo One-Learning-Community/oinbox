@@ -258,3 +258,24 @@ test('a box with many pills is one row until it is focused, and its list is not 
   const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="option"]') !== null, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
   expect(hit).toBe(true);
 });
+
+test('an operator typed in front of words becomes a pill only when picked, and the words stay', async ({ page }) => {
+  await openInbox(page);
+  const input = page.locator('#search-input');
+  await input.focus();
+  await page.keyboard.type('invoice is:unread ');
+  await expect(pills(page)).toHaveText(['is: unread']);
+  await expect(input).toHaveValue('invoice ');
+  await input.evaluate((el: HTMLInputElement) => el.setSelectionRange(0, 0));
+  await page.keyboard.type('from:b');
+  // The space that ends "invoice " is not at the caret: nothing has become a pill, and the list is for "from:b".
+  await expect(pills(page)).toHaveText(['is: unread']);
+  await expect(input).toHaveValue('from:binvoice ');
+  await expect(options(page).first()).toContainText('bob@example.test');
+  await page.keyboard.press('Enter');
+  await expect(pills(page)).toHaveText(['is: unread', 'from: Bob Example']);
+  await expect(input).toHaveValue('invoice ');
+  // The caret is where the operator was.
+  await page.keyboard.type('x');
+  await expect(input).toHaveValue('xinvoice ');
+});

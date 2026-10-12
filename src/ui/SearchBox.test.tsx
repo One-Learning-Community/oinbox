@@ -31,9 +31,15 @@ function box(path = '/inbox', to = '/inbox') {
   kit.show(path, () => <Route path="*" component={() => <><SearchBox /><Go to={to} /></>} />);
   const input = () => document.getElementById('search-input') as HTMLInputElement;
   const type = (text: string) => fireEvent.input(input(), { target: { value: text } });
+  /** The box holding this text with the caret after its first `caret` characters, as when typing in the middle. */
+  const typeAt = (text: string, caret: number) => {
+    input().value = text;
+    input().setSelectionRange(caret, caret);
+    fireEvent.input(input());
+  };
   const submit = () => fireEvent.submit(screen.getByRole('search'));
   const pills = () => [...document.querySelectorAll('.search-pill')].map((el) => el.textContent);
-  return { ...kit, input, type, submit, pills };
+  return { ...kit, input, type, typeAt, submit, pills };
 }
 
 describe('SearchBox', () => {
@@ -78,6 +84,40 @@ describe('SearchBox', () => {
     type('subject:"q3 ');
     expect(pills()).toEqual([]);
     expect(input().value).toBe('subject:"q3 ');
+  });
+
+  it('makes no pill from an operator typed in front of words: the space that ends them is not at the caret', () => {
+    const { typeAt, pills, input } = box();
+    typeAt('from:invoice ', 5);
+    expect(pills()).toEqual([]);
+    expect(input().value).toBe('from:invoice ');
+  });
+
+  it('offers people for the operator before the caret, and a pick keeps the words after it', async () => {
+    const { typeAt, input, pills } = box();
+    typeAt('from:noinvoice ', 7);
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(pills()).toEqual(['from: Nora Quinn']);
+    expect(input().value).toBe('invoice ');
+    expect(input().selectionStart).toBe(0);
+  });
+
+  it('replaces only the operator at the caret on a pick, between the words around it', async () => {
+    const { typeAt, input, pills } = box();
+    typeAt('budget from:no invoice', 14);
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1));
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(pills()).toEqual(['from: Nora Quinn']);
+    expect(input().value).toBe('budget invoice');
+    expect(input().selectionStart).toBe(7);
+  });
+
+  it('opens no list when the caret is in plain words, though an operator ends the text', () => {
+    const { typeAt, input } = box();
+    typeAt('invoice from:no', 3);
+    expect(input().getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('option')).toBeNull();
   });
 
   it('opens no list for plain words', () => {

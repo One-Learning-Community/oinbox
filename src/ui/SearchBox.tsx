@@ -1,7 +1,7 @@
 import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
 import { Popover } from '@rozie-ui/popover-solid';
 import { useNavigate } from '@solidjs/router';
-import { createEffect, createMemo, createSignal, on, onMount, Show, type JSX } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, on, onMount, Show, type JSX } from 'solid-js';
 import { useApp } from '../app/context';
 import { suggesting, suggestions, type Suggestion } from '../app/searchSuggest';
 import { pillError, pillLabel, pillText, readQuery, uniquePills, writeQuery, type Pill, type SimpleQuery } from '../mail/searchQuery';
@@ -134,14 +134,20 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
   const { engine, recipients } = useApp();
   const [pills, setPills] = createSignal<Pill[]>(props.query.pills);
   const [text, setText] = createSignal(props.query.words);
+  // Where the caret stood when the text last changed: suggestions are for what is in front of it.
+  const [caret, setCaret] = createSignal(props.query.words.length);
   let handle: ComboboxHandle | undefined;
   let root: HTMLFormElement | undefined;
   const input = () => root?.querySelector<HTMLInputElement>('input.rozie-combobox-input') ?? null;
 
-  /** Sets the words, here and in Combobox's input (which says nothing when it is written to). */
-  const write = (t: string) => {
-    setText(t);
+  /** Sets the words, here and in Combobox's input (which says nothing when it is written to), with the caret at `at` or at the end. */
+  const write = (t: string, at = t.length) => {
+    batch(() => {
+      setText(t);
+      setCaret(at);
+    });
     handle?.seedQuery(t);
+    if (at < t.length) input()?.setSelectionRange(at, at);
   };
   createEffect(on(() => props.query, (q) => { setPills(q.pills); write(q.words); }, { defer: true }));
   onMount(() => {
@@ -156,7 +162,7 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
     return recipients.suggest(address, NOBODY).find((r) => r.email.toLowerCase() === key)?.name || undefined;
   };
 
-  const at = createMemo(() => suggesting(text()));
+  const at = createMemo(() => suggesting(text().slice(0, caret())));
   const options = createMemo<Option[]>(() => {
     const a = at();
     if (!a) return [];
@@ -172,15 +178,20 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
   const add = (more: Pill[]) => setPills(uniquePills([...pills(), ...more]));
 
   const onSearch = (typed: string) => {
-    // A space ends a value, unless it is inside quotes still open.
-    if (/\s$/.test(typed) && (typed.split('"').length - 1) % 2 === 0) {
+    const el = input();
+    const end = el && el.value === typed ? (el.selectionStart ?? typed.length) : typed.length;
+    // A space typed at the end of the text ends a value, unless it is inside quotes still open.
+    if (end === typed.length && /\s$/.test(typed) && (typed.split('"').length - 1) % 2 === 0) {
       const q = readQuery(typed);
       if (q?.pills.length) {
         add(q.pills);
         return write(q.words ? `${q.words} ` : '');
       }
     }
-    setText(typed);
+    batch(() => {
+      setText(typed);
+      setCaret(end);
+    });
   };
 
   const submit = (e: SubmitEvent) => {
@@ -253,8 +264,11 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
           onSearch={(e) => onSearch(e.query)}
           onChange={(e) => {
             if (e.selected && e.option) {
+              // The pick replaces the operator in front of the caret; the words after it stay.
+              const before = at()?.before ?? '';
+              const after = text().slice(caret()).trimStart();
               add([(e.option as Option).suggestion.pill]);
-              write(at()?.before ?? '');
+              write(before + after, before.length);
             } else {
               const kept = new Set(e.value as string[]);
               const next = pills().filter((p) => kept.has(pillText(p)));
