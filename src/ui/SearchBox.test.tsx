@@ -171,6 +171,16 @@ describe('SearchBox', () => {
     expect(bad.getAttribute('title')).toBe('No mailbox named "nowhere"');
   });
 
+  it('tells a screen reader why a pill cannot be used, on the pill\'s remove button', () => {
+    box('/search/' + encodeURIComponent('from:bob label:nowhere'));
+    const remove = screen.getByRole('button', { name: 'Remove label: nowhere' });
+    const reason = document.getElementById(remove.getAttribute('aria-describedby')!)!;
+    expect(reason.textContent).toBe('No mailbox named "nowhere"');
+    expect(reason.classList.contains('sr-only')).toBe(true);
+    // A pill with nothing wrong has nothing more to say.
+    expect(screen.getByRole('button', { name: 'Remove from: bob' }).hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('clears pills and words, and leaves a search', async () => {
     const { path, pills, input } = box('/search/' + encodeURIComponent('from:bob invoice'));
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));

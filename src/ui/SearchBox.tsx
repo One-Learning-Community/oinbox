@@ -281,10 +281,13 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
               {(p) => {
                 const label = () => pillLabel(p(), { person, locale: navigator.language });
                 const bad = () => pillError(p(), ctx());
+                const reason = () => `search-pill-reason-${chip.index}`;
                 return (
                   <>
                     <span class="search-pill" classList={{ 'search-pill-error': !!bad() }} title={bad() ?? pillText(p())}>{label()}</span>
-                    <button type="button" class="rcpt-chip-remove" aria-label={`Remove ${label()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => chip.remove()}>
+                    {/* Colour and a title say nothing to a screen reader: the reason is read with the pill's button. */}
+                    <Show when={bad()}>{(why) => <span id={reason()} class="sr-only">{why()}</span>}</Show>
+                    <button type="button" class="rcpt-chip-remove" aria-label={`Remove ${label()}`} aria-describedby={bad() ? reason() : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => chip.remove()}>
                       ×
                     </button>
                   </>
