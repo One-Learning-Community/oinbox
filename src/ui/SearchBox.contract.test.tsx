@@ -1,4 +1,3 @@
-// src/ui/SearchBox.contract.test.tsx
 import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
 import { fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
