@@ -1,9 +1,63 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { openInbox, rows } from './support/app';
 import { ALICE, BOB, destroyEmails, emailsBySubject, sendMail, uniqueTag, waitFor } from './support/mail';
 
 const pills = (page: Page) => page.locator('.search-pill');
 const options = (page: Page) => page.getByRole('option');
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+/** Whether `inner` lies wholly inside `outer`, to half a pixel. */
+const inside = (inner: Rect, outer: Rect) =>
+  inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 && inner.x + inner.width <= outer.x + outer.width + 0.5 && inner.y + inner.height <= outer.y + outer.height + 0.5;
+const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+/** Whether the element, or something inside it, is what a click at its centre reaches. */
+const hitsItself = (target: Locator) =>
+  target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!hit && el.contains(hit);
+  });
+
+/** The search, clear and options buttons of the box: each inside the box, reached at its own centre, none overlapping. Returns their y. */
+async function expectIconsInBox(page: Page) {
+  const box = (await page.locator('.search-box').boundingBox())!;
+  const form = page.locator('.search-box-form');
+  const buttons = [
+    form.getByRole('button', { name: 'Search', exact: true }),
+    form.getByRole('button', { name: 'Clear search' }),
+    page.getByRole('button', { name: 'Search options' }),
+  ];
+  const rects: Rect[] = [];
+  for (const b of buttons) {
+    const r = (await b.boundingBox())!;
+    expect(inside(r, box), 'a button lies inside the box').toBe(true);
+    expect(await hitsItself(b), 'a click at the middle of a button reaches it').toBe(true);
+    rects.push(r);
+  }
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) expect(overlaps(rects[i], rects[j]), 'the buttons do not overlap').toBe(false);
+  return rects.map((r) => r.y);
+}
+
+/**
+ * Every pill is either wholly inside the box or clipped away: a click where its middle would be does not reach it.
+ * Returns how many of each there are.
+ */
+async function sortPills(page: Page) {
+  const box = (await page.locator('.search-box').boundingBox())!;
+  let shown = 0;
+  let clipped = 0;
+  for (const pill of await pills(page).all()) {
+    const r = (await pill.boundingBox())!;
+    if (inside(r, box)) shown++;
+    else {
+      expect(await hitsItself(pill), 'a pill outside the box is clipped, not drawn over the page').toBe(false);
+      clipped++;
+    }
+  }
+  return { shown, clipped };
+}
 
 async function expectBobsThreads(page: Page) {
   await expect(rows(page).first()).toBeVisible();
@@ -164,17 +218,10 @@ test('the search panel fits a phone and its fields are finger-sized @phone', asy
 test('the search options button can be tapped with pills in the box, which stay inside the one-row box @phone', async ({ page }) => {
   await page.goto('/search/' + encodeURIComponent('from:bob is:unread'));
   await expect(pills(page)).toHaveCount(2);
-  const outside = async () => {
-    const b = (await page.locator('.search-box').boundingBox())!;
-    expect(b.height).toBe(44);
-    for (const pill of await pills(page).all()) {
-      const r = await pill.boundingBox();
-      if (!r || r.width === 0) continue;
-      // A pill may be cut off at the box's edge by the clip, but it never starts above or below it.
-      expect(r.y).toBeGreaterThanOrEqual(b.y);
-    }
-  };
-  await outside();
+  // Unfocused, the box is one 44px row: each pill is inside it or clipped away, and the three buttons are whole.
+  expect((await page.locator('.search-box').boundingBox())!.height).toBe(44);
+  await sortPills(page);
+  await expectIconsInBox(page);
   await page.getByRole('button', { name: 'Search options' }).tap();
   const panel = page.getByRole('dialog', { name: 'Search options' });
   await expect(panel).toBeVisible();
@@ -188,33 +235,26 @@ test('a box with many pills is one row until it is focused, and its list is not 
   await page.setViewportSize({ width: 1100, height: 700 });
   await page.goto('/search/' + encodeURIComponent('from:bob@example.test is:unread has:attachment label:nowhere newer_than:7d lunch budget'));
   await expect(pills(page)).toHaveCount(5);
-  const within = async (inner: { x: number; y: number; width: number; height: number }, outer: { x: number; y: number; width: number; height: number }) => {
-    expect(inner.x).toBeGreaterThanOrEqual(outer.x - 0.5);
-    expect(inner.y).toBeGreaterThanOrEqual(outer.y - 0.5);
-    expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 0.5);
-    expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height + 0.5);
-  };
   const searchBox = page.locator('.search-box');
   await expect(async () => expect((await searchBox.boundingBox())!.height).toBe(48)).toPass();
-  const closed = (await searchBox.boundingBox())!;
-  let visible = 0;
-  for (const pill of await pills(page).all()) {
-    const r = await pill.boundingBox();
-    // The clip hides a pill beyond the first row; one that shows (its own box is inside the box) is whole.
-    if (r && r.y + r.height <= closed.y + closed.height) { await within(r, closed); visible++; }
-  }
-  expect(visible).toBeGreaterThan(0);
+  // Five pills do not fit one row: some show, and the rest are clipped away rather than drawn below the box.
+  const { shown, clipped } = await sortPills(page);
+  expect(shown).toBeGreaterThan(0);
+  expect(clipped).toBeGreaterThan(0);
+  const ysClosed = await expectIconsInBox(page);
 
   await page.locator('#search-input').focus();
   await expect(async () => expect((await searchBox.boundingBox())!.height).toBeGreaterThan(48)).toPass();
   const open = (await searchBox.boundingBox())!;
-  for (const pill of await pills(page).all()) await within((await pill.boundingBox())!, open);
+  for (const pill of await pills(page).all()) expect(inside((await pill.boundingBox())!, open)).toBe(true);
+  // The buttons stay where they were, so a click on one is not moved from under the pointer.
+  expect(await expectIconsInBox(page)).toEqual(ysClosed);
 
   await page.keyboard.type(' in:');
   const option = options(page).first();
   await expect(option).toBeVisible();
   const r = (await option.boundingBox())!;
-  await within(r, { x: 0, y: 0, width: 1100, height: 700 });
+  expect(inside(r, { x: 0, y: 0, width: 1100, height: 700 })).toBe(true);
   const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="option"]') !== null, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
   expect(hit).toBe(true);
 });

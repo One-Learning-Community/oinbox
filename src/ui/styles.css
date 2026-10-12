@@ -135,14 +135,18 @@ a { color: var(--accent); }
 /* Unfocused, the box is one row high and shows the first row of pills; focused, it grows to show them all
    (its list and panel are popovers inside it, so overflow stays visible then). */
 .search-pills:not(:focus-within) { height: 48px; overflow: hidden; }
-.search-pills:focus-within { height: auto; overflow: visible; position: relative; z-index: 5; align-self: flex-start; margin-top: 8px; }
+/* z-index: the grown box covers the list pane below the bar. The app's other layers (drawer 20, its scrim 19,
+   account menu 20, compose dock 30) are above 5, and the rest are 1, so dialogs and the drawer still cover it.
+   margin-top keeps the box where it sits unfocused, centred in the bar: (48px - height) / 2, where 48px is .shell's first grid row (64px) less .topbar's 8px padding above and below. */
+.search-pills:focus-within { height: auto; overflow: visible; position: relative; z-index: 5; align-self: flex-start; margin-top: calc((48px - var(--sb-h)) / 2); }
 /* Unfocused, only the first row of pills is shown, centred in the bar. Everything is pinned to the first
    row, so that nothing moves under a finger when the box grows on focus. */
-.search-pills { --sb-h: 48px; --sb-btn: 36px; --rozie-combobox-inline-padding: 2px 0; align-items: flex-start; }
+/* --sb-h: the box's height unfocused; --sb-btn: its buttons' size; --sb-row: the height of one row of pills at the box's font size and chip padding. */
+.search-pills { --sb-h: 48px; --sb-btn: 36px; --sb-row: 26px; --rozie-combobox-inline-padding: 2px 0; align-items: flex-start; }
 .search-pills .search-box-form { align-items: flex-start; }
 .search-pills .search-box-form > button, .search-pills > .search-panel-anchor { margin-top: calc((var(--sb-h) - var(--sb-btn)) / 2); }
-.search-pills .rozie-combobox { align-self: flex-start; margin: calc((var(--sb-h) - 26px) / 2) 0; }
-.search-pills:not(:focus-within) .rozie-combobox { max-height: 26px; overflow: hidden; }
+.search-pills .rozie-combobox { align-self: flex-start; margin: calc((var(--sb-h) - var(--sb-row)) / 2) 0; }
+.search-pills:not(:focus-within) .rozie-combobox { max-height: var(--sb-row); overflow: hidden; }
 .search-pill { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .search-pill-error { color: var(--danger-text); text-decoration: underline wavy; }
 .search-panel-form { display: flex; flex-direction: column; gap: 10px; padding: 16px; width: min(480px, 100vw - 32px); font-size: 14px; color: var(--text); }
@@ -360,8 +364,6 @@ a { color: var(--accent); }
   .msg-body { padding-left: 16px; padding-right: 16px; }
   .topbar .search-box:not(.search-pills), .topbar .search-pills:not(:focus-within) { height: 44px; }
   .topbar .search-pills { --sb-h: 44px; --sb-btn: 44px; }
-  .topbar .search-pills .rozie-combobox { margin-top: 9px; margin-bottom: 9px; }
-  .topbar .search-pills:focus-within { margin-top: 10px; }
   body.has-thread .list-pane { display: none; }
   body:not(.has-thread) .conv-pane { display: none; }
 }
