@@ -87,7 +87,7 @@ test('Escape closes the create form, clears the highlight and creates nothing', 
 
 test('an event can be moved by dragging, and is saved', async ({ page }) => {
   const title = tag();
-  await createEvent(title, `${todayIn(TZ)}T11:00:00`, TZ);
+  await createEvent(title, `${todayIn(TZ)}T12:00:00`, TZ);
   await openWeek(page);
   await dragEventTo(page, title, '17:00');
   await expect.poll(async () => (await eventsByTitle(title))[0]?.start).toBe(`${todayIn(TZ)}T17:00:00`);
@@ -172,7 +172,7 @@ test('moving an event with guests asks first; Cancel puts it back and sends noth
 
 test('a failed write puts the dragged event back and says so', async ({ page }) => {
   const title = tag();
-  await createEvent(title, `${todayIn(TZ)}T11:00:00`, TZ);
+  await createEvent(title, `${todayIn(TZ)}T12:00:00`, TZ);
   await openWeek(page);
   await page.route('**/jmap/', async (route) => {
     if (route.request().postData()?.includes('"CalendarEvent/set"')) return route.fulfill({ status: 500, body: 'boom' });
