@@ -130,8 +130,19 @@ a { color: var(--accent); }
   --rozie-combobox-option-active-bg: var(--hover);
   --rozie-combobox-option-color: var(--text);
 }
-/* On a phone the plain box is 44px high (.topbar .search-box); with pills it grows instead. */
-.topbar .search-pills { height: auto; min-height: 44px; }
+/* On a phone the plain box is 44px high (.topbar .search-box); with pills it grows only while focused. */
+.topbar .search-pills { min-height: 44px; }
+/* Unfocused, the box is one row high and shows the first row of pills; focused, it grows to show them all
+   (its list and panel are popovers inside it, so overflow stays visible then). */
+.search-pills:not(:focus-within) { height: 48px; overflow: hidden; }
+.search-pills:focus-within { height: auto; overflow: visible; position: relative; z-index: 5; align-self: flex-start; margin-top: 8px; }
+/* Unfocused, only the first row of pills is shown, centred in the bar. Everything is pinned to the first
+   row, so that nothing moves under a finger when the box grows on focus. */
+.search-pills { --sb-h: 48px; --sb-btn: 36px; --rozie-combobox-inline-padding: 2px 0; align-items: flex-start; }
+.search-pills .search-box-form { align-items: flex-start; }
+.search-pills .search-box-form > button, .search-pills > .search-panel-anchor { margin-top: calc((var(--sb-h) - var(--sb-btn)) / 2); }
+.search-pills .rozie-combobox { align-self: flex-start; margin: calc((var(--sb-h) - 26px) / 2) 0; }
+.search-pills:not(:focus-within) .rozie-combobox { max-height: 26px; overflow: hidden; }
 .search-pill { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .search-pill-error { color: var(--danger-text); text-decoration: underline wavy; }
 .search-panel-form { display: flex; flex-direction: column; gap: 10px; padding: 16px; width: min(480px, 100vw - 32px); font-size: 14px; color: var(--text); }
@@ -347,7 +358,10 @@ a { color: var(--accent); }
   .row .clip { display: none; }
   .conv-head { padding-left: 16px; }
   .msg-body { padding-left: 16px; padding-right: 16px; }
-  .topbar .search-box { height: 44px; }
+  .topbar .search-box:not(.search-pills), .topbar .search-pills:not(:focus-within) { height: 44px; }
+  .topbar .search-pills { --sb-h: 44px; --sb-btn: 44px; }
+  .topbar .search-pills .rozie-combobox { margin-top: 9px; margin-bottom: 9px; }
+  .topbar .search-pills:focus-within { margin-top: 10px; }
   body.has-thread .list-pane { display: none; }
   body:not(.has-thread) .conv-pane { display: none; }
 }

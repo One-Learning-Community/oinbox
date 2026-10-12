@@ -161,13 +161,60 @@ test('the search panel fits a phone and its fields are finger-sized @phone', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test('the search options button can be tapped with pills in the box @phone', async ({ page }) => {
+test('the search options button can be tapped with pills in the box, which stay inside the one-row box @phone', async ({ page }) => {
   await page.goto('/search/' + encodeURIComponent('from:bob is:unread'));
   await expect(pills(page)).toHaveCount(2);
+  const outside = async () => {
+    const b = (await page.locator('.search-box').boundingBox())!;
+    expect(b.height).toBe(44);
+    for (const pill of await pills(page).all()) {
+      const r = await pill.boundingBox();
+      if (!r || r.width === 0) continue;
+      // A pill may be cut off at the box's edge by the clip, but it never starts above or below it.
+      expect(r.y).toBeGreaterThanOrEqual(b.y);
+    }
+  };
+  await outside();
   await page.getByRole('button', { name: 'Search options' }).tap();
   const panel = page.getByRole('dialog', { name: 'Search options' });
   await expect(panel).toBeVisible();
   const box = (await panel.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+});
+
+test('a box with many pills is one row until it is focused, and its list is not clipped', async ({ page }, info) => {
+  test.skip(info.project.name !== 'chromium', 'one engine is enough for a layout check');
+  await page.setViewportSize({ width: 1100, height: 700 });
+  await page.goto('/search/' + encodeURIComponent('from:bob@example.test is:unread has:attachment label:nowhere newer_than:7d lunch budget'));
+  await expect(pills(page)).toHaveCount(5);
+  const within = async (inner: { x: number; y: number; width: number; height: number }, outer: { x: number; y: number; width: number; height: number }) => {
+    expect(inner.x).toBeGreaterThanOrEqual(outer.x - 0.5);
+    expect(inner.y).toBeGreaterThanOrEqual(outer.y - 0.5);
+    expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 0.5);
+    expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height + 0.5);
+  };
+  const searchBox = page.locator('.search-box');
+  await expect(async () => expect((await searchBox.boundingBox())!.height).toBe(48)).toPass();
+  const closed = (await searchBox.boundingBox())!;
+  let visible = 0;
+  for (const pill of await pills(page).all()) {
+    const r = await pill.boundingBox();
+    // The clip hides a pill beyond the first row; one that shows (its own box is inside the box) is whole.
+    if (r && r.y + r.height <= closed.y + closed.height) { await within(r, closed); visible++; }
+  }
+  expect(visible).toBeGreaterThan(0);
+
+  await page.locator('#search-input').focus();
+  await expect(async () => expect((await searchBox.boundingBox())!.height).toBeGreaterThan(48)).toPass();
+  const open = (await searchBox.boundingBox())!;
+  for (const pill of await pills(page).all()) await within((await pill.boundingBox())!, open);
+
+  await page.keyboard.type(' in:');
+  const option = options(page).first();
+  await expect(option).toBeVisible();
+  const r = (await option.boundingBox())!;
+  await within(r, { x: 0, y: 0, width: 1100, height: 700 });
+  const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="option"]') !== null, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
+  expect(hit).toBe(true);
 });
