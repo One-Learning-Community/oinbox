@@ -15,7 +15,7 @@ export interface ParsedSearch {
   textTerms: string[];
 }
 
-type Token =
+export type Token =
   | { t: 'word'; v: string; quoted: boolean }
   | { t: 'op'; name: string; v: string }
   | { t: '(' | ')' | '{' | '}' | '-' | 'OR' };
@@ -25,7 +25,7 @@ const OPERATORS = new Set([
   'older_than', 'newer_than', 'larger', 'smaller', 'size', 'deliveredto', 'list', 'filename',
 ]);
 
-function tokenize(input: string): Token[] {
+export function tokenize(input: string): Token[] {
   const out: Token[] = [];
   let i = 0;
   const readValue = (): string => {
@@ -108,11 +108,13 @@ export function parseSearch(input: string, ctx: SearchContext): ParsedSearch {
     const v = tok.v;
     switch (tok.name) {
       case 'from':
-      case 'to':
       case 'cc':
       case 'bcc':
       case 'subject':
         return v ? { [tok.name]: v } : null;
+      case 'to':
+        // "Mail sent to Nora" includes mail she was copied on; cc: is there for Cc alone.
+        return v ? { operator: 'OR', conditions: [{ to: v }, { cc: v }] } : null;
       case 'deliveredto':
         return v ? { to: v } : null;
       case 'list':

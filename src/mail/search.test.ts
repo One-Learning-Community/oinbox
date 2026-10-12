@@ -28,8 +28,20 @@ describe('parseSearch', () => {
   it('maps address and subject operators', () => {
     expect(parseSearch('from:bob to:alice@example.test cc:carol bcc:dan subject:"lunch plans"', ctx).filter).toEqual({
       operator: 'AND',
-      conditions: [{ from: 'bob' }, { to: 'alice@example.test' }, { cc: 'carol' }, { bcc: 'dan' }, { subject: 'lunch plans' }, notTrashOrSpam],
+      conditions: [{ from: 'bob' }, { operator: 'OR', conditions: [{ to: 'alice@example.test' }, { cc: 'alice@example.test' }] }, { cc: 'carol' }, { bcc: 'dan' }, { subject: 'lunch plans' }, notTrashOrSpam],
     });
+  });
+
+  it('to: finds mail the person was copied on, and its negation leaves both out', () => {
+    expect(parseSearch('to:nora', ctx).filter).toEqual({
+      operator: 'AND',
+      conditions: [{ operator: 'OR', conditions: [{ to: 'nora' }, { cc: 'nora' }] }, notTrashOrSpam],
+    });
+    expect(parseSearch('-to:nora', ctx).filter).toEqual({
+      operator: 'AND',
+      conditions: [{ operator: 'NOT', conditions: [{ operator: 'OR', conditions: [{ to: 'nora' }, { cc: 'nora' }] }] }, notTrashOrSpam],
+    });
+    expect(parseSearch('cc:nora', ctx).filter).toEqual({ operator: 'AND', conditions: [{ cc: 'nora' }, notTrashOrSpam] });
   });
 
   it('maps has:, is:, and size operators', () => {

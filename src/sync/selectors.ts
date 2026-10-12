@@ -1,6 +1,6 @@
 import type { Id, Mailbox } from '../jmap/types';
 import { formatParticipants, type Participant } from '../mail/participants';
-import { parseSearch } from '../mail/search';
+import { parseSearch, type SearchContext } from '../mail/search';
 import { DEFAULT_SORT, type EmailRec, type MailState, type QuerySpec } from './engine';
 
 const ROLE_ORDER = ['inbox', 'flagged', 'drafts', 'sent', 'archive', 'junk', 'trash'];
@@ -25,18 +25,23 @@ export function searchSlug(query: string): string {
   return `search/${encodeURIComponent(query.trim())}`;
 }
 
+/** What the search parser needs to know about this account's mailboxes. */
+export function searchContext(mailboxes: Record<Id, Mailbox>, now = new Date()): SearchContext {
+  const all = Object.values(mailboxes);
+  return {
+    mailboxIdByRole: (role) => all.find((m) => m.role === role)?.id,
+    mailboxIdByName: (name) => {
+      const lower = name.toLowerCase();
+      return all.find((m) => m.name.toLowerCase() === lower || labelPath(m, mailboxes).toLowerCase() === lower)?.id;
+    },
+    now,
+  };
+}
+
 export function resolveView(slug: string, mailboxes: Record<Id, Mailbox>, now = new Date()): View | null {
   if (slug.startsWith('search/')) {
     const query = decodeURIComponent(slug.slice(7));
-    const all = Object.values(mailboxes);
-    const parsed = parseSearch(query, {
-      mailboxIdByRole: (role) => all.find((m) => m.role === role)?.id,
-      mailboxIdByName: (name) => {
-        const lower = name.toLowerCase();
-        return all.find((m) => m.name.toLowerCase() === lower || labelPath(m, mailboxes).toLowerCase() === lower)?.id;
-      },
-      now,
-    });
+    const parsed = parseSearch(query, searchContext(mailboxes, now));
     const inMailbox = parsed.filter && 'inMailbox' in parsed.filter ? (parsed.filter.inMailbox ?? null) : null;
     return {
       slug: searchSlug(query),
