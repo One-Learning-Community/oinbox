@@ -20,6 +20,12 @@ interface Option {
 const MAILBOX_SUGGESTIONS = 50;
 const NOBODY = new Set<string>();
 const BUTTON = { width: '36px', height: '36px' };
+/**
+ * A press on the clear or the options button leaves the focus where it is until the click lands. On a phone the box
+ * has the whole bar, and its clear button, only while the focus is in it: were the press to take the focus, the
+ * button would move or go from under the finger.
+ */
+const keepFocus = (e: MouseEvent) => e.preventDefault();
 
 /**
  * The search box. A search whose terms are simply ANDed shows its operators as pills and its
@@ -65,7 +71,7 @@ function PanelButton(props: { query: () => SimpleQuery | null; go: (q: string) =
         strategy="fixed"
         offset={8}
         anchorSlot={() => (
-          <button ref={button} type="button" class="icon-btn" aria-label="Search options" aria-haspopup="dialog" aria-expanded={open()} style={BUTTON} onClick={() => setOpen(!open())}>
+          <button ref={button} type="button" class="icon-btn" aria-label="Search options" aria-haspopup="dialog" aria-expanded={open()} style={BUTTON} onMouseDown={keepFocus} onClick={() => (open() ? close() : setOpen(true))}>
             <Icon name="tune" />
           </button>
         )}
@@ -119,7 +125,7 @@ function PlainBox(props: { query: string; go: (q: string) => void; end?: (query:
           onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
         />
         <Show when={text()}>
-          <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={() => { setText(''); if (props.query) props.go(''); }}>
+          <button class="icon-btn search-clear" type="button" aria-label="Clear search" style={BUTTON} onMouseDown={keepFocus} onClick={() => { setText(''); if (props.query) { props.go(''); (document.activeElement as HTMLElement | null)?.blur(); } }}>
             <Icon name="close" />
           </button>
         </Show>
@@ -224,8 +230,10 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
   const clear = () => {
     setPills([]);
     write('');
-    if (props.searching) props.go('');
-    else input()?.focus();
+    if (props.searching) {
+      props.go('');
+      input()?.blur();
+    } else input()?.focus();
   };
 
   return (
@@ -240,6 +248,12 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
         onSubmit={submit}
         // Combobox takes Escape only to close a list that is showing.
         onKeyDown={(e) => e.key === 'Escape' && !e.defaultPrevented && input()?.blur()}
+        // The input is one row of the box, and may be clipped away behind the pills: a press anywhere else in the box, but for its buttons and its list, is a press on the input.
+        onMouseDown={(e) => {
+          if ((e.target as Element).closest('button, input, [role="listbox"]')) return;
+          e.preventDefault();
+          input()?.focus();
+        }}
       >
         <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
           <Icon name="search" />
@@ -308,7 +322,7 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
           }}
         />
         <Show when={pills().length || text()}>
-          <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={clear}>
+          <button class="icon-btn search-clear" type="button" aria-label="Clear search" style={BUTTON} onMouseDown={keepFocus} onClick={clear}>
             <Icon name="close" />
           </button>
         </Show>

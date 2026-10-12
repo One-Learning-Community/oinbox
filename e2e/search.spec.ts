@@ -20,15 +20,16 @@ const hitsItself = (target: Locator) =>
     return !!hit && el.contains(hit);
   });
 
-/** The search, clear and options buttons of the box: each inside the box, reached at its own centre, none overlapping. Returns their y. */
-async function expectIconsInBox(page: Page) {
+/**
+ * The search, clear and options buttons of the box: each inside the box, reached at its own centre, none overlapping. Returns their y.
+ * A phone shows no clear button until the box is in use: `clear: false` checks the other two, and that it is not there.
+ */
+async function expectIconsInBox(page: Page, { clear = true } = {}) {
   const box = (await page.locator('.search-box').boundingBox())!;
   const form = page.locator('.search-box-form');
-  const buttons = [
-    form.getByRole('button', { name: 'Search', exact: true }),
-    form.getByRole('button', { name: 'Clear search' }),
-    page.getByRole('button', { name: 'Search options' }),
-  ];
+  const clearButton = form.getByRole('button', { name: 'Clear search' });
+  if (!clear) await expect(clearButton).toBeHidden();
+  const buttons = [form.getByRole('button', { name: 'Search', exact: true }), ...(clear ? [clearButton] : []), page.getByRole('button', { name: 'Search options' })];
   const rects: Rect[] = [];
   for (const b of buttons) {
     const r = (await b.boundingBox())!;
@@ -57,6 +58,18 @@ async function sortPills(page: Page) {
     }
   }
   return { shown, clipped };
+}
+
+/**
+ * Not in use, the box shows one row of its field and clips the rest. The input is wholly inside that row, so
+ * its text and its placeholder are drawn whole (a bounding box alone does not see what is clipped away).
+ */
+async function expectInputWhole(page: Page) {
+  const input = page.locator('#search-input');
+  await expect(input).not.toBeFocused();
+  const row = (await page.locator('.search-box .rozie-combobox').boundingBox())!;
+  expect(inside((await input.boundingBox())!, row), 'the input lies inside the one row the box shows').toBe(true);
+  expect(inside(row, (await page.locator('.search-box').boundingBox())!), 'that row lies inside the box').toBe(true);
 }
 
 async function expectBobsThreads(page: Page) {
@@ -215,19 +228,96 @@ test('the search panel fits a phone and its fields are finger-sized @phone', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('the search box shows its text whole when it is not in use, with nothing typed and with a word @phone', async ({ page }) => {
+  await openInbox(page);
+  await expectInputWhole(page);
+  await page.goto('/search/zeppelin');
+  await expect(page.locator('#search-input')).toHaveValue('zeppelin');
+  await expectInputWhole(page);
+  // The clear button waits until the box is in use, so the whole word fits beside the other two.
+  await expectIconsInBox(page, { clear: false });
+  expect(await page.locator('#search-input').evaluate((el: HTMLInputElement) => el.scrollWidth <= el.clientWidth), 'the word is not cut short').toBe(true);
+});
+
+test('the clear button appears when the box is in use, and a tap on it clears the search @phone', async ({ page }) => {
+  await page.goto('/search/zeppelin');
+  const clear = page.locator('.search-box-form').getByRole('button', { name: 'Clear search' });
+  await expect(clear).toBeHidden();
+  // The input is one row of the box, and a tap anywhere in the box reaches it: here, just inside the box's top edge.
+  const box = (await page.locator('.search-box').boundingBox())!;
+  const input = (await page.locator('#search-input').boundingBox())!;
+  await page.touchscreen.tap(input.x + input.width / 2, box.y + 3);
+  await expect(page.locator('#search-input')).toBeFocused();
+  await expect(clear).toBeVisible();
+  await expectIconsInBox(page);
+  await clear.tap();
+  await expect(page).toHaveURL(/\/inbox$/);
+  await expect(page.locator('#search-input')).toHaveValue('');
+  // The search is over: the box gives the bar back.
+  await expect(page.locator('#search-input')).not.toBeFocused();
+  await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
+});
+
+test('the unfocused search box shows its text whole on a touch screen as wide as a desktop', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'chromium', 'one engine is enough for a layout check');
+  // No project has a wide touch screen (a tablet): finger-sized rules apply, the phone layout does not.
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, storageState: 'e2e/.auth/alice.json', baseURL: info.project.use.baseURL });
+  const page = await context.newPage();
+  try {
+    await openInbox(page);
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    await expectInputWhole(page);
+    await page.goto('/search/zeppelin');
+    await expect(page.locator('#search-input')).toHaveValue('zeppelin');
+    await expectInputWhole(page);
+    // The buttons are finger-sized here, and still inside the box.
+    await expectIconsInBox(page);
+    expect((await page.getByRole('button', { name: 'Search options' }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+    // The box is narrow at this width. In use, a pill longer than the field is cut short to fit it, not drawn over the clear button.
+    await page.goto('/search/' + encodeURIComponent('from:bob@example.test is:unread has:attachment lunch'));
+    await expect(pills(page)).toHaveCount(3);
+    await page.locator('#search-input').focus();
+    const field = (await page.locator('.search-box .rozie-combobox').boundingBox())!;
+    for (const chip of await page.locator('.search-box .rozie-combobox-chip').all()) expect(inside((await chip.boundingBox())!, field), 'a pill lies inside the field').toBe(true);
+    await expectIconsInBox(page);
+  } finally {
+    await context.close();
+  }
+});
+
 test('the search options button can be tapped with pills in the box, which stay inside the one-row box @phone', async ({ page }) => {
   await page.goto('/search/' + encodeURIComponent('from:bob is:unread'));
   await expect(pills(page)).toHaveCount(2);
-  // Unfocused, the box is one 44px row: each pill is inside it or clipped away, and the three buttons are whole.
+  // Unfocused, the box is one 44px row: each pill is inside it or clipped away, and the two buttons it shows are whole.
   expect((await page.locator('.search-box').boundingBox())!.height).toBe(44);
   await sortPills(page);
-  await expectIconsInBox(page);
+  await expectIconsInBox(page, { clear: false });
+  // What a phone is sure to show of a search with pills: the start of the first pill, from its left edge, at
+  // least 40px of it (its operator). The rest of that pill, the pills after it and the words may be clipped
+  // away until the box is tapped, when it takes the whole bar and grows to show them all.
+  const row = (await page.locator('.search-box .rozie-combobox').boundingBox())!;
+  const first = (await pills(page).first().boundingBox())!;
+  expect(first.x).toBeGreaterThanOrEqual(row.x - 0.5);
+  expect(row.x + row.width - first.x).toBeGreaterThanOrEqual(40);
+  expect(first.y >= row.y - 0.5 && first.y + first.height <= row.y + row.height + 0.5, 'the first pill is not cut above or below').toBe(true);
+  const reached = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.search-pill') !== null, { x: first.x + 12, y: first.y + first.height / 2 });
+  expect(reached, 'the start of the first pill is what is drawn there').toBe(true);
+
   await page.getByRole('button', { name: 'Search options' }).tap();
   const panel = page.getByRole('dialog', { name: 'Search options' });
   await expect(panel).toBeVisible();
   const box = (await panel.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+
+  // And from the box in use, when it has the whole bar: the button does not move from under the finger.
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+  await page.locator('#search-input').focus();
+  await expect(page.getByRole('link', { name: 'Settings' })).toBeHidden();
+  await page.getByRole('button', { name: 'Search options' }).tap();
+  await expect(panel.getByLabel('From')).toBeFocused();
 });
 
 test('a box with many pills is one row until it is focused, and its list is not clipped', async ({ page }, info) => {
@@ -257,6 +347,14 @@ test('a box with many pills is one row until it is focused, and its list is not 
   expect(inside(r, { x: 0, y: 0, width: 1100, height: 700 })).toBe(true);
   const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="option"]') !== null, { x: r.x + r.width / 2, y: r.y + r.height / 2 });
   expect(hit).toBe(true);
+
+  // With the panel open the focus is in its form, not in the box: the box is one row again, and not lit, behind it.
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Search options' }).click();
+  await expect(page.getByRole('dialog', { name: 'Search options' }).getByLabel('From')).toBeFocused();
+  await expect(async () => expect((await searchBox.boundingBox())!.height).toBe(48)).toPass();
+  expect(await searchBox.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('none');
+  expect(await expectIconsInBox(page)).toEqual(ysClosed);
 });
 
 test('an operator typed in front of words becomes a pill only when picked, and the words stay', async ({ page }) => {

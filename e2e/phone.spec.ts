@@ -33,8 +33,9 @@ const smallTargets = (page: Page) =>
   page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('button, a[href], [role=button], [role=switch], [role=menuitem], input:not([type=hidden]), select, textarea')]
       .filter((el) => el.checkVisibility() && !el.closest('.fc-timegrid-slots, .fc-daygrid-body'))
-      // A checkbox or radio inside a label is pressed through the label.
-      .map((el) => ({ el, r: ((el instanceof HTMLInputElement && el.closest('label')) || el).getBoundingClientRect() }))
+      // A checkbox or radio inside a label is pressed through the label, and the search input through its box:
+      // a press anywhere in the box reaches the input (search.spec.ts, "the clear button appears…").
+      .map((el) => ({ el, r: ((el instanceof HTMLInputElement && el.closest('label, .search-pills')) || el).getBoundingClientRect() }))
       .filter(({ r }) => r.width > 0 && r.bottom > 0 && r.top < innerHeight && (r.width < 43.5 || r.height < 43.5))
       .map(({ el, r }) => `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 28)}" ${Math.round(r.width)}×${Math.round(r.height)}`),
   );

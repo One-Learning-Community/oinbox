@@ -181,6 +181,22 @@ describe('SearchBox', () => {
     expect(screen.getByRole('button', { name: 'Remove from: bob' }).hasAttribute('aria-describedby')).toBe(false);
   });
 
+  it('takes a press anywhere in the box that is not a button for the input', () => {
+    const { input } = box('/search/' + encodeURIComponent('from:bob invoice'));
+    expect(document.activeElement).not.toBe(input());
+    const press = (el: Element) => fireEvent.mouseDown(el);
+    // A pill's button keeps its own press.
+    expect(press(screen.getByRole('button', { name: 'Remove from: bob' }))).toBe(false);
+    expect(document.activeElement).not.toBe(input());
+    press(screen.getByRole('button', { name: 'Search' }));
+    expect(document.activeElement).not.toBe(input());
+    press(document.querySelector('.search-pill')!);
+    expect(document.activeElement).toBe(input());
+    input().blur();
+    press(screen.getByRole('search'));
+    expect(document.activeElement).toBe(input());
+  });
+
   it('clears pills and words, and leaves a search', async () => {
     const { path, pills, input } = box('/search/' + encodeURIComponent('from:bob invoice'));
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));

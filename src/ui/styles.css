@@ -103,23 +103,29 @@ a { color: var(--accent); }
 .brand-title { font-weight: 400; margin: 0 0 8px; }
 .brand-title .brand-logo { max-height: 48px; max-width: 100%; }
 .search-box {
-  flex: 1; max-width: 720px; display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 8px;
+  /* --sb-h: the height of the box, which is the top bar's row less its padding. */
+  --sb-h: 48px;
+  flex: 1; max-width: 720px; display: flex; align-items: center; gap: 4px; height: var(--sb-h); padding: 0 8px;
   border-radius: 24px; background: var(--surface-2);
 }
-.search-box:focus-within { background: var(--surface); box-shadow: var(--shadow); outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The box is lit while its own field or buttons have the focus, not while the panel that hangs off it has. */
+.search-box:has(.search-box-form:focus-within) { background: var(--surface); box-shadow: var(--shadow); outline: 2px solid var(--accent); outline-offset: -2px; }
 .search-box-form { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 4px; }
 .search-box-form input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 16px; color: var(--text); outline: none; min-width: 0; }
-/* The search box with pills: rozie Combobox, drawn to sit inside the rounded box. */
-.search-pills { height: auto; min-height: 48px; }
-.search-pills .rozie-combobox { flex: 1; min-width: 0; }
+/* The search box with pills: rozie Combobox, drawn to sit inside the rounded box.
+   --sb-btn: the size of the box's buttons.
+   --sb-row: the height of one row of the field. A pill is 23.8px high (13.6px text, 0.15rem of padding above and
+   below) and the input, with the 2px of padding given here, 23.6px, so every row is the same height. */
 .search-pills {
+  --sb-btn: 36px;
+  --sb-row: 24px;
   --rozie-combobox-bg: transparent;
   --rozie-combobox-color: var(--text);
   --rozie-combobox-border-width: 0;
   --rozie-combobox-focus-ring-width: 0;
   --rozie-combobox-font: inherit;
-  --rozie-combobox-inline-padding: 6px 0;
-  --rozie-combobox-inline-input-padding: 4px 0;
+  --rozie-combobox-inline-padding: 0;
+  --rozie-combobox-inline-input-padding: 2px 0;
   --rozie-combobox-inline-input-min-width: 100px;
   --rozie-combobox-chip-gap: 4px;
   --rozie-combobox-chip-bg: var(--chip);
@@ -129,24 +135,24 @@ a { color: var(--accent); }
   --rozie-combobox-list-shadow: var(--shadow);
   --rozie-combobox-option-active-bg: var(--hover);
   --rozie-combobox-option-color: var(--text);
+  /* Everything is pinned to the first row and centred on it, so that nothing moves under a finger when the box grows. */
+  align-items: flex-start;
 }
-/* On a phone the plain box is 44px high (.topbar .search-box); with pills it grows only while focused. */
-.topbar .search-pills { min-height: 44px; }
-/* Unfocused, the box is one row high and shows the first row of pills; focused, it grows to show them all
-   (its list and panel are popovers inside it, so overflow stays visible then). */
-.search-pills:not(:focus-within) { height: 48px; overflow: hidden; }
-/* z-index: the grown box covers the list pane below the bar. The app's other layers (drawer 20, its scrim 19,
-   account menu 20, compose dock 30) are above 5, and the rest are 1, so dialogs and the drawer still cover it.
-   margin-top keeps the box where it sits unfocused, centred in the bar: (48px - height) / 2, where 48px is .shell's first grid row (64px) less .topbar's 8px padding above and below. */
-.search-pills:focus-within { height: auto; overflow: visible; position: relative; z-index: 5; align-self: flex-start; margin-top: calc((48px - var(--sb-h)) / 2); }
-/* Unfocused, only the first row of pills is shown, centred in the bar. Everything is pinned to the first
-   row, so that nothing moves under a finger when the box grows on focus. */
-/* --sb-h: the box's height unfocused; --sb-btn: its buttons' size; --sb-row: the height of one row of pills at the box's font size and chip padding. */
-.search-pills { --sb-h: 48px; --sb-btn: 36px; --sb-row: 26px; --rozie-combobox-inline-padding: 2px 0; align-items: flex-start; }
 .search-pills .search-box-form { align-items: flex-start; }
 .search-pills .search-box-form > button, .search-pills > .search-panel-anchor { margin-top: calc((var(--sb-h) - var(--sb-btn)) / 2); }
-.search-pills .rozie-combobox { align-self: flex-start; margin: calc((var(--sb-h) - var(--sb-row)) / 2) 0; }
-.search-pills:not(:focus-within) .rozie-combobox { max-height: var(--sb-row); overflow: hidden; }
+/* Not in use, the box is one row high and shows the first row of pills. Combobox has no one-row mode, so its
+   root is clipped at one row (docs/rozie-feedback.md). */
+.search-pills .rozie-combobox { flex: 1; min-width: 0; margin: calc((var(--sb-h) - var(--sb-row)) / 2) 0; max-height: var(--sb-row); overflow: hidden; }
+/* In use, the box grows to show every pill; its list is a popover inside the root, so nothing is clipped then.
+   "In use" is focus in the search form: with the panel open the focus is in the panel, and the box is one row behind it.
+   z-index: the grown box covers the list pane below the bar. The app's other layers (drawer 20, its scrim 19,
+   account menu 20, compose dock 30) are above 5, and the rest are 1, so dialogs and the drawer still cover it.
+   margin-top keeps the box where it sits when not in use, centred in the bar: (48px - height) / 2, where 48px is .shell's first grid row (64px) less .topbar's 8px padding above and below. */
+.search-pills:has(.search-box-form:focus-within) { height: auto; min-height: var(--sb-h); position: relative; z-index: 5; align-self: flex-start; margin-top: calc((48px - var(--sb-h)) / 2); }
+.search-pills .search-box-form:focus-within .rozie-combobox { max-height: none; overflow: visible; }
+/* Nothing clips the field then, so a pill longer than it is cut short to fit: 100cqw is the field's width (Combobox's
+   root is a size container), and 34px is the rest of a pill, its padding (1rem), its gap (0.3rem) and its remove button (12.5px). */
+.search-pills .search-box-form:focus-within .search-pill { max-width: min(260px, calc(100cqw - 34px)); }
 .search-pill { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .search-pill-error { color: var(--danger-text); text-decoration: underline wavy; }
 .search-panel-form { display: flex; flex-direction: column; gap: 10px; padding: 16px; width: min(480px, 100vw - 32px); font-size: 14px; color: var(--text); }
@@ -332,10 +338,13 @@ a { color: var(--accent); }
   /* minmax(0, 1fr): never let the top bar's min-content widen the page past the screen. */
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); }
   .topbar { min-width: 0; gap: 4px; padding-right: 8px; }
-  .topbar .search-box { min-width: 0; }
+  .topbar .search-box { --sb-h: 44px; min-width: 0; }
   /* The pill box's input may shrink, so the form never spills over the options button. */
   .topbar .search-pills { --rozie-combobox-inline-input-min-width: 40px; }
   .topbar .search-box-form { min-width: 0; }
+  /* Three buttons would leave no room for the search itself, so Clear waits until the box is in use
+     (a press on it leaves the focus where it is: keepFocus in SearchBox.tsx). */
+  .topbar .search-box-form:not(:focus-within) > .search-clear { display: none; }
   .topbar .hide-mobile { display: none; }
   .msg-head .msg-date { font-size: 11px; max-width: 30%; white-space: normal; text-align: right; }
   .msg-head .addr { display: none; }
@@ -362,8 +371,6 @@ a { color: var(--accent); }
   .row .clip { display: none; }
   .conv-head { padding-left: 16px; }
   .msg-body { padding-left: 16px; padding-right: 16px; }
-  .topbar .search-box:not(.search-pills), .topbar .search-pills:not(:focus-within) { height: 44px; }
-  .topbar .search-pills { --sb-h: 44px; --sb-btn: 44px; }
   body.has-thread .list-pane { display: none; }
   body:not(.has-thread) .conv-pane { display: none; }
 }
@@ -690,8 +697,10 @@ a { color: var(--accent); }
   .link-btn, .images-banner button, .msg-toggle, .toast-action, .toast-close, .compose-retry { min-height: 44px; min-width: 44px; }
   .images-banner button { text-align: left; }
   .compose-format button { min-width: 44px; height: 44px; }
-  .search-box-form input, .compose-subject, .rozie-combobox-input, .settings input, .settings textarea, .settings select, .event-form input[type='text'], .event-form select { min-height: 44px; }
+  /* The pill box is left out: its input is one row of the box, and a press anywhere in the box reaches it. */
+  .search-box:not(.search-pills) .search-box-form input, .compose-subject, .rozie-combobox-input:not(.search-pills *), .settings input, .settings textarea, .settings select, .event-form input[type='text'], .event-form select { min-height: 44px; }
   .row .row-check, .toolbar label:has(input[type='checkbox']) { min-width: 44px; min-height: 44px; }
+  .search-pills { --sb-btn: 44px; }
   /* The whole calendar row is the target; the checkbox itself is 12px and invisible. */
   .cal-toggle { min-height: 44px; display: flex; align-items: center; }
   .cal-toggle input { inset: 0; width: 100%; height: 100%; margin: 0; }
