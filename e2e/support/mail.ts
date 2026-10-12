@@ -155,6 +155,7 @@ export function uniqueTag(prefix = 'e2e'): string {
 export interface OutgoingMail {
   from: string; // "Name <addr>" or addr
   to: string[]; // envelope + To header
+  cc?: string[]; // envelope + Cc header
   subject: string;
   text: string;
   messageId?: string;
@@ -171,6 +172,7 @@ export async function sendMail(m: OutgoingMail): Promise<string> {
   const headers = [
     `From: ${m.from}`,
     `To: ${m.to.join(', ')}`,
+    ...(m.cc?.length ? [`Cc: ${m.cc.join(', ')}`] : []),
     `Subject: ${m.subject}`,
     `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`,
     `Message-ID: <${messageId}>`,
@@ -213,7 +215,7 @@ export async function sendMail(m: OutgoingMail): Promise<string> {
     await expect(null, '220');
     await expect('EHLO e2e.test\r\n', '250');
     await expect(`MAIL FROM:<${addrOf(m.from)}>\r\n`, '250');
-    for (const rcpt of m.to) await expect(`RCPT TO:<${addrOf(rcpt)}>\r\n`, '250');
+    for (const rcpt of [...m.to, ...(m.cc ?? [])]) await expect(`RCPT TO:<${addrOf(rcpt)}>\r\n`, '250');
     await expect('DATA\r\n', '354');
     await expect(data, '250');
     await expect('QUIT\r\n', '221');

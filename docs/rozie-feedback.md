@@ -340,3 +340,12 @@ editor. Drops of images only, one or several, go to the editor.
 What would let the rule go: an event or callback naming the files the wrapper did not take (for
 example `onFilesIgnored(files)`), or leaving the event unprevented when any file is not an image.
 Not blocking.
+
+## Combobox 0.7.0 — as a search box with pills
+
+Wanted: a search field whose operators are chips and whose plain words stay text (docs/superpowers/specs/2026-10-11-search-tokens-design.md). It works; `src/ui/SearchBox.contract.test.tsx` pins the six behaviours it leans on. Four gaps, all worked with rather than around:
+
+1. **No id for the input.** The app focuses the box by id (`/` shortcut). `idBase` names the list and options only, so oinbox sets `id` on `input.rozie-combobox-input` after mount. Wanted: an `inputId` prop.
+2. **Nothing announces a chip added or removed.** A screen reader user who picks a suggestion or presses a chip's remove button hears nothing. Wanted: a polite live region saying "<label> added" / "<label> removed", with the wording overridable.
+3. **Backspace on an empty input removes the last chip outright.** A search box wants it handed back as text to edit. oinbox takes the key in a capture listener before Combobox sees it. Wanted: an `onChipBackspace` that can prevent the removal, or a `backspace="edit"` mode that seeds the input with the chip's value.
+4. **Escape after typing plain words needs two presses.** With `hideEmpty` and no options, nothing is showing, yet after text has been typed the first Escape is consumed without visible effect and only the second reaches the host (oinbox blurs the box on Escape). With nothing typed, one press reaches the host. Observed in Chromium 2026-10-11: typing `lunch` into the box, the first Escape left the input focused and the second blurred it; with nothing typed, the first Escape blurred it. Likely the component's open state staying true while the empty list is hidden. Wanted: Escape left alone whenever no popup is showing.

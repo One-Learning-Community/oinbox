@@ -118,7 +118,7 @@ Other operators (`subject:`, dates, sizes, `list:`, `filename:`) open no list.
 | Subject | `subject:<text>` |
 | Has the words | plain words |
 | Doesn't have | one `-word` for each word |
-| In | `in:<role>` or `label:<path>`; a select with "All mail except Spam and Trash" (writes nothing) first, then "All mail", mailboxes and labels |
+| In | `in:<role>` or `label:<path>`; a select with "All mail except Spam and Trash" (writes nothing) first, then the system mailboxes, then "All mail", then labels, the same order as the `in:` suggestions |
 | Date | Any time, Last 7 days (`newer_than:7d`), Last month (`newer_than:1m`), Last year (`newer_than:1y`), or Custom: a From and a To date, written as `after:` and `before:` |
 | Has attachment | `has:attachment` |
 | Unread | `is:unread` |

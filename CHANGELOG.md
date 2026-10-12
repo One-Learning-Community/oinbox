@@ -7,6 +7,11 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 ### Added
 
 - Drive: a link to OpenCloud in the sidebar, under Contacts, for operators who name its public address in `OINBOX_DRIVE_URL` (docs/operating.md, "Drive"). It opens OpenCloud's own web UI in a new tab, where the user signs in again.
+- Search: operators show in the search box as pills that can be removed one at a time; typing `from:`, `to:`, `in:`, `label:`, `has:` or `is:` offers people, mailboxes and the values that exist; and a panel off the search box builds a search from a form (from, to, subject, words, place, date, attachment, unread, starred). Searches with `OR` or brackets are shown as text, as before.
+
+### Changed
+
+- Search: `to:` now also finds mail the person was copied on. `cc:` still matches Cc alone.
 
 ## 0.1.0-beta.4
 

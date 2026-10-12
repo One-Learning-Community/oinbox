@@ -10,7 +10,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 
 - **Conversations**: server threads with every message, including your own replies, oldest to newest. Read messages collapse; quoted text folds behind "•••".
 - **Thread list**: one row per conversation, virtualized and paged from the server, kept live over push.
-- **Search**: Gmail operators (`from: to: cc: bcc: subject: has:attachment is: in: label: before: after: older_than: newer_than: larger: smaller:`, `-`, `OR`, `{…}`, `(…)`) with highlighted snippets.
+- **Search**: Gmail operators (`from: to: cc: bcc: subject: has:attachment is: in: label: before: after: older_than: newer_than: larger: smaller:`, `-`, `OR`, `{…}`, `(…)`) with highlighted snippets. Operators show in the search box as pills, with suggestions for people, mailboxes and labels, and a panel off the box builds a search from a form.
 - **Compose**: inline reply, reply-all and forward; recipient suggestions from your mail history, your contacts and the organisation's people and groups; identities and signatures; draft autosave; attachments; 10-second undo send.
 - **Contacts**: an address book kept in Stalwart (JMAP Contacts), so a phone syncing over CardDAV sees the same people. View, search, add, edit and delete, with photos; live across devices; save someone straight from a message; saved people are suggested when you write. Groups you can address a message to (they expand into one recipient per member), vCard import with a preview, and vCard export.
 - **Triage**: archive, delete, spam, read/unread, star, move, label; optimistic, with rollback and Undo.

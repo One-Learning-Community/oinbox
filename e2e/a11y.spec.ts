@@ -172,6 +172,16 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
     await page.locator('article.msg .person.addr').last().click();
     await page.locator('.person-card').waitFor();
   },
+  'search box with pills': async (page) => {
+    await page.goto('/search/' + encodeURIComponent('from:bob label:nowhere is:unread'));
+    await expect(page.locator('.search-pill')).toHaveCount(3);
+  },
+  'search panel': async (page) => {
+    await page.goto('/search/' + encodeURIComponent('from:bob label:nowhere is:unread'));
+    await expect(page.locator('.search-pill')).toHaveCount(3);
+    await page.getByRole('button', { name: 'Search options' }).click();
+    await expect(page.getByRole('dialog', { name: 'Search options' })).toBeVisible();
+  },
   'shortcuts dialog': async (page) => {
     await openInbox(page);
     await page.keyboard.press('?');

@@ -138,8 +138,8 @@ test('@phone a thread can be labelled from its toolbar', async ({ page }) => {
 
 test('@phone search works from the top bar', async ({ page }) => {
   await openInbox(page);
-  await page.getByRole('searchbox', { name: 'Search mail' }).fill('from:bob');
-  await page.getByRole('searchbox', { name: 'Search mail' }).press('Enter');
+  await page.getByRole('combobox', { name: 'Search mail' }).pressSequentially('from:bob ');
+  await page.getByRole('combobox', { name: 'Search mail' }).press('Enter');
   await expect(page).toHaveURL(/\/search\//);
   await expect(rows(page).first()).toBeVisible();
   await noSidewaysScroll(page, 'search results');
