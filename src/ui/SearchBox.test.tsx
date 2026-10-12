@@ -1,5 +1,5 @@
 import { Route, useNavigate } from '@solidjs/router';
-import { fireEvent, screen, waitFor } from '@solidjs/testing-library';
+import { fireEvent, screen, waitFor, within } from '@solidjs/testing-library';
 import { describe, expect, it, vi } from 'vitest';
 import type { Mailbox } from '../jmap/types';
 import { contactsKit } from './contacts-test-kit';
@@ -163,5 +163,53 @@ describe('SearchBox', () => {
     await waitFor(() => expect(screen.getAllByRole('option').length).toBeGreaterThan(10));
     const names = screen.getAllByRole('option').map((o) => o.textContent ?? '');
     for (let i = 0; i < 10; i++) expect(names.some((n) => n.includes(`Label ${i}`))).toBe(true);
+  });
+});
+
+describe('SearchBox panel', () => {
+  it('opens the form filled in from the pills and the words in the box', async () => {
+    const { type } = box('/search/' + encodeURIComponent('from:bob'));
+    type('invoice');
+    fireEvent.click(screen.getByRole('button', { name: 'Search options' }));
+    await waitFor(() => expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('bob'));
+    expect((screen.getByLabelText('Has the words') as HTMLInputElement).value).toBe('invoice');
+  });
+
+  it('runs the search the form asks for and closes', async () => {
+    const { path, pills } = box();
+    const button = screen.getByRole('button', { name: 'Search options' });
+    fireEvent.click(button);
+    fireEvent.click(await screen.findByLabelText('Unread'));
+    // The box has a button of that name too: this is the one in the form.
+    fireEvent.click(within(document.querySelector('.search-panel-form') as HTMLElement).getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(path()).toBe('/search/' + encodeURIComponent('is:unread')));
+    await waitFor(() => expect(button.getAttribute('aria-expanded')).toBe('false'));
+    expect(pills()).toEqual(['is: unread']);
+  });
+
+  it('opens empty over a search it cannot show as a form', async () => {
+    box('/search/' + encodeURIComponent('from:bob OR from:nora'));
+    fireEvent.click(screen.getByRole('button', { name: 'Search options' }));
+    expect(((await screen.findByLabelText('From')) as HTMLInputElement).value).toBe('');
+  });
+
+  it('closes on Escape and gives the focus back to its button', async () => {
+    box();
+    const button = screen.getByRole('button', { name: 'Search options' });
+    fireEvent.click(button);
+    fireEvent.keyDown(await screen.findByLabelText('From'), { key: 'Escape' });
+    await waitFor(() => expect(button.getAttribute('aria-expanded')).toBe('false'));
+    expect(document.activeElement).toBe(button);
+  });
+
+  it.each([
+    ['pills', 'from:bob'],
+    ['plain text', 'from:bob OR from:nora'],
+  ])('never puts the form inside the search form, with %s', async (_, query) => {
+    box('/search/' + encodeURIComponent(query));
+    fireEvent.click(screen.getByRole('button', { name: 'Search options' }));
+    await screen.findByLabelText('From');
+    expect(document.querySelector('.search-panel-form')).not.toBeNull();
+    expect(document.querySelectorAll('form form')).toHaveLength(0);
   });
 });

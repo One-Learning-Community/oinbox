@@ -1,4 +1,5 @@
 import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
+import { Popover } from '@rozie-ui/popover-solid';
 import { useNavigate } from '@solidjs/router';
 import { createEffect, createMemo, createSignal, on, onMount, Show, type JSX } from 'solid-js';
 import { useApp } from '../app/context';
@@ -7,6 +8,7 @@ import { pillError, pillLabel, pillText, readQuery, uniquePills, writeQuery, typ
 import { labelPath, searchContext, searchSlug } from '../sync/selectors';
 import { Icon } from './icons';
 import { useAccountPath } from './path';
+import { SearchPanel } from './SearchPanel';
 
 interface Option {
   value: string;
@@ -35,10 +37,57 @@ export function SearchBox() {
   const simple = createMemo(() => readQuery(routeQuery()));
   const go = (q: string) => navigate(q.trim() ? `/${searchSlug(q)}` : '/inbox');
 
+  const end = (query: () => SimpleQuery | null) => <PanelButton query={query} go={go} />;
+
   return (
-    <Show when={simple()} fallback={<PlainBox query={routeQuery()} go={go} />}>
-      {(q) => <PillBox query={q()} searching={!!routeQuery()} go={go} />}
+    <Show when={simple()} fallback={<PlainBox query={routeQuery()} go={go} end={end} />}>
+      {(q) => <PillBox query={q()} searching={!!routeQuery()} go={go} end={end} />}
     </Show>
+  );
+}
+
+/** The button at the end of the box, and the form it opens. */
+function PanelButton(props: { query: () => SimpleQuery | null; go: (q: string) => void }) {
+  const [open, setOpen] = createSignal(false);
+  let button: HTMLButtonElement | undefined;
+  const close = () => {
+    setOpen(false);
+    button?.focus();
+  };
+
+  return (
+    <span class="search-panel-anchor">
+      <Popover
+        open={open()}
+        onOpenChange={setOpen}
+        trigger="manual"
+        placement="bottom-end"
+        strategy="fixed"
+        offset={8}
+        anchorSlot={() => (
+          <button ref={button} type="button" class="icon-btn" aria-label="Search options" aria-haspopup="dialog" aria-expanded={open()} style={BUTTON} onClick={() => setOpen(!open())}>
+            <Icon name="tune" />
+          </button>
+        )}
+      >
+        <div
+          class="search-panel"
+          role="dialog"
+          aria-label="Search options"
+          onKeyDown={(e) => {
+            // A day picker open inside the form takes its own Escape first.
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            e.preventDefault();
+            close();
+          }}
+        >
+          {/* Made anew each time it opens, so that it shows the search as it is now. */}
+          <Show when={open()}>
+            <SearchPanel query={props.query()} onSearch={(q) => { close(); props.go(writeQuery(q)); }} />
+          </Show>
+        </div>
+      </Popover>
+    </span>
   );
 }
 
@@ -54,27 +103,29 @@ function PlainBox(props: { query: string; go: (q: string) => void; end?: (query:
   };
 
   return (
-    <form class="search-box" role="search" onSubmit={submit}>
-      <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
-        <Icon name="search" />
-      </button>
-      <input
-        id="search-input"
-        type="search"
-        placeholder="Search mail"
-        aria-label="Search mail"
-        autocomplete="off"
-        value={text()}
-        onInput={(e) => setText(e.currentTarget.value)}
-        onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
-      />
-      <Show when={text()}>
-        <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={() => { setText(''); if (props.query) props.go(''); }}>
-          <Icon name="close" />
+    <div class="search-box">
+      <form class="search-box-form" role="search" onSubmit={submit}>
+        <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
+          <Icon name="search" />
         </button>
-      </Show>
+        <input
+          id="search-input"
+          type="search"
+          placeholder="Search mail"
+          aria-label="Search mail"
+          autocomplete="off"
+          value={text()}
+          onInput={(e) => setText(e.currentTarget.value)}
+          onKeyDown={(e) => e.key === 'Escape' && e.currentTarget.blur()}
+        />
+        <Show when={text()}>
+          <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={() => { setText(''); if (props.query) props.go(''); }}>
+            <Icon name="close" />
+          </button>
+        </Show>
+      </form>
       {props.end?.(() => readQuery(text()))}
-    </form>
+    </div>
   );
 }
 
@@ -167,83 +218,85 @@ function PillBox(props: { query: SimpleQuery; searching: boolean; go: (q: string
   };
 
   return (
-    <form
-      ref={(el) => {
-        root = el;
-        el.addEventListener('keydown', onBackspace, true);
-      }}
-      class="search-box search-pills"
-      role="search"
-      onSubmit={submit}
-      // Combobox takes Escape only to close a list that is showing.
-      onKeyDown={(e) => e.key === 'Escape' && !e.defaultPrevented && input()?.blur()}
-    >
-      <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
-        <Icon name="search" />
-      </button>
-      <Combobox
-        // Combobox hands over its handle once it has mounted, which is after this component's onMount.
-        ref={(h) => {
-          handle = h;
-          h.seedQuery(props.query.words);
+    <div class="search-box search-pills">
+      <form
+        ref={(el) => {
+          root = el;
+          el.addEventListener('keydown', onBackspace, true);
         }}
-        multiple
-        disableFilter
-        block
-        chipLayout="inline"
-        disableOpenOnFocus
-        hideEmpty
-        idBase="search"
-        ariaLabel="Search mail"
-        placeholder={pills().length ? '' : 'Search mail'}
-        value={pills().map(pillText)}
-        options={options()}
-        onSearch={(e) => onSearch(e.query)}
-        onChange={(e) => {
-          if (e.selected && e.option) {
-            add([(e.option as Option).suggestion.pill]);
-            write(at()?.before ?? '');
-          } else {
-            const kept = new Set(e.value as string[]);
-            const next = pills().filter((p) => kept.has(pillText(p)));
-            setPills(next);
-            if (props.searching) props.go(writeQuery({ pills: next, words: text() }));
-          }
-        }}
-        chipSlot={(chip) => (
-          <Show when={pills()[chip.index]}>
-            {(p) => {
-              const label = () => pillLabel(p(), { person, locale: navigator.language });
-              const bad = () => pillError(p(), ctx());
-              return (
-                <>
-                  <span class="search-pill" classList={{ 'search-pill-error': !!bad() }} title={bad() ?? pillText(p())}>{label()}</span>
-                  <button type="button" class="rcpt-chip-remove" aria-label={`Remove ${label()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => chip.remove()}>
-                    ×
-                  </button>
-                </>
-              );
-            }}
-          </Show>
-        )}
-        optionSlot={(o) => {
-          const s = () => (o.option as Option).suggestion;
-          return (
-            <span class="rcpt-option">
-              <span class="rcpt-name">{s().label}</span>
-              <Show when={s().detail}>
-                <span class="rcpt-email">{s().detail}</span>
-              </Show>
-            </span>
-          );
-        }}
-      />
-      <Show when={pills().length || text()}>
-        <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={clear}>
-          <Icon name="close" />
+        class="search-box-form"
+        role="search"
+        onSubmit={submit}
+        // Combobox takes Escape only to close a list that is showing.
+        onKeyDown={(e) => e.key === 'Escape' && !e.defaultPrevented && input()?.blur()}
+      >
+        <button class="icon-btn" type="submit" aria-label="Search" style={BUTTON}>
+          <Icon name="search" />
         </button>
-      </Show>
+        <Combobox
+          // Combobox hands over its handle once it has mounted, which is after this component's onMount.
+          ref={(h) => {
+            handle = h;
+            h.seedQuery(props.query.words);
+          }}
+          multiple
+          disableFilter
+          block
+          chipLayout="inline"
+          disableOpenOnFocus
+          hideEmpty
+          idBase="search"
+          ariaLabel="Search mail"
+          placeholder={pills().length ? '' : 'Search mail'}
+          value={pills().map(pillText)}
+          options={options()}
+          onSearch={(e) => onSearch(e.query)}
+          onChange={(e) => {
+            if (e.selected && e.option) {
+              add([(e.option as Option).suggestion.pill]);
+              write(at()?.before ?? '');
+            } else {
+              const kept = new Set(e.value as string[]);
+              const next = pills().filter((p) => kept.has(pillText(p)));
+              setPills(next);
+              if (props.searching) props.go(writeQuery({ pills: next, words: text() }));
+            }
+          }}
+          chipSlot={(chip) => (
+            <Show when={pills()[chip.index]}>
+              {(p) => {
+                const label = () => pillLabel(p(), { person, locale: navigator.language });
+                const bad = () => pillError(p(), ctx());
+                return (
+                  <>
+                    <span class="search-pill" classList={{ 'search-pill-error': !!bad() }} title={bad() ?? pillText(p())}>{label()}</span>
+                    <button type="button" class="rcpt-chip-remove" aria-label={`Remove ${label()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => chip.remove()}>
+                      ×
+                    </button>
+                  </>
+                );
+              }}
+            </Show>
+          )}
+          optionSlot={(o) => {
+            const s = () => (o.option as Option).suggestion;
+            return (
+              <span class="rcpt-option">
+                <span class="rcpt-name">{s().label}</span>
+                <Show when={s().detail}>
+                  <span class="rcpt-email">{s().detail}</span>
+                </Show>
+              </span>
+            );
+          }}
+        />
+        <Show when={pills().length || text()}>
+          <button class="icon-btn" type="button" aria-label="Clear search" style={BUTTON} onClick={clear}>
+            <Icon name="close" />
+          </button>
+        </Show>
+      </form>
       {props.end?.(() => readQuery(writeQuery({ pills: pills(), words: text() })))}
-    </form>
+    </div>
   );
 }
