@@ -126,7 +126,7 @@ test('@perf start, scroll and search in a large mailbox', async ({ page }) => {
   // Search.
   await page.goto('/inbox');
   await firstRows(page);
-  const search = page.getByRole('searchbox', { name: 'Search mail' });
+  const search = page.locator('#search-input');
   await search.fill('meeting');
   const t0 = Date.now();
   await search.press('Enter');

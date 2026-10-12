@@ -129,21 +129,23 @@ test('a custom date range keeps the panel open while a day is picked, and includ
   await page.getByRole('button', { name: 'Search options' }).click();
   const panel = page.getByRole('dialog', { name: 'Search options' });
   await panel.getByLabel('Date').selectOption('custom');
-  const pickDay = async (button: RegExp) => {
+  const pickDay = async (button: RegExp, day: string) => {
     await panel.getByRole('button', { name: button }).click();
-    await page.locator('.day-popover').getByText('15', { exact: true }).first().click();
+    await page.locator('.day-popover').getByText(day, { exact: true }).first().click();
     await expect(panel).toBeVisible();
   };
-  await pickDay(/^First day/);
+  await pickDay(/^First day/, '10');
   await expect(panel.getByRole('button', { name: /^First day: (?!Any)/ })).toBeVisible();
-  await pickDay(/^Last day/);
-  const lastDay = (await panel.getByRole('button', { name: /^Last day/ }).getAttribute('aria-label')) ?? '';
-  expect(lastDay).not.toContain('Any');
+  await pickDay(/^Last day/, '15');
   await panel.getByRole('button', { name: 'Search' }).click();
+  // The last day is included: it is written as the day after.
   await expect(page).toHaveURL(/\/search\/.*after(%3A|:).*before(%3A|:)/);
+  const query = decodeURIComponent(new URL(page.url()).pathname.replace('/search/', ''));
+  expect(query).toMatch(/after:\d{4}[-/]\d{2}[-/]10\b/);
+  expect(query).toMatch(/before:\d{4}[-/]\d{2}[-/]16\b/);
 
   await page.getByRole('button', { name: 'Search options' }).click();
-  await expect(panel.getByRole('button', { name: /^Last day/ })).toHaveAttribute('aria-label', lastDay);
+  await expect(panel.getByRole('button', { name: /^Last day: .*\b15\b/ })).toBeVisible();
 });
 
 test('the search panel fits a phone and its fields are finger-sized @phone', async ({ page }) => {
@@ -157,4 +159,15 @@ test('the search panel fits a phone and its fields are finger-sized @phone', asy
   expect(box.x + box.width).toBeLessThanOrEqual(width);
   expect((await form.getByLabel('From').boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('the search options button can be tapped with pills in the box @phone', async ({ page }) => {
+  await page.goto('/search/' + encodeURIComponent('from:bob is:unread'));
+  await expect(pills(page)).toHaveCount(2);
+  await page.getByRole('button', { name: 'Search options' }).tap();
+  const panel = page.getByRole('dialog', { name: 'Search options' });
+  await expect(panel).toBeVisible();
+  const box = (await panel.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });

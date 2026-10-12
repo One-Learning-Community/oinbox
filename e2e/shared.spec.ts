@@ -138,7 +138,7 @@ test('labelling works in the shared mailbox: the picker knows which mailbox it i
 test('search and the sidebar follow the address inside a shared mailbox', async ({ page }) => {
   await page.goto(`/shared/${support}/inbox`);
   await expect(page.locator('.sidebar .nav-item.active')).toContainText('Inbox');
-  const box = page.getByRole('searchbox', { name: 'Search mail' }).or(page.getByLabel('Search mail'));
+  const box = page.locator('#search-input');
   await box.fill('password');
   await box.press('Enter');
   await expect(page).toHaveURL(new RegExp(`/shared/${support}/search/password$`));

@@ -318,6 +318,9 @@ a { color: var(--accent); }
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); }
   .topbar { min-width: 0; gap: 4px; padding-right: 8px; }
   .topbar .search-box { min-width: 0; }
+  /* The pill box's input may shrink, so the form never spills over the options button. */
+  .topbar .search-pills { --rozie-combobox-inline-input-min-width: 40px; }
+  .topbar .search-box-form { min-width: 0; }
   .topbar .hide-mobile { display: none; }
   .msg-head .msg-date { font-size: 11px; max-width: 30%; white-space: normal; text-align: right; }
   .msg-head .addr { display: none; }
