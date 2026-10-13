@@ -24,6 +24,8 @@ export interface RescuedComposer {
   threadId: Id | null;
   replyTo: Id | null;
   signatureMode: SignatureMode;
+  /** Versions of the draft other than `draftId` that may still be on the server; the next save removes them. Absent in older rescues. */
+  stale?: Id[];
 }
 
 /** The draft this composer was about to save has been sent already: there is nothing left to save or send. */
@@ -80,6 +82,8 @@ export function createComposers(
   const pendingSends = new Set<number>();
   /** The drafts those sends will send: a conversation shows them as going out, not as drafts to edit. */
   const [sending, setSending] = createSignal<ReadonlySet<string>>(new Set());
+  /** Drafts that have gone: the server says so a moment after the send returns, and until then they are still drafts here. */
+  const [sent, setSent] = createSignal<ReadonlySet<string>>(new Set());
   const markSending = (id: string, on: boolean) => {
     const next = new Set(sending());
     if (on) next.add(id);
@@ -120,6 +124,8 @@ export function createComposers(
     releaseImages: () => void;
     /** After this, edits no longer schedule a save: a late one would bring the draft back. */
     retire: () => void;
+    /** Resolves when no save is in flight. One that is would store a new version after its draft was dealt with. */
+    settled: () => Promise<void>;
   };
 
   interface Restore {
@@ -161,7 +167,10 @@ export function createComposers(
     /** Every id the draft has had: each save stores a new message, and a list may still show the one before. */
     const ids = new Set<Id>([...(restore?.draftId ? [restore.draftId] : []), ...(restore?.stale ?? [])]);
     const [versions, setVersions] = createSignal<ReadonlySet<Id>>(new Set(ids));
+    /** A version the server has stored in a save that has not finished: the draft id is still the one before it. */
+    let pending: Id | null = null;
     const hold = (id: Id) => {
+      pending = id;
       if (ids.has(id)) return;
       ids.add(id);
       setVersions(new Set(ids));
@@ -253,6 +262,7 @@ export function createComposers(
         stale = saved.replaced ? [] : replaces;
         setDraftId(saved.id);
         hold(saved.id);
+        pending = null;
         if (status() === 'saving') setStatus('saved');
       } catch (e) {
         setStatus('error');
@@ -358,10 +368,11 @@ export function createComposers(
       retire: () => {
         retired = true;
       },
+      settled: () => saving.catch(() => undefined),
       staleIds: () => stale.filter((x) => x !== draftId()),
       holds: (id) => ids.has(id),
       wasSent: async () => unconfirmedSend && !!draftId() && (await engine.draftState(draftId()!)) === 'sent',
-      snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode() }),
+      snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode(), stale: [...stale, ...(pending ? [pending] : [])].filter((x) => x !== draftId()) }),
     };
     return composer;
   };
@@ -400,9 +411,9 @@ export function createComposers(
       }
       toast('Draft saved.');
     }
-    const stale = internals(c).staleIds();
     remove(c);
-    await dropStale(stale);
+    await internals(c).settled();
+    await dropStale(internals(c).staleIds());
   };
 
   /** Try a failed save again (the Retry button, and by itself when the connection returns). */
@@ -426,6 +437,10 @@ export function createComposers(
     const note = drive?.discardNote(c);
     const ok = await confirm({ title: 'Discard draft?', message: `This draft will be permanently deleted.${note ? ` ${note}` : ''}`, confirmLabel: 'Discard' });
     if (!ok) return;
+    // A save in flight would store a version after this one is deleted, and the draft would be back.
+    internals(c).retire();
+    internals(c).cancelAutosave();
+    await internals(c).settled();
     // After a send that may have gone through, the "draft" can be the copy in Sent: leave it be.
     const stale = internals(c).staleIds();
     if (await internals(c).wasSent().catch(() => false)) {
@@ -442,8 +457,20 @@ export function createComposers(
     toast('Draft discarded.');
   };
 
-  /** Save now, close the composer, send after the undo window. */
+  /** Composers whose Send is saving: a second press would save again and send the message twice. */
+  const beingSent = new Set<number>();
   const send = async (c: Composer) => {
+    if (beingSent.has(c.id)) return;
+    beingSent.add(c.id);
+    try {
+      await queueSend(c);
+    } finally {
+      beingSent.delete(c.id);
+    }
+  };
+
+  /** Save now, close the composer, send after the undo window. */
+  const queueSend = async (c: Composer) => {
     const d = c.draft();
     if (![...d.to, ...d.cc, ...d.bcc].length) {
       toast('Please specify at least one recipient.', 'error');
@@ -485,6 +512,7 @@ export function createComposers(
       if (cancelled) return;
       try {
         await engine.sendDraft(draftId, identityId);
+        setSent(new Set([...sent(), draftId]));
         drive?.sent?.(c);
         onSent(draftId, [...saved.to, ...saved.cc, ...saved.bcc]);
         toast('Message sent.', 'success');
@@ -492,6 +520,7 @@ export function createComposers(
         // The request may have reached the server even though we saw it fail.
         const state = await engine.draftState(draftId).catch(() => null);
         if (state === 'sent') {
+          setSent(new Set([...sent(), draftId]));
           drive?.sent?.(c);
           onSent(draftId, [...saved.to, ...saved.cc, ...saved.bcc]);
           toast('Message sent.', 'success');
@@ -536,6 +565,7 @@ export function createComposers(
     if (existing) return void setWanted(existing);
     // On its way out: a composer opened now would save a new version while this one is sent.
     if (sending().has(email.id)) return void toast('This message is being sent. Undo to change it.');
+    if (sent().has(email.id)) return;
     const values = email.bodyValues ?? {};
     const html = (email.htmlBody ?? []).filter((p) => p.type === 'text/html' && p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
     const text = (email.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
@@ -579,7 +609,7 @@ export function createComposers(
     if (pendingSends.size || list().some((c) => c.status() === 'dirty' || c.status() === 'saving')) e.preventDefault();
   });
 
-  return { list, wanted, sending, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
+  return { list, wanted, sending, sent, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
 }
 
 export type Composers = ReturnType<typeof createComposers>;

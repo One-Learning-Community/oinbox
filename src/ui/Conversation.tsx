@@ -83,7 +83,7 @@ export function Conversation(props: { view: View; threadId: Id }) {
   /** The draft behind an open composer shows as that composer, not also as a message. */
   const beingEdited = createMemo(() => new Set(composers.list().flatMap((c) => [...c.versions()])));
   const messages = createMemo(() =>
-    all().filter((e) => !beingEdited().has(e.id) && (showDeleted() || !isHidden(e, hidden()))),
+    all().filter((e) => !(e.keywords?.$draft && beingEdited().has(e.id)) && (showDeleted() || !isHidden(e, hidden()))),
   );
 
   // Reset per-thread UI state.
@@ -312,7 +312,7 @@ function ReplyBar(props: { threadId: Id }) {
 function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => void }) {
   const { engine, composers } = useApp();
   const isSending = () => composers.sending().has(props.email.id);
-  const isDraft = () => !!props.email.keywords?.$draft && !isSending();
+  const isDraft = () => !!props.email.keywords?.$draft && !isSending() && !composers.sent().has(props.email.id);
   const from = () => props.email.from?.[0];
   const me = createMemo(() => engine.myAddresses());
   const name = () => (from() && me().has(from()!.email.toLowerCase()) ? 'me' : displayName(from()));

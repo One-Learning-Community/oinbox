@@ -10,6 +10,10 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 ### Fixed
 
+- Send pressed twice in quick succession (a double click, or Ctrl+Enter held) sends once. Before, the second press saved the message again under the first, which then failed to send and reopened with "Couldn't send" while the second went out; Retry there would have sent it twice.
+- A draft discarded while it was being saved no longer comes back. The save in flight stored a new version after the old one was deleted.
+- A message that has just gone no longer shows as a draft, with "Edit draft", for the moment before the server says it is in Sent.
+- A draft rescued across a sign-out in the middle of a save no longer leaves a second copy of itself in Drafts.
 - A reply being written no longer also shows in the conversation as a draft, above its own editor, each time it is saved. It showed between the new version being stored and the old one being removed, which is a moment locally and longer on a slow connection.
 
 ## 0.1.0-beta.7

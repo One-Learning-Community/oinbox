@@ -161,9 +161,63 @@ describe('composer safety', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(c.draftId()).toBeNull();
     expect(c.versions().has('v2')).toBe(true);
+    // Rescued now (a sign-out mid-save), it takes the new version along, or that would stay behind as a second draft.
+    expect(composers.snapshot()[0]!.stale).toEqual(['v2']);
     finish();
     await vi.advanceTimersByTimeAsync(0);
     expect(c.draftId()).toBe('v2');
+  });
+
+  describe('actions that overlap a save', () => {
+    /** Holds every save at the server until released, so a test can act while one is in flight. */
+    const gate = (engine: MailEngine) => {
+      const real = engine.saveDraft.bind(engine);
+      let open!: () => void;
+      const opened = new Promise<void>((r) => (open = r));
+      const spy = vi.spyOn(engine, 'saveDraft').mockImplementation(async (...args) => {
+        await opened;
+        return real(...args);
+      });
+      return { open, spy };
+    };
+    const draftsOnServer = (server: FakeJmap) => [...server.emails.values()].filter((e) => e.keywords?.$draft);
+
+    it('Send pressed twice sends once', async () => {
+      const { composers, engine, server, toast } = await setup();
+      const c = composers.open('new');
+      c.update({ to: [bob], subject: 'Twice' });
+      const g = gate(engine);
+      const send = vi.spyOn(engine, 'sendDraft').mockResolvedValue();
+      const first = composers.send(c);
+      const second = composers.send(c);
+      g.open();
+      await Promise.all([first, second]);
+      await vi.advanceTimersByTimeAsync(UNDO_SEND_MS);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(composers.list()).toHaveLength(0);
+      // One version on the server, the one that was sent: a second save would have left another.
+      expect(g.spy).toHaveBeenCalledTimes(1);
+      expect(draftsOnServer(server)).toHaveLength(1);
+      expect(composers.sent().has(draftsOnServer(server)[0]!.id)).toBe(true);
+      expect(toast).toHaveBeenLastCalledWith('Message sent.', 'success');
+    });
+
+    it('a draft discarded while it is being saved does not come back', async () => {
+      const { composers, engine, server } = await setup();
+      const c = composers.open('new');
+      c.update({ to: [bob], subject: 'Gone' });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(draftsOnServer(server)).toHaveLength(1);
+      const g = gate(engine);
+      c.update({ subject: 'Gone, edited' });
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(g.spy).toHaveBeenCalledTimes(1);
+      const discarded = composers.discard(c);
+      g.open();
+      await discarded;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(draftsOnServer(server)).toHaveLength(0);
+    });
   });
 
   describe('a failed send', () => {
