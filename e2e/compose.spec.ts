@@ -72,10 +72,19 @@ test('an inline reply joins the conversation as the newest message and reaches t
   await expect(recipientChips(c)).toHaveCount(1);
   await expect(recipientChips(c)).toContainText(BOB);
   await typeBody(c, 'Confirmed, see you there.');
-  await sendAndWait(page, c);
+  await c.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(toast(page, 'Sending…')).toBeVisible();
+
+  // While it can still be undone the reply is in the conversation as going out, not as a draft to edit.
+  const messages = page.locator('article.msg');
+  await expect(messages).toHaveCount(2);
+  await expect(messages.last().locator('.sending-tag')).toHaveText('Sending…');
+  await expect(messages.last().locator('.draft-tag')).toHaveCount(0);
+  await expect(messages.last().getByRole('button', { name: 'Edit draft' })).toHaveCount(0);
+  await expect(toast(page, 'Message sent.')).toBeVisible({ timeout: UNDO_SEND_MS + 10_000 });
 
   // The reply is the second, newest message, shown as sent by "me" and no longer a draft.
-  const messages = page.locator('article.msg');
+  await expect(messages.last().locator('.sending-tag')).toHaveCount(0);
   await expect(messages).toHaveCount(2);
   await expect(messages.last().locator('.from')).toHaveText('me');
   await expect(messages.last().locator('.draft-tag')).toHaveCount(0);

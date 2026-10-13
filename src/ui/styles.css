@@ -535,6 +535,7 @@ button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-
   .reply-bar { padding-left: 16px; flex-wrap: wrap; }
 }
 .draft-tag { color: var(--danger-text); font-weight: 500; }
+.sending-tag { color: var(--text-3); font-weight: 500; }
 
 /* ---- rozie theme bridge: map component tokens onto app tokens (so dark mode applies) ---- */
 :root {

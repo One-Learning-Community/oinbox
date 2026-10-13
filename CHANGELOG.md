@@ -2,6 +2,16 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- A reply that has been sent and can still be undone is shown in its conversation as "Sending…". Before, it turned back into a draft, with "Edit draft" under it, until it went. Opening it from Drafts in those seconds says it is being sent.
+
+### Fixed
+
+- A reply being written no longer also shows in the conversation as a draft, above its own editor, each time it is saved. It showed between the new version being stored and the old one being removed, which is a moment locally and longer on a slow connection.
+
 ## 0.1.0-beta.7
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.

@@ -81,7 +81,7 @@ export function Conversation(props: { view: View; threadId: Id }) {
   }));
   const deletedCount = createMemo(() => all().filter((e) => isHidden(e, hidden())).length);
   /** The draft behind an open composer shows as that composer, not also as a message. */
-  const beingEdited = createMemo(() => new Set(composers.list().map((c) => c.draftId())));
+  const beingEdited = createMemo(() => new Set(composers.list().flatMap((c) => [...c.versions()])));
   const messages = createMemo(() =>
     all().filter((e) => !beingEdited().has(e.id) && (showDeleted() || !isHidden(e, hidden()))),
   );
@@ -311,7 +311,8 @@ function ReplyBar(props: { threadId: Id }) {
 
 function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => void }) {
   const { engine, composers } = useApp();
-  const isDraft = () => !!props.email.keywords?.$draft;
+  const isSending = () => composers.sending().has(props.email.id);
+  const isDraft = () => !!props.email.keywords?.$draft && !isSending();
   const from = () => props.email.from?.[0];
   const me = createMemo(() => engine.myAddresses());
   const name = () => (from() && me().has(from()!.email.toLowerCase()) ? 'me' : displayName(from()));
@@ -328,6 +329,9 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
           <div>
             <Show when={isDraft()}>
               <span class="draft-tag">Draft</span>{' '}
+            </Show>
+            <Show when={isSending()}>
+              <span class="sending-tag">Sending…</span>{' '}
             </Show>
             <button
               type="button"
@@ -352,7 +356,7 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
         <div class="msg-date" title={fullDate(props.email.receivedAt)}>
           {props.expanded ? fullDate(props.email.receivedAt) : listDate(props.email.receivedAt)}
         </div>
-        <Show when={props.expanded && !isDraft()}>
+        <Show when={props.expanded && !isDraft() && !isSending()}>
           <button class="icon-btn" title="Reply" onClick={(e) => { e.stopPropagation(); composers.open('reply', props.email); }}>
             <Icon name="reply" />
           </button>

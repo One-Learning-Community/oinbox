@@ -493,7 +493,7 @@ export class MailEngine {
    * when the create in the same request fails. That request also reads the new version's parts,
    * whose blob ids are its own (the old ones die with the old version).
    */
-  async saveDraft(email: Partial<Email>, replaces: Id[]): Promise<SavedDraft> {
+  async saveDraft(email: Partial<Email>, replaces: Id[], onCreated?: (id: Id) => void): Promise<SavedDraft> {
     const b = this.client.batch();
     const call = b.call('Email/set', { accountId: this.accountId, create: { draft: email } });
     const r = (await this.client.send(b)).get(call);
@@ -503,6 +503,8 @@ export class MailEngine {
       throw new DraftSaveError(err?.type ?? 'serverFail', err?.description ?? (err ? null : 'Draft was not saved'));
     }
     const saved = { id: created.id!, threadId: created.threadId! };
+    // Push can list the new version before the rest of this is done: its owner should know it by then.
+    onCreated?.(saved.id);
     try {
       const b2 = this.client.batch();
       const get = b2.call('Email/get', { accountId: this.accountId, ids: [saved.id], properties: ['attachments'] });

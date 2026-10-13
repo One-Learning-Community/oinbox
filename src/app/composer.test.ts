@@ -120,6 +120,52 @@ describe('composer safety', () => {
   }
   afterEach(() => vi.useRealTimers());
 
+  describe('a message waiting out the undo window', () => {
+    it('is marked as being sent until it goes, and cannot be opened as a draft', async () => {
+      const { composers, toast } = await setup();
+      const c = composers.open('new');
+      c.update({ to: [bob], subject: 'Going' });
+      await composers.send(c);
+      const id = [...composers.sending()][0]!;
+      expect(id).toBeTruthy();
+      composers.openDraft({ id } as EmailRec);
+      expect(composers.list()).toHaveLength(0);
+      expect(toast).toHaveBeenLastCalledWith('This message is being sent. Undo to change it.');
+      await vi.advanceTimersByTimeAsync(UNDO_SEND_MS);
+      expect(composers.sending().size).toBe(0);
+    });
+
+    it('is a draft again when the send is undone', async () => {
+      const { composers, toast } = await setup();
+      const c = composers.open('new');
+      c.update({ to: [bob], subject: 'Wait' });
+      await composers.send(c);
+      expect(composers.sending().size).toBe(1);
+      const undo = toast.mock.calls.find((call) => call[0] === 'Sending…')![2] as { run: () => void };
+      undo.run();
+      expect(composers.sending().size).toBe(0);
+      expect(composers.list()).toHaveLength(1);
+    });
+  });
+
+  it('knows a new version of its draft as soon as the server has it, before the old one is removed', async () => {
+    const { composers, engine } = await setup();
+    const c = composers.open('new');
+    let finish!: () => void;
+    vi.spyOn(engine, 'saveDraft').mockImplementation(async (_email, _replaces, onCreated) => {
+      onCreated?.('v2');
+      await new Promise<void>((r) => (finish = r));
+      return { id: 'v2', threadId: 't', parts: null, replaced: true };
+    });
+    c.update({ to: [bob], subject: 'Typing' });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(c.draftId()).toBeNull();
+    expect(c.versions().has('v2')).toBe(true);
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.draftId()).toBe('v2');
+  });
+
   describe('a failed send', () => {
     it('reopens the composer with its text and offers Retry', async () => {
       const { composers, engine, toast } = await setup();

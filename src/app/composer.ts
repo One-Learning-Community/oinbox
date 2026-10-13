@@ -53,6 +53,8 @@ export interface Composer {
   loadImages: () => Promise<void>;
   /** Id of the saved draft email, if any. */
   draftId: Accessor<Id | null>;
+  /** Every stored version this composer has had: all of them are this message, whichever the server still lists. */
+  versions: Accessor<ReadonlySet<Id>>;
   removeSignature: () => void;
   /** Put the signature into the text. `bodyHtml` is the editor's HTML with the signature appended. */
   inlineSignature: (bodyHtml: string) => void;
@@ -76,6 +78,14 @@ export function createComposers(
   let seq = 0;
   /** Sends waiting out the undo window, so we can warn before the tab closes. */
   const pendingSends = new Set<number>();
+  /** The drafts those sends will send: a conversation shows them as going out, not as drafts to edit. */
+  const [sending, setSending] = createSignal<ReadonlySet<string>>(new Set());
+  const markSending = (id: string, on: boolean) => {
+    const next = new Set(sending());
+    if (on) next.add(id);
+    else next.delete(id);
+    setSending(next);
+  };
 
   const identities = (): Identity[] => engine.state.identities;
 
@@ -150,6 +160,12 @@ export function createComposers(
     const [draftId, setDraftId] = createSignal<Id | null>(restore?.draftId ?? null);
     /** Every id the draft has had: each save stores a new message, and a list may still show the one before. */
     const ids = new Set<Id>([...(restore?.draftId ? [restore.draftId] : []), ...(restore?.stale ?? [])]);
+    const [versions, setVersions] = createSignal<ReadonlySet<Id>>(new Set(ids));
+    const hold = (id: Id) => {
+      if (ids.has(id)) return;
+      ids.add(id);
+      setVersions(new Set(ids));
+    };
     let timer: ReturnType<typeof setTimeout> | undefined;
     let saving: Promise<void> = Promise.resolve();
     let unconfirmedSend = restore?.unconfirmedSend ?? false;
@@ -221,14 +237,14 @@ export function createComposers(
         let sent = draft();
         let saved: SavedDraft;
         try {
-          saved = await engine.saveDraft(buildEmailCreate(sent, from, drafts), replaces);
+          saved = await engine.saveDraft(buildEmailCreate(sent, from, drafts), replaces, hold);
         } catch (e) {
           // A part's blob went with an earlier version: find where its content is now, once.
           const changes = e instanceof DraftSaveError && e.type === 'blobNotFound' ? await recoverBlobs(sent) : null;
           if (!changes?.size) throw e;
           setDraft(withBlobIds(draft(), changes));
           sent = withBlobIds(sent, changes);
-          saved = await engine.saveDraft(buildEmailCreate(sent, from, drafts), replaces);
+          saved = await engine.saveDraft(buildEmailCreate(sent, from, drafts), replaces, hold);
         }
         // The stored version has blob ids of its own, and the old ones die with the old version.
         // Only what was sent is renamed: a part added since keeps its upload's id until the next save.
@@ -236,7 +252,7 @@ export function createComposers(
         if (changes?.size) setDraft(withBlobIds(draft(), changes));
         stale = saved.replaced ? [] : replaces;
         setDraftId(saved.id);
-        ids.add(saved.id);
+        hold(saved.id);
         if (status() === 'saving') setStatus('saved');
       } catch (e) {
         setStatus('error');
@@ -334,6 +350,7 @@ export function createComposers(
         for (const url of Object.values(imageUrls())) URL.revokeObjectURL(url);
       },
       draftId,
+      versions,
       save,
       cancelAutosave: () => clearTimeout(timer),
       signatureMode,
@@ -462,6 +479,7 @@ export function createComposers(
 
     let cancelled = false;
     pendingSends.add(c.id);
+    markSending(draftId, true);
     const timer = setTimeout(async () => {
       pendingSends.delete(c.id);
       if (cancelled) return;
@@ -484,6 +502,8 @@ export function createComposers(
         drive?.reopened?.(c, reopened);
         setList([...list(), reopened]);
         toast("Couldn't send. Your message is still here.", 'error', { label: 'Retry', run: () => void send(reopened) });
+      } finally {
+        markSending(draftId, false);
       }
     }, UNDO_SEND_MS);
 
@@ -494,6 +514,7 @@ export function createComposers(
         cancelled = true;
         clearTimeout(timer);
         pendingSends.delete(c.id);
+        markSending(draftId, false);
         const back = create(c.mode, null, snapshot);
         // The message is the same one: files it has in Drive are still its own.
         drive?.reopened?.(c, back);
@@ -513,6 +534,8 @@ export function createComposers(
     // One composer a draft: a second would save over the first, each removing the other's version.
     const existing = list().find((c) => internals(c).holds(email.id));
     if (existing) return void setWanted(existing);
+    // On its way out: a composer opened now would save a new version while this one is sent.
+    if (sending().has(email.id)) return void toast('This message is being sent. Undo to change it.');
     const values = email.bodyValues ?? {};
     const html = (email.htmlBody ?? []).filter((p) => p.type === 'text/html' && p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
     const text = (email.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
@@ -556,7 +579,7 @@ export function createComposers(
     if (pendingSends.size || list().some((c) => c.status() === 'dirty' || c.status() === 'saving')) e.preventDefault();
   });
 
-  return { list, wanted, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
+  return { list, wanted, sending, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
 }
 
 export type Composers = ReturnType<typeof createComposers>;
