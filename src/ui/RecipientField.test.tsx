@@ -38,6 +38,33 @@ describe('RecipientField chips', () => {
   });
 });
 
+describe('RecipientField out of use', () => {
+  const people = ['ann', 'bo', 'cy', 'di'].map((n) => ({ name: null, email: `${n}@example.test` }));
+  it('shows two recipients whole', () => {
+    field(people.slice(0, 2));
+    expect(document.querySelector('.recipient-field')!.classList.contains('folded')).toBe(false);
+    expect(screen.getByRole('button', { name: 'bo@example.test' })).toBeTruthy();
+  });
+  it('folds a longer list to the first and a count, and unfolds when the count or the field takes the focus', () => {
+    field(people);
+    const root = document.querySelector('.recipient-field')!;
+    expect(root.classList.contains('folded')).toBe(true);
+    expect(screen.getByRole('button', { name: 'ann@example.test' })).toBeTruthy();
+    // The second chip is the count; the rest are hidden by the stylesheet.
+    expect(screen.queryByRole('button', { name: 'bo@example.test' })).toBeNull();
+    const more = screen.getByRole('button', { name: '3 more, show all 4 recipients' });
+    expect(more.textContent).toBe('3 more');
+
+    more.focus();
+    expect(document.activeElement).toBe(screen.getByRole('combobox'));
+    expect(root.classList.contains('folded')).toBe(false);
+    expect(screen.getByRole('button', { name: 'bo@example.test' })).toBeTruthy();
+
+    fireEvent.focusOut(screen.getByRole('combobox'), { relatedTarget: document.body });
+    expect(root.classList.contains('folded')).toBe(true);
+  });
+});
+
 // jsdom lays nothing out; the list scrolls its highlighted option into view.
 Element.prototype.scrollIntoView = () => {};
 

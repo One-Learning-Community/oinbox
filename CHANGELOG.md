@@ -2,6 +2,17 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- Recipients, as in Gmail: while you are in To, Cc or Bcc everyone is shown, and a long list scrolls in its row. Once you move on to the message, a list of more than two is its first recipient and "N more"; click that to see them all again.
+
+### Fixed
+
+- Many recipients no longer spill over the title, From and Subject of a new message. Past a dozen or so, the To row was squeezed by the window's height and its chips covered the rows around it.
+- A draft clicked again in Drafts while it is open no longer opens a second window on the same message. The two would save over each other. The one window takes the keyboard.
+
 ## 0.1.0-beta.5
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.

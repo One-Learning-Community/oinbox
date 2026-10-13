@@ -71,6 +71,8 @@ export function createComposers(
   drive?: { discardNote: (c: Composer) => string | null; discarded: (c: Composer) => void; reopened?: (from: Composer, to: Composer) => void; sent?: (c: Composer) => void },
 ) {
   const [list, setList] = createSignal<Composer[]>([]);
+  /** The composer the user last asked for when it was already open: its view takes the keyboard. */
+  const [wanted, setWanted] = createSignal<Composer | null>(null, { equals: false });
   let seq = 0;
   /** Sends waiting out the undo window, so we can warn before the tab closes. */
   const pendingSends = new Set<number>();
@@ -103,6 +105,8 @@ export function createComposers(
     snapshot: () => RescuedComposer;
     /** Older versions of the draft that a save could not confirm as removed. */
     staleIds: () => Id[];
+    /** Whether this message, by an id it has now or had before a save, is the one being written here. */
+    holds: (id: Id) => boolean;
     releaseImages: () => void;
     /** After this, edits no longer schedule a save: a late one would bring the draft back. */
     retire: () => void;
@@ -144,6 +148,8 @@ export function createComposers(
     const [status, setStatus] = createSignal<SaveStatus>(restore ? 'saved' : 'idle');
     const [uploading, setUploading] = createSignal(0);
     const [draftId, setDraftId] = createSignal<Id | null>(restore?.draftId ?? null);
+    /** Every id the draft has had: each save stores a new message, and a list may still show the one before. */
+    const ids = new Set<Id>([...(restore?.draftId ? [restore.draftId] : []), ...(restore?.stale ?? [])]);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let saving: Promise<void> = Promise.resolve();
     let unconfirmedSend = restore?.unconfirmedSend ?? false;
@@ -230,6 +236,7 @@ export function createComposers(
         if (changes?.size) setDraft(withBlobIds(draft(), changes));
         stale = saved.replaced ? [] : replaces;
         setDraftId(saved.id);
+        ids.add(saved.id);
         if (status() === 'saving') setStatus('saved');
       } catch (e) {
         setStatus('error');
@@ -335,6 +342,7 @@ export function createComposers(
         retired = true;
       },
       staleIds: () => stale.filter((x) => x !== draftId()),
+      holds: (id) => ids.has(id),
       wasSent: async () => unconfirmedSend && !!draftId() && (await engine.draftState(draftId()!)) === 'sent',
       snapshot: () => ({ mode, draft: draft(), draftId: draftId(), identityId: identityId(), threadId: composer.threadId, replyTo: composer.replyTo, signatureMode: signatureMode() }),
     };
@@ -502,6 +510,9 @@ export function createComposers(
 
   /** Reopen a saved draft from the Drafts mailbox. */
   const openDraft = (email: EmailRec) => {
+    // One composer a draft: a second would save over the first, each removing the other's version.
+    const existing = list().find((c) => internals(c).holds(email.id));
+    if (existing) return void setWanted(existing);
     const values = email.bodyValues ?? {};
     const html = (email.htmlBody ?? []).filter((p) => p.type === 'text/html' && p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('');
     const text = (email.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
@@ -532,7 +543,7 @@ export function createComposers(
     if (pendingSends.size || list().some((c) => c.status() === 'dirty' || c.status() === 'saving')) e.preventDefault();
   });
 
-  return { list, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
+  return { list, wanted, open, close, discard, send, openDraft, identities, retrySave, snapshot, restore };
 }
 
 export type Composers = ReturnType<typeof createComposers>;

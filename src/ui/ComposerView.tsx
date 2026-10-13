@@ -1,6 +1,6 @@
 import type { CommandProps } from '@tiptap/core';
 import { TipTap, type TipTapHandle } from '@rozie-ui/tiptap-solid';
-import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
 import type { Composer } from '../app/composer';
 import { useApp } from '../app/context';
 import { editorTakesDrop, formatAddress, fromEditorHtml, toEditorHtml } from '../mail/compose';
@@ -40,6 +40,14 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
     onCleanup(() => root?.removeEventListener('drop', attachWhole, true));
   });
   let fileInput: HTMLInputElement | undefined;
+  // Asked for again while open (its row in Drafts was clicked): show where it is, and take the keyboard.
+  createEffect(
+    on(composers.wanted, (w) => {
+      if (w !== c || !root) return;
+      root.scrollIntoView({ block: 'nearest' });
+      if (!root.contains(document.activeElement)) (root.querySelector<HTMLElement>('[contenteditable]') ?? root.querySelector<HTMLElement>('[role="combobox"]'))?.focus();
+    }, { defer: true }),
+  );
   const d = () => c.draft();
 
   /** The editor's HTML as the draft keeps it: images by content id. */

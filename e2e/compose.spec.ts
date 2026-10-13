@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { emailsBySubject, mailboxByRole, sendMail, threadEmails, waitFor, ALICE, BOB, uniqueTag } from './support/mail';
 import { createAccount, deleteAccount } from './support/accounts';
 import { openInbox, rows, waitLive } from './support/app';
@@ -140,6 +140,61 @@ test('a draft autosaves and reopens from Drafts after a reload', async ({ page }
   await expect(subjectInput(reopened)).toHaveValue(subject);
   await expect(recipientChips(reopened)).toContainText(BOB);
   await expect(bodyEditor(reopened)).toContainText('Half-written thought.');
+});
+
+test('a draft clicked again in Drafts keeps its one composer, which takes the keyboard', async ({ page }) => {
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'Only one of me.' });
+  await expect(saveStatus(c)).toHaveText('Draft saved');
+  await c.getByRole('button', { name: 'Save & close' }).click();
+  await expect(floatingComposer(page)).toHaveCount(0);
+
+  await page.goto('/drafts');
+  await expect(floatingComposer(page)).toHaveCount(0);
+  const row = rows(page).filter({ has: page.locator('.subject', { hasText: subject }) });
+  await expect(row).toHaveCount(1);
+  // By its title: Drafts may hold other drafts, and a click can land on a neighbour while the list catches up.
+  const mine = floatingComposer(page).filter({ has: page.locator('.composer-title', { hasText: subject }) });
+  await row.click();
+  await expect(mine).toHaveCount(1);
+  await row.click();
+  await row.click();
+  await expect(bodyEditor(mine)).toBeFocused();
+  await expect(mine).toHaveCount(1);
+  // A draft clicked after a save has replaced it on the server is the composers' unit test: here the rows move under the pointer.
+});
+
+test('many recipients scroll in their row while it is in use, and fold to the first and a count after', async ({ page }) => {
+  await openInbox(page);
+  await page.getByRole('button', { name: 'Compose' }).click();
+  const c = floatingComposer(page);
+  await expect(c).toBeVisible();
+  for (let i = 0; i < 40; i++) await addRecipient(c, `person${i}@example.test`);
+  await expect(recipientChips(c)).toHaveCount(40);
+
+  const box = async (l: Locator) => (await l.boundingBox())!;
+  const field = await box(c.getByRole('group', { name: 'To', exact: true }));
+  const title = await box(c.locator('.composer-title'));
+  const subject = await box(subjectInput(c));
+  expect(field.y).toBeGreaterThanOrEqual(title.y + title.height);
+  expect(field.y + field.height).toBeLessThanOrEqual(subject.y + 1);
+  await expect(c.getByRole('button', { name: 'Send', exact: true })).toBeInViewport({ ratio: 1 });
+  // The field for the next recipient is the one in sight, and what it suggests is not cut off.
+  await recipientInput(c).fill('bo');
+  await expect(recipientInput(c)).toBeInViewport({ ratio: 1 });
+  await expect(suggestions(c).first()).toBeInViewport({ ratio: 1 });
+  await recipientInput(c).fill('');
+
+  // In the message, the list is the first recipient and a count; the count opens it again.
+  await bodyEditor(c).click();
+  await expect(recipientChips(c).filter({ visible: true })).toHaveText(['person0@example.test×', '39 more']);
+  expect((await box(c.getByRole('group', { name: 'To', exact: true }))).height).toBeLessThan(50);
+  await c.getByRole('button', { name: /^39 more/ }).click();
+  await expect(recipientInput(c)).toBeFocused();
+  await expect(recipientChips(c).filter({ visible: true })).toHaveCount(40);
+  await c.getByRole('button', { name: 'Discard draft' }).click();
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
 });
 
 test('an attached file is uploaded, sent, and arrives intact', async ({ page }) => {

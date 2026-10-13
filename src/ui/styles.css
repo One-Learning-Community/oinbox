@@ -444,7 +444,8 @@ button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-
 .composer.dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
 .composer-title { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 16px; background: var(--surface-2); border-radius: 12px 12px 0 0; font-weight: 500; }
 .composer-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.compose-field { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+/* flex: none: a row never gives up height to the composer's limit, or its chips would spill over the rows around it. */
+.compose-field { display: flex; flex: none; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-bottom: 1px solid var(--border); }
 .compose-label { color: var(--text-3); font-size: 14px; min-width: 32px; }
 .compose-field > :last-child { flex: 1; min-width: 0; }
 .compose-field select, .compose-subject { border: 0; background: transparent; color: var(--text); font: inherit; outline: none; padding: 8px 0; width: 100%; }
@@ -464,6 +465,12 @@ button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-
   --rozie-combobox-list-border-color: var(--border);
   --rozie-combobox-list-shadow: var(--shadow);
 }
+/* A long list of recipients scrolls in its row, so the text and Send stay in the window. On the control, not the
+   field: the suggestion list is the control's sibling, and a scrolling box around it would cut it off. */
+.recipient-field .rozie-combobox-control { max-height: min(184px, 30dvh); overflow-y: auto; }
+/* Out of use, a long list is its first recipient and "N more" (RecipientField): the second chip is the count. */
+.recipient-field.folded .rozie-combobox-chip:nth-child(n + 3) { display: none; }
+.rcpt-more { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
 .rcpt-chip-remove { border: 0; background: none; padding: 0 2px; color: var(--text-2); font: inherit; cursor: pointer; }
 .rcpt-option { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .rcpt-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -759,6 +766,7 @@ button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-
   /* Under the last row of the To field, at its right end, not across the line below it: 44px, the row's 4px of padding and the border. */
   .compose-cc-toggle { margin: -49px 16px 5px 0; }
   .recipient-field .rcpt-chip-remove { min-height: 44px; min-width: 32px; }
+  .rcpt-more { min-height: 44px; }
 }
 
 /* ---- Phone: the search field takes the top bar while it is in use (P4) ---- */

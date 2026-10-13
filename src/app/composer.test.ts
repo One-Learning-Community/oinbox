@@ -413,6 +413,29 @@ describe('a draft\'s blob ids', () => {
     expect(c.draft().attachments[0]!.blobId).toBe(stored.attachments![0]!.blobId);
   });
 
+  it('opens a draft once: asking again for one that is open, or for a version it has since replaced, points at its composer', async () => {
+    const { server, composers } = await start();
+    const first = composers.open('new');
+    first.update({ subject: 'once' });
+    await autosave();
+    await composers.close(first);
+    const saved = structuredClone([...server.emails.values()][0]!);
+    composers.openDraft(saved);
+    const c = composers.list().at(-1)!;
+    expect(composers.wanted()).toBeNull();
+    composers.openDraft(saved);
+    expect(composers.list()).toEqual([c]);
+    expect(composers.wanted()).toBe(c);
+
+    // A save replaces the stored message: the row in Drafts may still name the old one.
+    c.update({ subject: 'once more' });
+    await autosave();
+    expect(c.draftId()).not.toBe(saved.id);
+    composers.openDraft(saved);
+    composers.openDraft(structuredClone([...server.emails.values()][0]!));
+    expect(composers.list()).toEqual([c]);
+  });
+
   it('let a draft reopened from Drafts be saved more than once', async () => {
     const { server, composers } = await start();
     const first = composers.open('new');

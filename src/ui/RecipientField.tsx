@@ -1,5 +1,5 @@
 import { Combobox, type ComboboxHandle } from '@rozie-ui/combobox-solid';
-import { createMemo, createSignal, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, onMount, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import { expandGroup, groupName } from '../contacts/groups';
 import type { EmailAddress } from '../jmap/types';
@@ -23,6 +23,8 @@ export const pickedSuggestion = (e: Event): boolean => heldSends.has(e);
 
 /** Typed text is committed by these keys, as well as by Enter. */
 const DELIMITERS = [',', ';'];
+/** A field out of use shows this many recipients whole; more are folded to the first and a count. */
+const FOLD_OVER = 2;
 
 /**
  * To/Cc/Bcc: chips plus a text input that suggests people from mail history.
@@ -44,6 +46,12 @@ export function RecipientField(props: {
   const [text, setText] = createSignal('');
   let handle: ComboboxHandle | undefined;
   let root: HTMLDivElement | undefined;
+  /**
+   * Gmail's way with a long list: everyone is shown while the field is in use, and the first of them
+   * with "N more" once the user has moved on to the message.
+   */
+  const [active, setActive] = createSignal(false);
+  const folded = () => !active() && props.value.length > FOLD_OVER;
 
   const taken = () => new Set([...props.value, ...props.others].map((a) => a.email.toLowerCase()));
   const found = createMemo(() => offer(recipients.suggest(text(), taken()), text()));
@@ -120,6 +128,13 @@ export function RecipientField(props: {
     el.setAttribute('autocorrect', 'off');
     el.spellcheck = false;
   });
+  // A long list scrolls in its row (styles.css): the field for the next recipient stays the part in sight.
+  createEffect(
+    on([() => props.value.length, active], () => {
+      const control = root?.querySelector('.rozie-combobox-control');
+      if (control && active()) control.scrollTop = control.scrollHeight;
+    }),
+  );
 
   return (
     <div class="compose-field">
@@ -130,11 +145,15 @@ export function RecipientField(props: {
           el.addEventListener('paste', onPaste, true);
         }}
         class="recipient-field"
+        classList={{ folded: folded() }}
+        onFocusIn={() => setActive(true)}
         role="group"
         aria-label={props.label}
         onKeyDown={onKeyDown}
         onFocusOut={(e) => {
-          if (!root?.contains(e.relatedTarget as Node | null)) commitTyped();
+          if (root?.contains(e.relatedTarget as Node | null)) return;
+          commitTyped();
+          setActive(false);
         }}
       >
         <Combobox
@@ -161,7 +180,25 @@ export function RecipientField(props: {
             else props.onChange(props.value.filter((a) => (e.value as string[]).includes(a.email)));
           }}
           chipSlot={(chip) => (
-            <Show when={props.value[chip.index]}>
+            <Show
+              when={!(folded() && chip.index === 1) && props.value[chip.index]}
+              fallback={
+                // The second chip stands for everyone after the first (styles.css hides the rest).
+                <Show when={folded() && chip.index === 1}>
+                  <button
+                    type="button"
+                    class="rcpt-more"
+                    aria-label={`${props.value.length - 1} more, show all ${props.value.length} recipients`}
+                    // On focus: the field unfolds as the focus arrives, and this button is gone before a click.
+                    // On click as well: Safari gives a clicked button no focus.
+                    onFocus={() => root?.querySelector('input')?.focus()}
+                    onClick={() => root?.querySelector('input')?.focus()}
+                  >
+                    {props.value.length - 1} more
+                  </button>
+                </Show>
+              }
+            >
               {(a) => (
                 <>
                   <PersonButton
