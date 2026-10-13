@@ -10,7 +10,13 @@ import { Icon } from './icons';
 import { MenuButton } from './MenuButton';
 import { closedSuggestions, pickedSuggestion, RecipientField } from './RecipientField';
 
-export function ComposerView(props: { composer: Composer; inline: boolean }) {
+export function ComposerView(props: {
+  composer: Composer;
+  inline: boolean;
+  /** A floating window grown to fill the page, for a long message. */
+  expanded?: boolean;
+  onExpand?: () => void;
+}) {
   const { composers, drive, driveLinks } = useApp();
   /** Files from this computer: attached, or offered as a Drive link when they are too much for a message. */
   const addFiles = (files: FileList | File[]) => void driveLinks.add(c, [...files].map((f) => ({ name: f.name, size: f.size, file: f })));
@@ -88,7 +94,7 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
     <div
       ref={root}
       class="composer"
-      classList={{ inline: props.inline, dragging: dragging() }}
+      classList={{ inline: props.inline, expanded: props.expanded, dragging: dragging() }}
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault();
@@ -118,6 +124,11 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
       <Show when={!props.inline}>
         <div class="composer-title">
           <span>{d().subject || 'New Message'}</span>
+          <Show when={props.onExpand}>
+            <button class="icon-btn composer-expand" aria-label={props.expanded ? 'Exit full screen' : 'Full screen'} title={props.expanded ? 'Exit full screen' : 'Full screen'} onClick={() => props.onExpand?.()}>
+              <Icon name={props.expanded ? 'shrink' : 'expand'} />
+            </button>
+          </Show>
           <button class="icon-btn" aria-label="Save & close" title="Save & close (Esc)" onClick={() => void composers.close(c)}>
             <Icon name="close" />
           </button>
@@ -273,9 +284,17 @@ export function ComposerView(props: { composer: Composer; inline: boolean }) {
 export function ComposeDock() {
   const { composers, nav } = useApp();
   const floating = () => composers.list().filter((c) => !c.threadId || c.threadId !== nav.openThread());
+  /** The one window grown to fill the page, by its composer's id. It is the same window: nothing is reopened. */
+  const [expanded, setExpanded] = createSignal<number | null>(null);
+  const grown = () => floating().some((c) => c.id === expanded());
   return (
     <div class="compose-dock">
-      <For each={floating()}>{(c) => <ComposerView composer={c} inline={false} />}</For>
+      <Show when={grown()}>
+        <div class="compose-backdrop" onClick={() => setExpanded(null)} />
+      </Show>
+      <For each={floating()}>
+        {(c) => <ComposerView composer={c} inline={false} expanded={expanded() === c.id} onExpand={() => setExpanded(expanded() === c.id ? null : c.id)} />}
+      </For>
     </div>
   );
 }

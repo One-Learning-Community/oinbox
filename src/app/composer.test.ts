@@ -436,6 +436,26 @@ describe('a draft\'s blob ids', () => {
     expect(composers.list()).toEqual([c]);
   });
 
+  it('opens a reply draft in its conversation, and as a window of its own where that conversation already has a reply being written', async () => {
+    const { engine, composers } = await start();
+    const asked = { id: 'm1', threadId: 't1', messageId: ['<q@x>'], keywords: {} };
+    const reply = (id: string) => ({ id, threadId: 't1', inReplyTo: ['<q@x>'], keywords: { $draft: true }, to: [], receivedAt: '2026-10-13T10:00:00Z' });
+    vi.spyOn(engine, 'threadEmails').mockReturnValue([asked, reply('d1'), reply('d2')] as never);
+    composers.openDraft(reply('d1') as never);
+    expect(composers.list().at(-1)).toMatchObject({ mode: 'reply', threadId: 't1', replyTo: 'm1' });
+    composers.openDraft(reply('d2') as never);
+    expect(composers.list()).toHaveLength(2);
+    expect(composers.list().at(-1)).toMatchObject({ mode: 'new', threadId: null });
+  });
+
+  it('opens a draft with nothing before it as a window of its own', async () => {
+    const { engine, composers } = await start();
+    const alone = { id: 'd1', threadId: 't1', keywords: { $draft: true }, to: [], receivedAt: '2026-10-13T10:00:00Z' };
+    vi.spyOn(engine, 'threadEmails').mockReturnValue([alone] as never);
+    composers.openDraft(alone as never);
+    expect(composers.list().at(-1)).toMatchObject({ mode: 'new', threadId: null });
+  });
+
   it('let a draft reopened from Drafts be saved more than once', async () => {
     const { server, composers } = await start();
     const first = composers.open('new');

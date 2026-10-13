@@ -100,13 +100,17 @@ export function ThreadList(props: { view: View; hidden: boolean }) {
     if (tid && !props.hidden) prefetch(tid);
   });
 
-  /** Drafts-only threads open in the composer (Gmail); everything else opens the conversation. */
+  /**
+   * In Drafts a row opens its draft for writing, as in Gmail: a message with nothing before it in a window,
+   * a reply in its conversation. Everywhere else a row opens the conversation.
+   */
   const openRow = async (threadId: string) => {
     if (props.view.role === 'drafts') {
       await engine.loadThread(threadId).catch(logUnexpected);
       const emails = engine.threadEmails([threadId]);
-      if (emails.length && emails.every((e) => e.keywords?.$draft)) {
-        const latest = emails.sort((a, b) => (b.receivedAt ?? '').localeCompare(a.receivedAt ?? ''))[0]!;
+      const latest = emails.filter((e) => e.keywords?.$draft).sort((a, b) => (b.receivedAt ?? '').localeCompare(a.receivedAt ?? ''))[0];
+      if (latest) {
+        if (emails.some((e) => !e.keywords?.$draft)) navigate(`/${props.view.slug}/t/${threadId}`);
         composers.openDraft(latest);
         return;
       }

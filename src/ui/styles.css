@@ -440,10 +440,14 @@ button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-
 .compose-dock .composer { width: 540px; max-height: min(640px, calc(100dvh - 80px)); border-radius: 12px 12px 0 0; box-shadow: 0 8px 10px 1px rgb(0 0 0 / 14%), 0 3px 14px 2px rgb(0 0 0 / 12%), 0 5px 5px -3px rgb(0 0 0 / 20%); }
 /* In a window too short for it (a phone on its side) the composer scrolls, so that Send can be reached. */
 @media (max-height: 560px) { .compose-dock .composer { overflow-y: auto; } .compose-dock .composer > * { flex: none; } }
+/* Grown to fill the page for a long message: the same window, over the dimmed page. Above the other windows in the dock. */
+.compose-backdrop { position: fixed; inset: 0; z-index: 1; background: rgb(0 0 0 / 40%); pointer-events: auto; }
+.compose-dock .composer.expanded { position: fixed; inset: 4dvh max(24px, calc((100vw - 1100px) / 2)); z-index: 2; width: auto; max-height: none; border-radius: 12px; }
+.composer.expanded .compose-editor { min-height: 40dvh; }
 .composer.inline { margin: 8px 16px 16px 68px; border-radius: 12px; box-shadow: var(--shadow); }
 .composer.dragging { outline: 2px dashed var(--accent); outline-offset: -4px; }
 .composer-title { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 16px; background: var(--surface-2); border-radius: 12px 12px 0 0; font-weight: 500; }
-.composer-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-title span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* flex: none: a row never gives up height to the composer's limit, or its chips would spill over the rows around it. */
 .compose-field { display: flex; flex: none; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-bottom: 1px solid var(--border); }
 .compose-label { color: var(--text-3); font-size: 14px; min-width: 32px; }
@@ -521,6 +525,8 @@ button.nav-item { width: 100%; border: 0; background: none; font: inherit; text-
   .compose-dock { inset: var(--covered-top, 0px) 0 var(--covered-bottom, 0px) 0; }
   /* What is left above a keyboard is short: the message scrolls as one, under its title, and Send stays in sight. */
   .compose-dock .composer { width: 100%; height: 100%; max-height: none; border-radius: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* A phone's composer is the whole screen already. */
+  .composer-expand { display: none; }
   .compose-dock .composer > * { flex: none; }
   .compose-dock .composer-title { position: sticky; top: 0; z-index: 1; border-radius: 0; }
   .compose-dock .compose-body { flex: 1 0 auto; overflow: visible; }

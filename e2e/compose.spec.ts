@@ -29,6 +29,11 @@ const newSubject = () => {
   subjects.push(s);
   return s;
 };
+/**
+ * A click on a row of Drafts, sent to the row itself. A new draft is listed at the bottom and moves to the top
+ * when the list is next read (the fault push.spec.ts records), and a click by position then lands on a neighbour.
+ */
+const clickRow = (row: Locator) => row.dispatchEvent('click');
 test.afterEach(async () => {
   for (const s of subjects.splice(0)) await destroyBySubject(s);
 });
@@ -156,13 +161,61 @@ test('a draft clicked again in Drafts keeps its one composer, which takes the ke
   await expect(row).toHaveCount(1);
   // By its title: Drafts may hold other drafts, and a click can land on a neighbour while the list catches up.
   const mine = floatingComposer(page).filter({ has: page.locator('.composer-title', { hasText: subject }) });
-  await row.click();
+  await clickRow(row);
   await expect(mine).toHaveCount(1);
-  await row.click();
-  await row.click();
+  await clickRow(row);
+  await clickRow(row);
   await expect(bodyEditor(mine)).toBeFocused();
   await expect(mine).toHaveCount(1);
   // A draft clicked after a save has replaced it on the server is the composers' unit test: here the rows move under the pointer.
+});
+
+test('a reply draft clicked in Drafts opens its conversation with the reply in place', async ({ page }) => {
+  const subject = newSubject();
+  const messageId = await sendMail({ from: 'Bob Example <bob@example.test>', to: [ALICE], subject, text: 'Can you confirm?' });
+  const original = await waitFor(async () => (await emailsBySubject(subject)).find((e) => e.messageId?.includes(messageId)), 15_000, 'the original');
+  await page.goto(`/inbox/t/${original.threadId}`);
+  await page.locator('.reply-bar').getByRole('button', { name: 'Reply', exact: true }).click();
+  await typeBody(inlineComposer(page), 'Half an answer.');
+  await expect(saveStatus(inlineComposer(page))).toHaveText('Draft saved');
+
+  // A reload: nothing is open, and the reply is a row in Drafts.
+  await page.goto('/drafts');
+  const row = rows(page).filter({ has: page.locator('.subject', { hasText: subject }) });
+  await clickRow(row);
+  await expect(page).toHaveURL(new RegExp(`/drafts/t/${original.threadId}$`));
+  const c = inlineComposer(page);
+  await expect(bodyEditor(c)).toContainText('Half an answer.');
+  await expect(recipientChips(c)).toContainText(BOB);
+  await expect(floatingComposer(page)).toHaveCount(0);
+  // The message it answers is there; the draft is the composer, not also a message.
+  await expect(page.locator('article.msg')).toHaveCount(1);
+});
+
+test('a new message grows to fill the page and shrinks back, keeping what was written', async ({ page }) => {
+  const subject = newSubject();
+  await openInbox(page);
+  const c = await composeNew(page, { to: BOB, subject, body: 'A long one.' });
+  const width = async () => (await c.boundingBox())!.width;
+  expect(await width()).toBe(540);
+
+  await c.getByRole('button', { name: 'Full screen', exact: true }).click();
+  await expect.poll(width).toBeGreaterThan(800);
+  await expect(page.locator('.compose-backdrop')).toBeVisible();
+  await expect(bodyEditor(c)).toContainText('A long one.');
+  await typeBody(c, ' And longer.');
+  await expect(c.getByRole('button', { name: 'Send', exact: true })).toBeInViewport({ ratio: 1 });
+
+  await c.getByRole('button', { name: 'Exit full screen' }).click();
+  await expect.poll(width).toBe(540);
+  await expect(page.locator('.compose-backdrop')).toHaveCount(0);
+  await expect(bodyEditor(c)).toContainText('A long one. And longer.');
+  await expect(subjectInput(c)).toHaveValue(subject);
+
+  // The dimmed page shrinks it too.
+  await c.getByRole('button', { name: 'Full screen', exact: true }).click();
+  await page.locator('.compose-backdrop').click({ position: { x: 5, y: 5 } });
+  await expect.poll(width).toBe(540);
 });
 
 test('many recipients scroll in their row while it is in use, and fold to the first and a count after', async ({ page }) => {

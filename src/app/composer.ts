@@ -518,8 +518,14 @@ export function createComposers(
     const text = (email.textBody ?? []).filter((p) => p.partId && values[p.partId]).map((p) => values[p.partId!]!.value).join('\n');
     const parts = html ? splitDraftHtml(html) : { bodyHtml: `<p>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>`, signatureHtml: '', quoteHtml: '' };
     const stored = splitParts(html, email.attachments ?? []);
+    // A reply belongs in its conversation, as in Gmail: it opens there, in place, where the conversation has no
+    // other reply being written. A draft with nothing before it is a window of its own.
+    const before = email.threadId ? engine.threadEmails([email.threadId]).filter((e) => !e.keywords?.$draft) : [];
+    const inPlace = before.length > 0 && !list().some((c) => c.threadId === email.threadId && c.mode !== 'new');
+    const mode: ComposeMode = inPlace ? 'reply' : 'new';
+    const answered = before.find((e) => e.messageId?.some((m) => email.inReplyTo?.includes(m)));
     const draft: Draft = {
-      mode: 'new',
+      mode,
       to: email.to ?? [],
       cc: email.cc ?? [],
       bcc: email.bcc ?? [],
@@ -535,7 +541,14 @@ export function createComposers(
     const identity = identities().find((i) => i.email.toLowerCase() === email.from?.[0]?.email.toLowerCase());
     const identityId = identity?.id ?? defaultIdentity(null);
     // Without a block there is nothing to say whether it was removed or never there: an identity with a signature means removed.
-    const c = create('new', null, { draft, draftId: email.id, identityId, signatureMode: parts.signatureHtml || !signatureOf(identityId) ? 'auto' : 'removed' });
+    const c = create(mode, null, {
+      draft,
+      draftId: email.id,
+      identityId,
+      threadId: inPlace ? email.threadId : null,
+      replyTo: answered?.id ?? null,
+      signatureMode: parts.signatureHtml || !signatureOf(identityId) ? 'auto' : 'removed',
+    });
     setList([...list(), c]);
   };
 
