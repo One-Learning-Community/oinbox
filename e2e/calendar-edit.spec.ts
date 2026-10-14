@@ -246,12 +246,15 @@ test.describe('events with guests', () => {
   test('Notify guests emails bob; Don\'t notify does not', async ({ page }) => {
     const quiet = tag();
     const loud = `E2E ${Date.now() + 1}`;
-    await createGuestEvent(quiet, `${todayIn(TZ)}T17:00:00`, TZ);
-    await createGuestEvent(loud, `${todayIn(TZ)}T19:00:00`, TZ);
+    // Tomorrow: Stalwart sends guests nothing about an event already past, so "today" failed in the evening.
+    const when = futureStart(TZ);
+    await createGuestEvent(quiet, `${when.date}T17:00:00`, TZ);
+    await createGuestEvent(loud, `${when.date}T19:00:00`, TZ);
     await openWeek(page);
+    if (!when.inThisWeek) await page.locator('.fc-next-button').click();
     await dragEventTo(page, quiet, '21:00');
     await page.getByRole('dialog', { name: 'Change this event?' }).getByRole('button', { name: "Don't notify" }).click();
-    await expect.poll(async () => (await eventsByTitle(quiet))[0]?.start).toBe(`${todayIn(TZ)}T21:00:00`);
+    await expect.poll(async () => (await eventsByTitle(quiet))[0]?.start).toBe(`${when.date}T21:00:00`);
     await dragEventTo(page, loud, '20:00');
     await page.getByRole('dialog', { name: 'Change this event?' }).getByRole('button', { name: 'Notify guests' }).click();
     await expect.poll(async () => (await bobMailAbout(loud)).length, { timeout: 15_000 }).toBeGreaterThan(0);
