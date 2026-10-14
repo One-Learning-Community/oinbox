@@ -139,7 +139,9 @@ test('an event can be deleted from its card', async ({ page }) => {
 
 test('a recurring event and an invited event are read-only, with a reason', async ({ page }) => {
   const title = tag();
-  const when = futureStart(TZ);
+  // 07:00, where no seeded event is on any day: an event of alice's own at the same hour is drawn over the
+  // invitation and takes the click (on Tuesdays tomorrow's 10:00 is the seeded "Call with London office").
+  const when = futureStart(TZ, 7);
   const { cleanup } = await createInvitedEvent(title, when.start, TZ);
   try {
     await openWeek(page);
