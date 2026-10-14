@@ -99,6 +99,11 @@ export class FakeJmap {
   /** Email ids whose destroy the server rejects. */
   rejectDestroys = new Set<string>();
   queryChangesUnsupported = false;
+  /**
+   * Emails the search store has not indexed yet. Stalwart (0.16.26 with OpenSearch, probed 2026-10-13) lists these
+   * last in a sorted query, whatever their date, for about 0.7 s after delivery, and announces nothing when that ends.
+   */
+  unindexed = new Set<string>();
   /** Simulates the server no longer being able to compute type-level /changes (stale cursor). */
   changesUnsupported = false;
   calls: string[] = [];
@@ -411,7 +416,8 @@ export class FakeJmap {
       case 'x:AccountPassword/set':
         return [name, this.passwordSet(args)];
       case 'Email/query': {
-        const all = this.queryIds(args);
+        const sorted = this.queryIds(args);
+        const all = [...sorted.filter((id) => !this.unindexed.has(id)), ...sorted.filter((id) => this.unindexed.has(id))];
         const qs = `q${this.emailState}`;
         this.queryStates.set(JSON.stringify([args.filter, args.collapseThreads]) + qs, all);
         const pos = (args.position as number) ?? 0;

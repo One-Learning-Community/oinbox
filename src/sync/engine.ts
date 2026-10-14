@@ -10,6 +10,8 @@ import { applyQueryChanges, missingPages, type Slots } from './window';
 import { logUnexpected } from './connection';
 
 export const PAGE_SIZE = 50;
+/** How many more times a window is read again while a new message is still out of place. */
+const SETTLE_RETRIES = 3;
 /** Emails per request while emptying a label (Stalwart's maxObjectsInSet). */
 const SWEEP_PAGE = 500;
 
@@ -297,18 +299,49 @@ export class MailEngine {
   }
 
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Emails that arrived and have not been seen in their place in a list yet. */
+  private unplaced = new Set<Id>();
 
   /**
-   * Stalwart sends StateChange up to ~100 ms before a new message sorts into place, so the
-   * immediate re-read can see it in the wrong position. Re-read once more after things settle.
+   * Stalwart announces a new message before a sorted query lists it in place. Until its search store has indexed
+   * the message it is listed last, whatever its date: about 0.7 s with OpenSearch, and nothing says when that ends.
+   * So the window is read again after a delay, and while a new message is still out of place, a few times more,
+   * waiting twice as long each time.
    */
-  private settleSoon(keys: string[]): void {
-    if (this.settleDelayMs <= 0 || !keys.length) return;
+  private settleSoon(keys: string[], attempt = 0): void {
+    if (this.settleDelayMs <= 0 || !keys.length) return void this.unplaced.clear();
     if (this.settleTimer) clearTimeout(this.settleTimer);
-    this.settleTimer = setTimeout(() => {
+    this.settleTimer = setTimeout(async () => {
       this.settleTimer = null;
-      for (const k of keys) if (this.state.queries[k]) void this.refreshWindow(k).catch(logUnexpected);
-    }, this.settleDelayMs);
+      const open = keys.filter((k) => this.state.queries[k]);
+      await Promise.all(open.map((k) => this.refreshWindow(k).catch(logUnexpected)));
+      // A change that came in meanwhile has started its own round.
+      if (this.settleTimer) return;
+      if (attempt < SETTLE_RETRIES && open.some((k) => this.outOfPlace(k))) this.settleSoon(open, attempt + 1);
+      else this.unplaced.clear();
+    }, this.settleDelayMs * 2 ** attempt);
+  }
+
+  /** Whether a newly arrived email is missing from the top of this list, or sits below an older one. */
+  private outOfPlace(key: string): boolean {
+    const q = this.state.queries[key];
+    const by = q?.sort?.[0];
+    if (!q || !this.unplaced.size || by?.property !== 'receivedAt' || by.isAscending) return false;
+    const at = (e: EmailRec) => e.receivedAt ?? '';
+    const [from, to] = this.ranges.get(key) ?? [0, PAGE_SIZE];
+    const rows = q.slots.slice(Math.max(0, from), to).flatMap((id) => (id && this.state.emails[id] ? [this.state.emails[id]!] : []));
+    for (let i = 1; i < rows.length; i++) {
+      if (this.unplaced.has(rows[i]!.id) && at(rows[i]!) > at(rows[i - 1]!)) return true;
+    }
+    // A list longer than the window does not show it at all while it is listed last.
+    const mailbox = q.filter && 'inMailbox' in q.filter ? q.filter.inMailbox : null;
+    const top = rows[0];
+    if (!mailbox || from > 0 || !top) return false;
+    for (const id of this.unplaced) {
+      const e = this.state.emails[id];
+      if (e?.mailboxIds?.[mailbox] && at(e) > at(top) && !rows.some((r) => r.id === id)) return true;
+    }
+    return false;
   }
 
   /** Re-read the rows around the viewport in one request (used when queryChanges can't be trusted). */
@@ -972,6 +1005,7 @@ export class MailEngine {
         const ch = res.get(em.changes);
         const created = res.get(em.created).list;
         arrived = created.filter((e) => !this.state.emails[e.id]);
+        for (const e of created) this.unplaced.add(e.id);
         this.mergeEmails(created);
         // Updates only matter for emails we hold; others were fetched as partial records.
         this.mergeEmails(res.get(em.updated).list.filter((e) => this.state.emails[e.id]));

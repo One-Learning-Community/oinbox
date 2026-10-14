@@ -1,5 +1,5 @@
 import { createRoot } from 'solid-js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VACATION } from '../jmap/types';
 import { DEFAULT_SORT, DraftSaveError, MailEngine, SetFailure } from './engine';
 import { fakeClient, FakeJmap } from './fake-jmap';
@@ -105,6 +105,71 @@ describe('MailEngine', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('a new message the server lists last until its search store has indexed it', () => {
+    const queries = () => server.calls.filter((c) => c === 'Email/query').length;
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      ({ server, engine } = setup({ settleDelayMs: 500 }));
+      await engine.start();
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('is read again until it is at the top, and then no more', async () => {
+      const key = engine.openQuery(inboxSpec);
+      await engine.ensureRange(key, 0, 10);
+      server.addEmail({ id: 'e7', threadId: 't9', receivedAt: '2026-09-04T00:00:00Z', mailboxIds: { I: true } });
+      server.unindexed.add('e7');
+      await engine.catchUp();
+      expect(engine.state.queries[key]!.slots.at(-1)).toBe('e7');
+      await vi.advanceTimersByTimeAsync(600);
+      expect(engine.state.queries[key]!.slots.at(-1)).toBe('e7');
+      server.unindexed.clear();
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(engine.state.queries[key]!.slots[0]).toBe('e7');
+      server.calls = [];
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(queries()).toBe(0);
+    });
+
+    it('is found when the list is longer than the window, where it is not listed at all at first', async () => {
+      for (let i = 0; i < 120; i++) server.addEmail({ id: `f${i}`, threadId: `tf${i}`, receivedAt: `2026-08-01T00:${String(i % 60).padStart(2, '0')}:00Z`, mailboxIds: { I: true } });
+      const key = engine.openQuery(inboxSpec);
+      await engine.ensureRange(key, 0, 10);
+      await engine.catchUp();
+      await vi.advanceTimersByTimeAsync(20_000);
+      server.addEmail({ id: 'e7', threadId: 't9', receivedAt: '2026-09-04T00:00:00Z', mailboxIds: { I: true } });
+      server.unindexed.add('e7');
+      await engine.catchUp();
+      await vi.advanceTimersByTimeAsync(600);
+      expect(engine.state.queries[key]!.slots).not.toContain('e7');
+      server.unindexed.clear();
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(engine.state.queries[key]!.slots[0]).toBe('e7');
+    });
+
+    it('gives up after a few tries', async () => {
+      const key = engine.openQuery(inboxSpec);
+      await engine.ensureRange(key, 0, 10);
+      server.addEmail({ id: 'e7', threadId: 't9', receivedAt: '2026-09-04T00:00:00Z', mailboxIds: { I: true } });
+      server.unindexed.add('e7');
+      await engine.catchUp();
+      server.calls = [];
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(queries()).toBe(4);
+    });
+
+    it('is not waited for after a change that created nothing', async () => {
+      const key = engine.openQuery(inboxSpec);
+      await engine.ensureRange(key, 0, 10);
+      server.emails.get('e3')!.keywords = { $seen: true };
+      server.bump({ updated: ['e3'] });
+      await engine.catchUp();
+      server.calls = [];
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(queries()).toBe(1);
+    });
   });
 
   it('does nothing to lists when no emails changed', async () => {

@@ -39,11 +39,9 @@ test('new mail delivered over SMTP shows up live as an unread row, without a rel
   expect(await page.evaluate(() => (window as any).__e2eMarker)).toBe(1);
 });
 
-// FIXME(app bug, see e2e/README.md "Known failures"): the pushed thread is appended at the
-// BOTTOM of the inbox, not the top. Stalwart announces the StateChange ~0-100 ms before the
-// new email's receivedAt sort key is queryable, so the app's immediate collapsed Email/query
-// returns it last; the app never re-reads the window afterwards (and a reload keeps the stale
-// order from the IndexedDB snapshot until the next change).
+// Stalwart lists a new message last in a sorted query until its search store has indexed it (about 0.7 s with
+// OpenSearch), so the first reads after the push show it at the bottom, or not at all in a list longer than the
+// window. The app reads the window again, a few times, until the message is in place (MailEngine.settleSoon).
 test('new mail delivered over SMTP appears at the TOP of the inbox', async ({ page }) => {
   const { row } = await deliverWhileOpen(page);
   const tid = await row.getAttribute('data-thread-id');

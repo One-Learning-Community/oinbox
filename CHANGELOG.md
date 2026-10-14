@@ -2,6 +2,12 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- New mail appears at the top of the list as it arrives. With OpenSearch as the search store, Stalwart lists a new message last for most of a second, and oinbox looked again too early: in a short list the message stayed at the bottom, and in a mailbox longer than a screen it did not show until something else changed. The same went for a draft just saved, in Drafts. oinbox now looks again until the message is in its place, for up to 7.5 seconds.
+
 ## 0.1.0-beta.8
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.

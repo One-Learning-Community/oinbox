@@ -70,7 +70,7 @@ The `setup` project signs Alice in once through the real OAuth flow and saves `e
 
 The first three started as `test.fixme`; the rest were found by new specs. All pass now:
 
-1. **Pushed thread at the top of the inbox** (`push.spec.ts`). Stalwart sends `StateChange` up to ~100 ms before a new email sorts into place, so `MailEngine` re-reads the visible window once more 500 ms after a push (`settleDelayMs`).
+1. **Pushed thread at the top of the inbox** (`push.spec.ts`). Stalwart sends `StateChange` before a new email sorts into place: until the search store has indexed it (about 0.7 s with OpenSearch) a sorted query lists it last. `MailEngine` re-reads the visible window 500 ms after a push (`settleDelayMs`), and while a new email is still out of place, three times more, waiting twice as long each time.
 2. **Operator searches typed into the search box** (`search.spec.ts`). The route param was encoded twice; `MailView` now decodes it before building the slug.
 3. **Open message keeps its iframe across updates** (`html-message.spec.ts`). `Conversation` keys its `<For>` by email id, so starring or a pushed change no longer re-mounts the message.
 4. **A successful send was reported as failed** (`compose.spec.ts`). Stalwart answers `onSuccessUpdateEmail`'s implicit `Email/set` under the `EmailSubmission/set` call id, and `BatchResult` kept the last response per id. It now keeps the first.
