@@ -20,6 +20,7 @@
   --mark-bg: yellow;
   --mark-text: black;
   --danger-text: #b3261e;
+  --ok-text: #146c2e;
   --cal-default: #0b57d0;
   --shadow: 0 1px 2px rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%);
   --row-h: 40px;
@@ -48,6 +49,7 @@
   --mark-bg: #e0a030;
   --mark-text: #1f1400;
   --danger-text: #f2b8b5;
+  --ok-text: #6dd58c;
   --shadow: 0 1px 3px rgb(0 0 0 / 50%);
   color-scheme: dark;
 }
@@ -73,6 +75,7 @@
   --mark-bg: #e0a030;
   --mark-text: #1f1400;
     --danger-text: #f2b8b5;
+    --ok-text: #6dd58c;
     --shadow: 0 1px 3px rgb(0 0 0 / 50%);
     color-scheme: dark;
   }
@@ -1004,4 +1007,41 @@ div.import-warning { display: flex; flex-direction: column; gap: 6px; }
   /* A name is a small thing to hit with a finger: the button is taller than its text. */
   .person { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
   .msg-meta .to { overflow: visible; white-space: normal; }
+}
+
+/* "Show original": a message's checks and source, full screen. */
+.rozie-dialog.original-view {
+  --rozie-dialog-max-width: 100vw; --rozie-dialog-max-height: 100dvh; --rozie-dialog-radius: 0; --rozie-dialog-padding: 0;
+  width: 100vw; height: 100dvh;
+}
+.original-view .rozie-dialog-panel { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+.original-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 8px 8px 20px; border-bottom: 1px solid var(--border); flex: none; }
+.rozie-dialog.original-view h2 { flex: 1; margin: 0; font-size: 18px; white-space: nowrap; }
+.original-bar .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; }
+.original-bar .btn svg { width: 18px; height: 18px; }
+.original-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 24px; }
+.original-summary { border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+.original-summary th { text-align: left; font-weight: 400; color: var(--text-3); padding: 4px 24px 4px 0; vertical-align: top; white-space: nowrap; }
+.original-summary td { padding: 4px 0; overflow-wrap: anywhere; }
+.original-check.ok { color: var(--ok-text); }
+.original-check.bad { color: var(--danger-text); }
+.original-check.other { color: var(--text-2); }
+.original-rules { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: var(--text-2); }
+.original-rules code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.rozie-dialog.original-view .original-cut { margin: 0 0 8px; color: var(--warn-text); background: var(--warn-bg); padding: 8px 12px; border-radius: 8px; }
+.original-source {
+  margin: 0; padding: 12px; background: var(--surface-2); border-radius: 8px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .original-bar { padding-left: 16px; }
+  .original-bar h2 { flex-basis: calc(100% - 56px); }
+  .original-bar .original-close { order: 1; }
+  .original-bar .btn { order: 2; }
+  .original-body { padding: 12px 16px 24px; }
+  .original-summary th { padding-right: 12px; }
+}
+@media (pointer: coarse) {
+  .original-view .icon-btn { width: 44px; height: 44px; }
+  .original-bar .btn { min-height: 44px; }
 }

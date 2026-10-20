@@ -182,6 +182,12 @@ const screens: Record<string, (page: Page) => Promise<void>> = {
     await page.getByRole('button', { name: 'Search options' }).click();
     await expect(page.getByRole('dialog', { name: 'Search options' })).toBeVisible();
   },
+  'original message': async (page) => {
+    await openThread(page);
+    await page.locator('article.msg').last().getByRole('button', { name: 'More' }).click();
+    await page.getByRole('menuitem', { name: 'Show original' }).click();
+    await page.getByRole('dialog', { name: 'Original message' }).getByLabel('Message source').waitFor();
+  },
   'shortcuts dialog': async (page) => {
     await openInbox(page);
     await page.keyboard.press('?');

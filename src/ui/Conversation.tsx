@@ -1,4 +1,4 @@
-import { useNavigate } from '@solidjs/router';
+import { useNavigate, useSearchParams } from '@solidjs/router';
 import { createEffect, createMemo, createResource, createSignal, For, lazy, Match, on, onCleanup, Show, Switch, untrack } from 'solid-js';
 import { useApp, type App } from '../app/context';
 import type { EmailAddress, Id, Mailbox } from '../jmap/types';
@@ -13,6 +13,8 @@ import { Icon } from './icons';
 import { InviteCard } from './InviteCard';
 import { bodyOf, MessageBody } from './MessageBody';
 import { PaneBoundary } from './PaneBoundary';
+import { MenuButton, type MenuItem } from './MenuButton';
+import { downloadOriginal, OriginalView } from './OriginalView';
 import { logUnexpected } from '../sync/connection';
 
 const ComposerView = lazy(() => import('./ComposerView').then((m) => ({ default: m.ComposerView })));
@@ -140,6 +142,26 @@ export function Conversation(props: { view: View; threadId: Id }) {
     return out;
   });
 
+  // "Show original" is in the address (`?original=<email id>`), so the browser's Back closes it.
+  const [params, setParams] = useSearchParams<{ original?: string }>();
+  let pushedOriginal = false;
+  createEffect(() => {
+    if (!params.original) pushedOriginal = false;
+  });
+  const showOriginal = (id: Id) => {
+    pushedOriginal = true;
+    setParams({ original: id });
+  };
+  const closeOriginal = () => {
+    if (pushedOriginal) history.back();
+    // Opened from a link or a reload: there is no entry of ours to go back over.
+    else setParams({ original: undefined }, { replace: true });
+  };
+  const original = () => {
+    const id = params.original;
+    return id && engine.state.threads[props.threadId]?.emailIds.includes(id) ? engine.state.emails[id] : undefined;
+  };
+
   const inlineComposer = () => composers.list().find((c) => c.threadId === props.threadId && c.mode !== 'new');
 
   const subject = () => messages()[0]?.subject || all()[0]?.subject || '(no subject)';
@@ -228,7 +250,7 @@ export function Conversation(props: { view: View; threadId: Id }) {
                   </div>
                 ) : (
                   <Show when={engine.state.emails[item]}>
-                    {(email) => <Message email={email()} expanded={expanded().has(item)} onToggle={() => toggle(item)} />}
+                    {(email) => <Message email={email()} expanded={expanded().has(item)} onToggle={() => toggle(item)} onShowOriginal={() => showOriginal(item)} />}
                   </Show>
                 )
               }
@@ -251,6 +273,9 @@ export function Conversation(props: { view: View; threadId: Id }) {
           </Match>
         </Switch>
       </div>
+      <Show when={original()?.blobId ? original() : undefined}>
+        {(email) => <OriginalView email={email()} onClose={closeOriginal} />}
+      </Show>
     </section>
   );
 }
@@ -309,13 +334,26 @@ function ReplyBar(props: { threadId: Id }) {
   );
 }
 
-function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => void }) {
-  const { engine, composers } = useApp();
+function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => void; onShowOriginal: () => void }) {
+  const { engine, composers, toast } = useApp();
   const isSending = () => composers.sending().has(props.email.id);
   const isDraft = () => !!props.email.keywords?.$draft && !isSending() && !composers.sent().has(props.email.id);
   const from = () => props.email.from?.[0];
   const me = createMemo(() => engine.myAddresses());
   const name = () => (from() && me().has(from()!.email.toLowerCase()) ? 'me' : displayName(from()));
+  const moreItems = (): MenuItem[] => [
+    ...((props.email.to?.length ?? 0) + (props.email.cc?.length ?? 0) > 1 ? [{ label: 'Reply all', run: () => composers.open('replyAll', props.email) }] : []),
+    { label: 'Forward', run: () => composers.open('forward', props.email) },
+    ...(props.email.blobId
+      ? [
+          { label: 'Show original', run: props.onShowOriginal },
+          {
+            label: 'Download message',
+            run: () => void downloadOriginal((b, n, t) => engine.fetchBlob(b, n, t), props.email).catch((e) => toast(`Download failed: ${String(e)}`, 'error')),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <article class="msg" classList={{ collapsed: !props.expanded }} data-email-id={props.email.id}>
@@ -360,6 +398,12 @@ function Message(props: { email: EmailRec; expanded: boolean; onToggle: () => vo
           <button class="icon-btn" title="Reply" onClick={(e) => { e.stopPropagation(); composers.open('reply', props.email); }}>
             <Icon name="reply" />
           </button>
+          {/* The header toggles on a click: one inside the menu must not reach it. */}
+          <span class="msg-more" onClick={(e) => e.stopPropagation()}>
+            <MenuButton class="icon-btn" title="More" menuLabel="Message actions" items={moreItems()}>
+              <Icon name="more" />
+            </MenuButton>
+          </span>
         </Show>
       </div>
       <Show when={props.expanded}>
