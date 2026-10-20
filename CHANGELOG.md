@@ -2,6 +2,14 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.1.0-beta.10
+
+Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.
+
+### Added
+
+- "Show original", as in Gmail: each open message has a ⋮ menu (Reply all, Forward, Show original, Download message). Show original fills the screen with the message as the server holds it, with a summary on top: message ID, date, addresses, the SPF, DKIM and DMARC results Stalwart recorded on delivery, and its spam verdict, score and the rules that added to it. The full source follows, with buttons to download it as an `.eml` file and to copy it. Back, Escape and the close button shut it. Useful when mail goes to Junk and you need to know why.
+
 ## 0.1.0-beta.9
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.
