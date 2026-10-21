@@ -2,6 +2,14 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.1.0-beta.11
+
+Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.
+
+### Fixed
+
+- Mail with its own dark-mode styles, such as Google Calendar invitations, no longer shows near-invisible light grey text on the white message card when the computer is in dark mode. Such mail is now shown dark, with its own dark styles, when oinbox is in dark mode, and light otherwise; other HTML mail stays on the white card.
+
 ## 0.1.0-beta.10
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.
