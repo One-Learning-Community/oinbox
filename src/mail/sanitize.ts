@@ -79,6 +79,38 @@ export function sanitizeEmailHtml(html: string, opts: SanitizeOptions): Sanitize
   }
 }
 
+const META_RE = /<meta\b[^>]*>/gi;
+const SCHEME_META_RE = /\bname\s*=\s*["']?(?:color-scheme|supported-color-schemes)\b/i;
+const CONTENT_DARK_RE = /\bcontent\s*=\s*["'][^"']*\bdark\b/i;
+const CSS_SCHEME_RE = /(?:^|[\s;{])(?:supported-)?color-scheme\s*:\s*([^;}]*)/gi;
+
+/** The mail says it was designed for dark too (a color-scheme meta tag or CSS property naming dark). Read before sanitizing, which drops meta tags. */
+export function supportsDarkScheme(html: string): boolean {
+  for (const [tag] of html.matchAll(META_RE)) if (SCHEME_META_RE.test(tag) && CONTENT_DARK_RE.test(tag)) return true;
+  for (const style of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+    for (const m of style[1]!.matchAll(CSS_SCHEME_RE)) if (/\bdark\b/i.test(m[1]!)) return true;
+  }
+  return false;
+}
+
+const PREFERS_RE = /\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)/gi;
+
+/**
+ * Inside a frame, prefers-color-scheme follows the operating system (Chromium
+ * ignores the app's theme and the frame's own color-scheme), so a mail's dark
+ * rules could fire on our white card. Pin each query to the card we paint:
+ * matching ones always apply, the others never.
+ */
+export function pinColorScheme(doc: Document, dark: boolean): void {
+  const pin = (text: string) =>
+    text.replace(PREFERS_RE, (_, scheme: string) => ((scheme.toLowerCase() === 'dark') === dark ? '(min-width: 0px)' : '(max-width: -1px)'));
+  for (const style of doc.querySelectorAll('style')) {
+    const text = style.textContent ?? '';
+    if (/prefers-color-scheme/i.test(text)) style.textContent = pin(text);
+  }
+  for (const el of doc.querySelectorAll('[media]')) el.setAttribute('media', pin(el.getAttribute('media')!));
+}
+
 export interface FrameOptions {
   allowRemote: boolean;
   dark: boolean;

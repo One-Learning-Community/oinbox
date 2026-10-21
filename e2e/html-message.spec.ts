@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { emailsBySubject, ensureInMailbox, mailboxByRole, markThreadRead, updateEmails } from './support/mail';
+import { deliverToAlice, destroyEmails, emailsBySubject, ensureInMailbox, mailboxByRole, markThreadRead, uniqueTag, updateEmails } from './support/mail';
 import { settleAfterArrange } from './support/app';
 
 const REMOTE_HOSTS = ['picsum.photos', 'tracker.design.test'];
@@ -65,4 +65,40 @@ test('expanded quote stays expanded when the open message is starred', async ({ 
   } finally {
     await updateEmails({ [erin.id]: { 'keywords/$flagged': null } });
   }
+});
+
+// Inside a frame, prefers-color-scheme follows the OS, not the app. Google Calendar mail
+// declares "light dark" and turns its text light under a dark query; on our white card
+// that text vanished whenever the OS was dark.
+test.describe('mail with its own dark styles, OS in dark mode', () => {
+  test.use({ colorScheme: 'dark' });
+
+  const STYLE = '<style>p{color:#3c4043}@media (prefers-color-scheme: dark){p{color:#e8eaed !important}}</style>';
+  const html = (head: string) => `<!doctype html><html><head>${head}${STYLE}</head><body><p>Meeting at five</p></body></html>`;
+  const deliver = (subject: string, head: string) =>
+    deliverToAlice({ from: 'Paul <paul@calendar.test>', subject, text: '', mime: { contentType: 'text/html; charset=utf-8', body: html(head) } });
+
+  test('dark-ready mail shows dark in a dark app and light in a light one; other mail stays light', async ({ page }) => {
+    const ready = await deliver(`Dark ready ${uniqueTag()}`, '<meta name="color-scheme" content="light dark">');
+    const plain = await deliver(`Light only ${uniqueTag()}`, '');
+    const look = async (id: string) => {
+      const frame = page.locator(`article.msg[data-email-id="${id}"] .msg-body iframe`);
+      const text = frame.contentFrame().locator('p');
+      await expect(text).toHaveText('Meeting at five');
+      return { card: await frame.evaluate((f) => getComputedStyle(f).backgroundColor), text: await text.evaluate((p) => getComputedStyle(p).color) };
+    };
+    try {
+      await page.goto(`/inbox/t/${ready.threadId}`);
+      expect(await look(ready.id)).toEqual({ card: 'rgba(0, 0, 0, 0)', text: 'rgb(232, 234, 237)' });
+      await page.goto(`/inbox/t/${plain.threadId}`);
+      expect(await look(plain.id)).toEqual({ card: 'rgb(255, 255, 255)', text: 'rgb(60, 64, 67)' });
+
+      await page.evaluate(() => localStorage.setItem('oinbox.theme', 'light'));
+      await page.goto(`/inbox/t/${ready.threadId}`);
+      expect(await look(ready.id)).toEqual({ card: 'rgb(255, 255, 255)', text: 'rgb(60, 64, 67)' });
+    } finally {
+      await page.evaluate(() => localStorage.removeItem('oinbox.theme'));
+      await destroyEmails([ready.id, plain.id]);
+    }
+  });
 });

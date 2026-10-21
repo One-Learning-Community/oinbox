@@ -2,7 +2,7 @@ import { createMemo, createSignal, onCleanup, Show } from 'solid-js';
 import { useApp } from '../app/context';
 import type { EmailBodyPart } from '../jmap/types';
 import { foldBehindToggle, foldHtmlQuote, splitPlainQuote } from '../mail/quotes';
-import { buildFrameDocument, plainTextToHtml, sanitizeEmailHtml } from '../mail/sanitize';
+import { buildFrameDocument, pinColorScheme, plainTextToHtml, sanitizeEmailHtml, supportsDarkScheme } from '../mail/sanitize';
 import type { EmailRec } from '../sync/engine';
 
 /** Pick the displayable body: concatenated text/html parts, else text/plain. */
@@ -35,17 +35,20 @@ export function MessageBody(props: { email: EmailRec }) {
         (quote ? `<div data-oinbox-quote style="white-space:pre-wrap">${plainTextToHtml(quote)}</div>` : '');
       const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
       foldBehindToggle(doc);
-      return { html: doc.body.innerHTML, hasRemoteContent: false, cids: [] as string[], plain: true };
+      return { html: doc.body.innerHTML, hasRemoteContent: false, cids: [] as string[], plain: true, dark: isDark() };
     }
+    // HTML mail sits on a white card, unless it says it was made for dark too.
+    const dark = isDark() && supportsDarkScheme(b.value);
     const clean = sanitizeEmailHtml(b.value, { allowRemote: allowRemote() });
     const doc = new DOMParser().parseFromString(`<body>${clean.html}</body>`, 'text/html');
+    pinColorScheme(doc, dark);
     foldHtmlQuote(doc);
     foldBehindToggle(doc);
-    return { ...clean, html: doc.body.innerHTML, plain: false };
+    return { ...clean, html: doc.body.innerHTML, plain: false, dark };
   });
 
   const srcdoc = createMemo(() =>
-    buildFrameDocument(rendered().html, { allowRemote: allowRemote(), dark: rendered().plain && isDark(), padded: !rendered().plain }),
+    buildFrameDocument(rendered().html, { allowRemote: allowRemote(), dark: rendered().dark, padded: !rendered().plain }),
   );
 
   const objectUrls: string[] = [];
@@ -109,7 +112,7 @@ export function MessageBody(props: { email: EmailRec }) {
         title={`Message from ${sender()}`}
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         srcdoc={srcdoc()}
-        style={{ background: rendered().plain ? 'transparent' : '#fff' }}
+        style={{ background: rendered().plain || rendered().dark ? 'transparent' : '#fff' }}
         onLoad={(e) => onLoad(e.currentTarget)}
       />
     </>

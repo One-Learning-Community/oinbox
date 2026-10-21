@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFrameDocument, plainTextToHtml, sanitizeEmailHtml } from './sanitize';
+import { buildFrameDocument, pinColorScheme, plainTextToHtml, sanitizeEmailHtml, supportsDarkScheme } from './sanitize';
 
 function body(html: string) {
   return new DOMParser().parseFromString(html, 'text/html').body;
@@ -79,5 +79,50 @@ describe('snippetHtml', () => {
   it('keeps <mark> and strips everything else', async () => {
     const { snippetHtml } = await import('./sanitize');
     expect(snippetHtml('the <mark>budget</mark> <img src=x onerror=alert(1)><b>x</b>')).toBe('the <mark>budget</mark> x');
+  });
+});
+
+describe('supportsDarkScheme', () => {
+  it('reads the color-scheme meta tags', () => {
+    expect(supportsDarkScheme('<head><meta name="color-scheme" content="light dark"></head>')).toBe(true);
+    expect(supportsDarkScheme("<meta content='light dark' name='supported-color-schemes'>")).toBe(true);
+    expect(supportsDarkScheme('<meta name="color-scheme" content="light">')).toBe(false);
+  });
+
+  it('reads a color-scheme property in a style sheet', () => {
+    expect(supportsDarkScheme('<style>:root { color-scheme: light dark; }</style>')).toBe(true);
+    expect(supportsDarkScheme('<style>:root { color-scheme: only light; }</style>')).toBe(false);
+  });
+
+  it('is false for mail with only dark media queries', () => {
+    expect(supportsDarkScheme('<style>@media (prefers-color-scheme: dark) { p { color: white } }</style>')).toBe(false);
+  });
+});
+
+describe('pinColorScheme', () => {
+  const doc = (html: string) => new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  const css = '@media (prefers-color-scheme: dark) { p { color: white } } @media screen and (prefers-color-scheme:light) { p { color: black } }';
+
+  it('turns dark queries off and light queries on for a light card', () => {
+    const d = doc(`<style>${css}</style>`);
+    pinColorScheme(d, false);
+    const text = d.querySelector('style')!.textContent!;
+    expect(text).not.toMatch(/prefers-color-scheme/);
+    expect(text).toContain('@media (max-width: -1px) { p { color: white } }');
+    expect(text).toContain('@media screen and (min-width: 0px) { p { color: black } }');
+  });
+
+  it('turns dark queries on and light queries off for a dark card', () => {
+    const d = doc(`<style>${css}</style>`);
+    pinColorScheme(d, true);
+    const text = d.querySelector('style')!.textContent!;
+    expect(text).toContain('@media (min-width: 0px) { p { color: white } }');
+    expect(text).toContain('@media screen and (max-width: -1px) { p { color: black } }');
+  });
+
+  it('rewrites media attributes, as on picture sources', () => {
+    const d = doc('<picture><source media="(prefers-color-scheme: dark)" srcset="d.png"><img src="l.png"></picture>');
+    pinColorScheme(d, false);
+    expect(d.querySelector('source')!.getAttribute('media')).toBe('(max-width: -1px)');
   });
 });
