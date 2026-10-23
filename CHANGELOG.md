@@ -2,7 +2,9 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.0-beta.12
+
+Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.
 
 ### Added
 
@@ -15,6 +17,7 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 ### Fixed
 
 - A server hiccup no longer signs you out. If the sign-in renewal met a proxy error (Stalwart restarting behind Caddy, say), a rate limit or a server fault, oinbox treated it as the end of the session. Now only the server saying the session is over signs you out; anything else shows "Can't reach the server" and is retried.
+- Coming back to oinbox after a while away (a sleeping laptop, a background tab) no longer leaves a "Can't reach the server" banner up while the connection wakes.
 - Signing in from a link that carried a query (`?…`) lost the query: you landed on the right page but without what the link asked for.
 
 ## 0.1.0-beta.11

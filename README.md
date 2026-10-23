@@ -4,7 +4,7 @@ A Gmail-style webmail client for [Stalwart](https://stalw.art), speaking only JM
 It is a static SolidJS app served on the same origin as Stalwart: no server of its own, no database, no telemetry.
 oinbox is free software (MIT). The aim is a solid everyday client that makes running your own Stalwart a real alternative to a commercial mail service.
 
-**Status: beta (`0.1.0-beta.11`).** Tested against Stalwart 0.16.23 with OpenSearch 2.19 as its search store.
+**Status: beta (`0.1.0-beta.12`).** Tested against Stalwart 0.16.23 with OpenSearch 2.19 as its search store.
 
 ## What it does
 
