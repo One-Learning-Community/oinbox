@@ -9,7 +9,8 @@ export function SignIn(props: { auth: OAuth; error?: string; notice?: string }) 
   const signIn = async () => {
     setBusy(true);
     try {
-      const returnTo = location.pathname === '/auth/callback' ? '/' : location.pathname;
+      // The query too: an email link's fields are in it (/compose?mailto=…).
+      const returnTo = location.pathname === '/auth/callback' ? '/' : location.pathname + location.search;
       location.assign(await props.auth.authorizationUrl(returnTo));
     } catch (e) {
       setError(`Couldn't start sign-in: ${String((e as Error).message)}`);

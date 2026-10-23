@@ -11,7 +11,7 @@ test('the stack serves the default branding as JSON, never cached', async ({ req
   expect(res.status()).toBe(200);
   expect(res.headers()['content-type']).toContain('application/json');
   expect(res.headers()['cache-control']).toBe('no-cache');
-  expect(await res.json()).toEqual({ name: 'oinbox', logo: '' });
+  expect(await res.json()).toEqual({ name: 'oinbox', logo: '', icon: '' });
 });
 
 test('unbranded, the top bar and the tab say oinbox', async ({ page }) => {

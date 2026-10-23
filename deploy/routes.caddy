@@ -47,7 +47,20 @@
 			Cache-Control "no-cache"
 			X-Content-Type-Options "nosniff"
 		}
-		respond `{"name":"{$OINBOX_BRAND_NAME:oinbox}","logo":"{$OINBOX_BRAND_LOGO:}"}`
+		respond `{"name":"{$OINBOX_BRAND_NAME:oinbox}","logo":"{$OINBOX_BRAND_LOGO:}","icon":"{$OINBOX_BRAND_ICON:}"}`
+	}
+	# What a browser installs the app from: the same as public/manifest.webmanifest (which nginx and the
+	# dev server serve as it is) with the operator's name, and their icon when there is one.
+	# src/app/manifest.test.ts keeps the three in step.
+	handle /manifest.webmanifest {
+		header {
+			Content-Type "application/manifest+json"
+			Cache-Control "no-cache"
+			X-Content-Type-Options "nosniff"
+		}
+		@brand_icon expression `"{$OINBOX_BRAND_ICON:}" != ""`
+		respond @brand_icon `{"id":"/","name":"{$OINBOX_BRAND_NAME:oinbox}","short_name":"{$OINBOX_BRAND_NAME:oinbox}","start_url":"/","scope":"/","display":"standalone","background_color":"#f6f8fc","theme_color":"#f6f8fc","icons":[{"src":"{$OINBOX_BRAND_ICON:}","sizes":"512x512","type":"image/png","purpose":"any"}],"shortcuts":[{"name":"Compose","url":"/compose"},{"name":"Calendar","url":"/calendar"},{"name":"Contacts","url":"/contacts"}],"protocol_handlers":[{"protocol":"mailto","url":"/compose?mailto=%s"}]}`
+		respond `{"id":"/","name":"{$OINBOX_BRAND_NAME:oinbox}","short_name":"{$OINBOX_BRAND_NAME:oinbox}","start_url":"/","scope":"/","display":"standalone","background_color":"#f6f8fc","theme_color":"#f6f8fc","icons":[{"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},{"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},{"src":"/icons/maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}],"shortcuts":[{"name":"Compose","url":"/compose"},{"name":"Calendar","url":"/calendar"},{"name":"Contacts","url":"/contacts"}],"protocol_handlers":[{"protocol":"mailto","url":"/compose?mailto=%s"}]}`
 	}
 
 	# --- Drive (OpenCloud), optional -------------------------------------------

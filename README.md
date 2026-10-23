@@ -16,10 +16,11 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 - **Triage**: archive, delete, spam, read/unread, star, move, label; optimistic, with rollback and Undo.
 - **Labels**: create, rename, nest and delete; label from the list or an open thread.
 - **Keyboard**: Gmail's shortcuts (`j k o u x e # ! s I U v l c r a f / g+i ?`), and `g` then `p` for Contacts.
-- **Settings**: identities and signatures, vacation responder, notifications, changing your password.
+- **Settings**: identities and signatures, vacation responder, notifications, email links, changing your password.
 - **Shared mailboxes**: a Stalwart group you belong to (`support@`, say) appears in a switcher above Compose. Work its inbox and send from it; unread counts for every mailbox are always in view.
 - **Notifications**: the unread count in the tab title, and desktop notifications for new Inbox mail while oinbox is open in a tab you're not looking at (switched on in Settings).
-- **Branding**: your own name and logo in place of "oinbox", set by the operator.
+- **Install as an app**: from Chrome, Edge or Safari, oinbox installs to the desktop, dock or home screen. The icon shows the unread count and offers Compose, Calendar and Contacts. Email links can open a new message in oinbox (a button in Settings, in Chrome, Edge and Firefox).
+- **Branding**: your own name, logo and app icon in place of oinbox's, set by the operator.
 - **Pictures**: image attachments show as thumbnails and open in a full-screen viewer.
 - **Drive**: where an [OpenCloud](https://opencloud.eu) runs beside Stalwart, save a message's attachments into a Drive folder, attach files from Drive when writing, and send files too large for mail as a Drive link with a password and an expiry, all with no second sign-in.
 - **Calendar**: month, week and day views of your Stalwart calendars; create, move, resize, rename and delete single events; invitations shown in the message with Accept, Maybe and Decline, and updates and cancellations followed.
@@ -28,7 +29,7 @@ oinbox is free software (MIT). The aim is a solid everyday client that makes run
 
 ### Not in v1
 
-Shared and team address books, groups inside groups, CSV import, merging duplicates, a filter (Sieve) editor, accounts on more than one server, a combined inbox across mailboxes, offline use, PGP and S/MIME, editing recurring events or answering one occurrence of a series, free/busy, an installable app, and translations.
+Shared and team address books, groups inside groups, CSV import, merging duplicates, a filter (Sieve) editor, accounts on more than one server, a combined inbox across mailboxes, offline use, PGP and S/MIME, editing recurring events or answering one occurrence of a series, free/busy, notifications while oinbox is closed, and translations.
 
 ## Install
 

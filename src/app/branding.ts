@@ -5,6 +5,8 @@ export interface Branding {
   name: string;
   /** An image URL the Content-Security-Policy lets the page load, or null for the text mark. */
   logo: string | null;
+  /** A square image for the app's icon once installed (the manifest, an iPhone's home screen); absent for oinbox's own. */
+  icon?: string;
 }
 
 export const DEFAULT_BRANDING: Branding = { name: 'oinbox', logo: null };
@@ -12,14 +14,14 @@ export const DEFAULT_BRANDING: Branding = { name: 'oinbox', logo: null };
 const KEY = 'oinbox.branding';
 type Fetcher = (url: string) => Promise<Response>;
 
-/** https, an image data URL, or a path on this origin. Anything else is no logo. */
+/** https, an image data URL, or a path on this origin. Anything else is no logo (or icon). */
 const allowedLogo = (v: unknown): v is string =>
   typeof v === 'string' && (/^https:\/\//i.test(v) || /^data:image\//i.test(v) || /^\/(?!\/)/.test(v));
 
 export function parseBranding(raw: unknown): Branding {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const name = typeof o.name === 'string' ? o.name.trim() : '';
-  return { name: name || DEFAULT_BRANDING.name, logo: allowedLogo(o.logo) ? o.logo : null };
+  return { name: name || DEFAULT_BRANDING.name, logo: allowedLogo(o.logo) ? o.logo : null, ...(allowedLogo(o.icon) ? { icon: o.icon } : {}) };
 }
 
 /** What the last start read, so a returning user never sees the default name first. */
@@ -45,9 +47,10 @@ export async function loadBranding(fetcher: Fetcher, storage: Storage): Promise<
   }
 }
 
-/** The tab's title and icon. */
+/** The tab's title and icon, and the icon a phone puts on its home screen. */
 export function applyBranding(doc: Document, b: Branding): void {
   doc.title = b.name;
+  if (b.icon) doc.head.querySelector('link[rel="apple-touch-icon"]')?.setAttribute('href', b.icon);
   if (!b.logo) return;
   const icon = doc.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!icon) return;

@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Installing as an app: name, icons, shortcuts and email links. Caddy serves it with the operator's name (deploy/routes.caddy). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!-- An installed app's title bar; the theme code sets it to the page's background, light or dark. -->
+    <meta name="theme-color" content="#f6f8fc" />
     <!-- interactive-widget: on Android the page is resized to what an on-screen keyboard leaves. iOS ignores it (src/ui/visible.ts). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <meta name="color-scheme" content="light dark" />

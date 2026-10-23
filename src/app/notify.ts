@@ -23,6 +23,22 @@ export function browserNotifications(): NotificationApi | undefined {
 
 export const tabTitle = (unread: number, name: string): string => `${unread > 0 ? `(${unread}) ` : ''}Inbox – ${name}`;
 
+/** The part of navigator that puts a count on an installed app's icon. */
+export interface BadgeApi {
+  setAppBadge?(count: number): Promise<void>;
+  clearAppBadge?(): Promise<void>;
+}
+
+/**
+ * The unread count on the app's icon, as in the tab title. Only an installed app has an icon to put
+ * it on; elsewhere the browser has no such call, or ignores it.
+ */
+export function showAppBadge(nav: BadgeApi, unread: number): void {
+  const done = unread > 0 ? nav.setAppBadge?.(unread) : nav.clearAppBadge?.();
+  // Refused (no permission, not installed): nothing to tell anyone.
+  done?.catch(() => {});
+}
+
 /** Of the mail that just arrived, what is worth a notification: unread, in the Inbox, not a draft. */
 export const newInboxMail = (emails: Email[], inboxId: Id | undefined): Email[] =>
   inboxId ? emails.filter((e) => e.mailboxIds?.[inboxId] && !e.keywords?.$seen && !e.keywords?.$draft) : [];

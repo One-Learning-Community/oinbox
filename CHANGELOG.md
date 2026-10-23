@@ -2,6 +2,20 @@
 
 All notable changes to oinbox are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Install oinbox as an app. Chrome and Edge offer to install it from the address bar, and Safari and Chrome on phones add it to the home screen. It then opens in its own window, with its own icon in the dock or taskbar.
+- The installed app's icon shows the unread count, as the tab title does.
+- Right-click or long-press the installed app's icon for Compose, Calendar and Contacts.
+- Email links can open a new message in oinbox, already addressed, with any subject and text the link carries. Settings → Email links asks the browser (Chrome, Edge, Firefox) to send them here. An installed app in Chrome or Edge offers this by itself the first time an email link is clicked.
+- `OINBOX_BRAND_ICON`: the operator's own square icon for the installed app (docs/operating.md, "Branding").
+
+### Fixed
+
+- Signing in from a link that carried a query (`?…`) lost the query: you landed on the right page but without what the link asked for.
+
 ## 0.1.0-beta.11
 
 Tested against Stalwart 0.16.23 with OpenSearch 2.19.6, and OpenCloud 7.2.4 for Drive.

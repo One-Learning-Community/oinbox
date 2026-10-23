@@ -65,6 +65,7 @@ services:
       # Unset means the defaults: "oinbox", no logo, Stalwart at stalwart:8080.
       OINBOX_BRAND_NAME: "${OINBOX_BRAND_NAME:-oinbox}"
       OINBOX_BRAND_LOGO: "${OINBOX_BRAND_LOGO:-}"
+      OINBOX_BRAND_ICON: "${OINBOX_BRAND_ICON:-}"
     ports:
       - "8080:8080"
     volumes:

@@ -95,11 +95,16 @@ export function createTheme() {
   const media = matchMedia('(prefers-color-scheme: dark)');
   const [systemDark, setSystemDark] = createSignal(media.matches);
   media.addEventListener('change', (e) => setSystemDark(e.matches));
+  // An installed app's title bar takes this colour: the page's own background (--bg), light or dark.
+  const titleBar = (t: Theme) =>
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', (t === 'system' ? media.matches : t === 'dark') ? '#1b1b1f' : '#f6f8fc');
   const apply = (t: Theme) => {
     if (t === 'system') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = t;
+    titleBar(t);
   };
   apply(stored);
+  media.addEventListener('change', () => titleBar(theme()));
   return {
     theme,
     setTheme: (t: Theme) => {

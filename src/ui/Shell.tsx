@@ -2,7 +2,7 @@ import { A, useNavigate, useParams, type RouteSectionProps } from '@solidjs/rout
 import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, Show, type JSX } from 'solid-js';
 import { branding } from '../app/branding';
 import { useApp } from '../app/context';
-import { createNotifier, notifications, tabTitle } from '../app/notify';
+import { createNotifier, notifications, showAppBadge, tabTitle } from '../app/notify';
 import type { Mailbox } from '../jmap/types';
 import { isLabel, labelPath, mailboxSlug, resolveView, sidebarMailboxes } from '../sync/selectors';
 import { bannerText, vacationStatus } from '../mail/settings';
@@ -44,6 +44,7 @@ export function Shell(props: RouteSectionProps & { toasts: () => JSX.Element; co
   const navigate = useNavigate();
   const onContacts = () => path() === '/contacts' || path().startsWith('/contacts/');
   createEffect(() => (document.title = tabTitle(app.spaces.totalUnread(), branding().name)));
+  createEffect(() => showAppBadge(navigator, app.spaces.totalUnread()));
   for (const space of app.spaces.list()) {
     space.engine.onArrived = createNotifier({
       api: notifications.api,

@@ -106,6 +106,7 @@ The release image is configured by environment variables. All are optional.
 | `OINBOX_TRUSTED_PROXIES` | `private_ranges` | The proxies in front of the image whose `X-Forwarded-For` Caddy believes, as addresses or ranges separated by spaces. Only the image's own configuration reads it; in the production template Caddy faces the internet and trusts no one. |
 | `OINBOX_BRAND_NAME` | `oinbox` | The name in the top bar, on the sign-in card and in the browser tab. |
 | `OINBOX_BRAND_LOGO` | none | A logo shown in place of the name in the top bar and on the sign-in card, and used as the tab's icon. |
+| `OINBOX_BRAND_ICON` | none | The app's icon once installed (on a desktop, a phone's home screen, the dock or taskbar), in place of oinbox's. A square PNG, 512 by 512 pixels. |
 | `OINBOX_DRIVE_UPSTREAM` | none | Where an OpenCloud's HTTP listener is, as `host:port`. Set, the app offers Drive; unset, it shows none. See "Drive". |
 | `OINBOX_DRIVE_URL` | none | OpenCloud's own public address (`https://drive.example.com`). Set, with Drive on, the sidebar has a Drive link that opens OpenCloud's web UI in a new tab; unset, there is no link. See "Drive". |
 | `OINBOX_DRIVE_LINK_OVER_MB` | `20` | Past this many megabytes of attachments, a message's files are offered as a Drive link instead. A file larger than Stalwart's own upload limit is always offered as one. A number; anything else counts as 20. |
@@ -114,7 +115,9 @@ The release image is configured by environment variables. All are optional.
 
 `OINBOX_BRAND_LOGO` is the address of an image: an `https://` URL, a `data:image/...` URL, or a path on the same host (`/my-logo.svg`). It is shown at most 32px high in the top bar, so a wide, short image works best; SVG is ideal. Plain `http://` addresses are refused. Neither value may contain a double quote or a backquote.
 
-Caddy hands the two values to the app as `/branding.json`. Behind your own proxy, edit the `branding.json` that ships with the static files instead (`{ "name": "Example Mail", "logo": "/my-logo.svg" }`) and serve it uncached, as `deploy/examples/nginx.conf` does for everything outside `/assets/`.
+`OINBOX_BRAND_ICON` follows the same rules as the logo, but is square: people see it once they install oinbox as an app. Give a PNG of 512 by 512 pixels with no transparent corners; each system rounds or crops it to its own shape. Without it the installed app uses oinbox's icon under your name.
+
+Caddy hands the values to the app as `/branding.json`, and the name and icon to browsers in `/manifest.webmanifest`, the file they install the app from. Behind your own proxy, edit the `branding.json` that ships with the static files instead (`{ "name": "Example Mail", "logo": "/my-logo.svg", "icon": "/my-icon-512.png" }`) and serve it uncached, as `deploy/examples/nginx.conf` does for everything outside `/assets/`. In `manifest.webmanifest`, set `name` and `short_name`, and replace the `icons` list with your own icon (`{ "src": "/my-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }`).
 
 The browser remembers the branding it last saw, so a change shows on the second load after it is made, not the first. Error messages and the version line in Settings still say "oinbox".
 

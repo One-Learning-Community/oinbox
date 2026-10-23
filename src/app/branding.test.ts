@@ -26,6 +26,11 @@ describe('parseBranding', () => {
       expect(parseBranding({ name: 'Acme', logo })).toEqual({ name: 'Acme', logo: null });
     }
   });
+  it('takes an icon by the same rules as the logo', () => {
+    expect(parseBranding({ name: 'Acme', icon: '/acme-512.png' })).toEqual({ name: 'Acme', logo: null, icon: '/acme-512.png' });
+    expect(parseBranding({ name: 'Acme', icon: 'javascript:alert(1)' })).not.toHaveProperty('icon');
+    expect(parseBranding({ name: 'Acme', icon: '' })).not.toHaveProperty('icon');
+  });
   it('trims the name', () => {
     expect(parseBranding({ name: ' Acme ' }).name).toBe('Acme');
   });
@@ -69,7 +74,7 @@ describe('cachedBranding', () => {
 describe('applyBranding', () => {
   beforeEach(() => {
     document.title = 'oinbox';
-    document.head.innerHTML = '<link rel="icon" type="image/svg+xml" href="/favicon.svg" />';
+    document.head.innerHTML = '<link rel="icon" type="image/svg+xml" href="/favicon.svg" /><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />';
   });
   const icon = () => document.head.querySelector<HTMLLinkElement>('link[rel="icon"]')!;
 
@@ -82,5 +87,12 @@ describe('applyBranding', () => {
     applyBranding(document, { name: 'Acme', logo: 'https://cdn.example.com/logo.png' });
     expect(icon().getAttribute('href')).toBe('https://cdn.example.com/logo.png');
     expect(icon().hasAttribute('type')).toBe(false);
+  });
+  it('uses the icon for the home screen, and keeps the default without one', () => {
+    const touch = () => document.head.querySelector('link[rel="apple-touch-icon"]')!.getAttribute('href');
+    applyBranding(document, { name: 'Acme', logo: null });
+    expect(touch()).toBe('/icons/apple-touch-icon.png');
+    applyBranding(document, { name: 'Acme', logo: null, icon: '/acme-512.png' });
+    expect(touch()).toBe('/acme-512.png');
   });
 });

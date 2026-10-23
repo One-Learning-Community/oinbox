@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Email } from '../jmap/types';
-import { createNotifier, createNotifyPrefs, newInboxMail, notificationFor, tabTitle, type NotificationApi } from './notify';
+import { createNotifier, createNotifyPrefs, newInboxMail, notificationFor, showAppBadge, tabTitle, type NotificationApi } from './notify';
 
 const mail = (id: string, over: Partial<Email> = {}): Email =>
   ({
@@ -163,5 +163,24 @@ describe('createNotifier', () => {
     notify([mail('a')]);
     shown[0]!.onclick!();
     expect(opened).toEqual(['/inbox/t/t-a']);
+  });
+});
+
+describe('showAppBadge', () => {
+  it('puts the count on the icon, and takes it off at zero', () => {
+    const calls: string[] = [];
+    const nav = {
+      setAppBadge: (n: number) => (calls.push(`set ${n}`), Promise.resolve()),
+      clearAppBadge: () => (calls.push('clear'), Promise.resolve()),
+    };
+    showAppBadge(nav, 4);
+    showAppBadge(nav, 0);
+    expect(calls).toEqual(['set 4', 'clear']);
+  });
+  it('does nothing where the browser has no badge, and ignores a refusal', async () => {
+    expect(() => showAppBadge({}, 3)).not.toThrow();
+    const refused = { setAppBadge: () => Promise.reject(new DOMException('no', 'NotAllowedError')) };
+    showAppBadge(refused, 3);
+    await new Promise((r) => setTimeout(r, 0));
   });
 });

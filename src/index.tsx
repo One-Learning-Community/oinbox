@@ -31,6 +31,8 @@ import { DEFAULT_LIMITS, labelLimits } from './mail/labels';
 import { createConnection, isTransportFailure, logUnexpected } from './sync/connection';
 import { MailEngine } from './sync/engine';
 import { createConfirmDialog } from './ui/ConfirmDialog';
+import { showAppBadge } from './app/notify';
+import { ComposeLink } from './ui/ComposeLink';
 import { SettingsView } from './ui/SettingsView';
 import { PaneBoundary } from './ui/PaneBoundary';
 import { RootFallback } from './ui/RootFallback';
@@ -136,6 +138,8 @@ async function boot() {
   /** Drop the session and go to the sign-in card. */
   const leave = () => {
     auth.signOut();
+    // The count is the last user's.
+    showAppBadge(navigator, 0);
     linkPasswords.clear();
     linkFolders.clear();
     each((s) => s.recipients.stop());
@@ -163,6 +167,7 @@ async function boot() {
     // What the server doesn't have yet comes back after signing in again (same account, within 7 days).
     rescueDrafts();
     auth.signOut();
+    showAppBadge(navigator, 0);
     // Whoever signs in next in this tab may be someone else.
     linkPasswords.clear();
     each((s) => s.recipients.stop());
@@ -505,6 +510,7 @@ async function boot() {
             <Route path="/search/:q/t/:threadId" component={MailView} />
             <Route path="/label/:id" component={MailView} />
             <Route path="/label/:id/t/:threadId" component={MailView} />
+            <Route path="/compose" component={ComposeLink} />
             <Route path="/settings" component={() => <PaneBoundary name="settings"><SettingsView /></PaneBoundary>} />
             <Route path="/:slug" component={MailView} />
             <Route path="/:slug/t/:threadId" component={MailView} />

@@ -4,6 +4,7 @@ import { identityLabel } from '../app/settings';
 import { versionLabel } from '../app/version';
 import type { Id } from '../jmap/types';
 import { signatureForCompose } from '../mail/settings';
+import { EmailLinksSection } from './EmailLinksSection';
 import { NotificationsSection } from './NotificationsSection';
 import { PasswordSection } from './PasswordSection';
 import { VacationForm } from './VacationForm';
@@ -20,6 +21,7 @@ export function SettingsView() {
       <IdentitiesSection />
       <VacationForm />
       <NotificationsSection />
+      <EmailLinksSection />
       <PasswordSection password={password} />
       <p class="settings-version">{versionLabel()}</p>
     </div>
