@@ -1,9 +1,24 @@
+import { RequestError } from '../jmap/client';
+
 // OAuth 2.0 Authorization Code + PKCE (RFC 7636) as a public client, against Stalwart.
 
 const TOKENS_KEY = 'oinbox.tokens';
 const PENDING_KEY = 'oinbox.oauth.pending';
 /** Refresh this long before expiry. */
 const SKEW_MS = 60_000;
+
+/** OAuth's answers that mean the grant itself is refused (RFC 6749 §5.2), as opposed to a passing failure. */
+const REFUSALS = new Set(['invalid_grant', 'invalid_client', 'unauthorized_client']);
+
+async function refused(res: Response): Promise<boolean> {
+  if (res.status !== 400 && res.status !== 401) return false;
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    return typeof body.error === 'string' && REFUSALS.has(body.error);
+  } catch {
+    return false;
+  }
+}
 
 export class NotSignedInError extends Error {
   constructor() {
@@ -163,8 +178,14 @@ export class OAuth {
       body: new URLSearchParams(params).toString(),
     });
     if (!res.ok) {
-      if (params.grant_type === 'refresh_token') this.signOut();
-      throw new NotSignedInError();
+      if (params.grant_type !== 'refresh_token') throw new NotSignedInError();
+      // Only the server's word that the refresh token is no good ends the session. A proxy error
+      // while Stalwart restarts, a rate limit or a server fault is a failure to try again, not a sign-out.
+      if (await refused(res)) {
+        this.signOut();
+        throw new NotSignedInError();
+      }
+      throw new RequestError(res.status, 'token refresh failed');
     }
     const body = (await res.json()) as TokenResponse;
     const prev = this.load();

@@ -14,6 +14,7 @@ All notable changes to oinbox are recorded here. The format follows [Keep a Chan
 
 ### Fixed
 
+- A server hiccup no longer signs you out. If the sign-in renewal met a proxy error (Stalwart restarting behind Caddy, say), a rate limit or a server fault, oinbox treated it as the end of the session. Now only the server saying the session is over signs you out; anything else shows "Can't reach the server" and is retried.
 - Signing in from a link that carried a query (`?…`) lost the query: you landed on the right page but without what the link asked for.
 
 ## 0.1.0-beta.11

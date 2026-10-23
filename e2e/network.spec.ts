@@ -209,6 +209,33 @@ test('a rejected refresh token signs out in place; the unsaved draft returns aft
   }
 });
 
+test('a refresh that meets a proxy error is retried, not a sign-out', async ({ browser }) => {
+  test.setTimeout(90_000);
+  // Stalwart restarting behind Caddy: the token endpoint answers 502 for a while.
+  const context = await browser.newContext({ storageState: 'e2e/.auth/alice.json' });
+  const page = await context.newPage();
+  try {
+    await openInbox(page);
+    await waitLive(page);
+    await page.route('**/auth/token', (route) => route.fulfill({ status: 502, body: 'Bad Gateway' }));
+    await page.evaluate(() => {
+      const tokens = JSON.parse(localStorage.getItem('oinbox.tokens')!);
+      localStorage.setItem('oinbox.tokens', JSON.stringify({ ...tokens, expiresAt: 0 }));
+    });
+    // Something that needs a request: it asks for a new token first. Twice, past the banner's grace.
+    await page.getByTitle('Refresh').click();
+    await page.getByTitle('Refresh').click();
+    await expect(banner(page)).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole('status').filter({ hasText: "You've been signed out." })).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('oinbox.tokens'))).not.toBeNull();
+    await page.unroute('**/auth/token');
+    await expect(banner(page)).toHaveCount(0, { timeout: 45_000 });
+    await waitLive(page);
+  } finally {
+    await context.close();
+  }
+});
+
 test('a refresh refused before any request is made signs out in place too, and keeps the draft', async ({ browser }) => {
   test.setTimeout(90_000);
   // The usual end of a session: the token is renewed ahead of expiry and the server says no.
