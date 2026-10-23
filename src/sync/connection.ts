@@ -7,6 +7,8 @@ export type ConnectionSource = 'request' | 'push';
 const GRACE_MS = 3000;
 const FAILURES_TO_SHOW = 2;
 const RETRY_CAP_MS = 30_000;
+/** Back from a hidden tab (often a sleeping computer), the network can take a few seconds to return. */
+export const WAKE_GRACE_MS = 10_000;
 
 /** The request never got a usable answer: network down, timed out, or the proxy couldn't reach Stalwart. */
 export function isTransportFailure(e: unknown): boolean {
@@ -30,6 +32,8 @@ export interface Connection {
   onRetry(fn: (manual: boolean) => void): () => void;
   onRecovered(fn: () => void): () => void;
   retryNow(): void;
+  /** The tab was hidden or shown again (document.visibilityState). */
+  setVisible(visible: boolean): void;
 }
 
 export function createConnection(opts: { graceMs?: number; failuresToShow?: number } = {}): Connection {
@@ -44,6 +48,9 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
   let grace: ReturnType<typeof setTimeout> | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let hidden = false;
+  /** Back from hidden, and the wake grace is still running: only it may show the banner. */
+  let waking = false;
 
   const scheduleRetry = () => {
     clearTimeout(retryTimer);
@@ -67,6 +74,12 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
     clearTimeout(grace);
     clearTimeout(retryTimer);
     grace = retryTimer = undefined;
+    waking = false;
+  };
+
+  const retryAll = () => {
+    attempt = 0;
+    for (const fn of retryFns) fn(true);
   };
 
   return {
@@ -76,6 +89,8 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
       // A dropped push stream is a transport failure whatever the error looks like.
       if (source === 'request' && !isTransportFailure(error)) return;
       failing.add(source);
+      // Nobody is looking; the return to the tab decides (setVisible).
+      if (hidden || waking) return;
       failures++;
       if (failures >= failuresToShow) show();
       else grace ??= setTimeout(show, graceMs);
@@ -107,9 +122,31 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
     },
     retryNow() {
       if (state() !== 'retrying') return;
-      attempt = 0;
-      for (const fn of retryFns) fn(true);
+      retryAll();
       scheduleRetry();
+    },
+    setVisible(visible) {
+      if (hidden === !visible) return;
+      hidden = !visible;
+      if (!visible) {
+        // A grace timer would fire unseen, or late in a throttled background tab.
+        clearTimeout(grace);
+        grace = undefined;
+        waking = false;
+        return;
+      }
+      if (state() === 'retrying') {
+        retryAll();
+        scheduleRetry();
+      } else if (state() === 'ok' && failing.size) {
+        failures = 0;
+        waking = true;
+        grace = setTimeout(() => {
+          waking = false;
+          if (failing.size) show();
+        }, WAKE_GRACE_MS);
+        retryAll();
+      }
     },
   };
 }

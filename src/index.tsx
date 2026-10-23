@@ -415,6 +415,10 @@ async function boot() {
     if (manual) push?.wake();
     if (started) each((s) => void s.engine.catchUp().catch(logUnexpected));
   });
+  // Failures while the tab is hidden go unseen, and its retries are throttled: check again on return.
+  const visibility = () => connection.setVisible(document.visibilityState === 'visible');
+  visibility();
+  document.addEventListener('visibilitychange', visibility);
   // The browser's word that the network is back is a hint to try, never proof of a connection.
   window.addEventListener('online', () => connection.retryNow());
   // An idle tab makes no requests, and a dropped network leaves the push stream open: find out now.

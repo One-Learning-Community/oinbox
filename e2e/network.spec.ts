@@ -28,6 +28,44 @@ test('offline while reading: banner, loaded mail still opens, recovery without r
   await waitLive(page);
 });
 
+// Stand-in for switching away from the tab (or the computer sleeping): the page reads as hidden.
+const setHidden = (page: Page, hidden: boolean) =>
+  page.evaluate((h) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+
+test('an outage while the tab was hidden shows no banner on return once the network is back', async ({ page, context }) => {
+  await openInbox(page);
+  await waitLive(page);
+  await setHidden(page, true);
+  await context.setOffline(true);
+  await page.waitForTimeout(8000); // longer than it takes to show the banner in a visible tab
+  await expect(banner(page)).toHaveCount(0);
+  await context.setOffline(false);
+  await setHidden(page, false);
+  await page.waitForTimeout(12_000); // past the wake grace
+  await expect(banner(page)).toHaveCount(0);
+  await waitLive(page);
+});
+
+test('still offline on return to the tab: the banner shows after the wake grace', async ({ page, context }) => {
+  await openInbox(page);
+  await waitLive(page);
+  await setHidden(page, true);
+  await context.setOffline(true);
+  try {
+    await page.waitForTimeout(2000);
+    await setHidden(page, false);
+    await page.waitForTimeout(5000);
+    await expect(banner(page)).toHaveCount(0);
+    await expect(banner(page)).toBeVisible({ timeout: 10_000 });
+  } finally {
+    await context.setOffline(false);
+  }
+  await expect(banner(page)).toHaveCount(0, { timeout: 40_000 });
+});
+
 test('offline during archive: the thread comes back and a toast says so', async ({ page, context }) => {
   const subject = `e2e net archive ${Date.now()}`;
   const mail = await deliverToAlice({ from: 'Net Test <net@partner.test>', subject, text: 'stay put' });
