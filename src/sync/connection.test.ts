@@ -225,3 +225,39 @@ describe('createConnection, while the tab is hidden', () => {
     expect(c.state()).toBe('retrying');
   });
 });
+
+// Firefox holds a streamed fetch back until its first chunk: the server's first ping, 30 s in.
+// A reopened stream is not a failure, though only a server answer takes the banner down.
+describe('createConnection, a reopened push stream', () => {
+  it('back from hidden, an open stream does not show the banner when the wake grace ends', () => {
+    const c = createConnection();
+    c.setVisible(false);
+    c.reportFailure('push', net());
+    c.setVisible(true);
+    c.reportOpen('push');
+    c.reportSuccess('request');
+    vi.advanceTimersByTime(WAKE_GRACE_MS + 60_000);
+    expect(c.state()).toBe('ok');
+  });
+
+  it('takes the banner down at the next answer from the server', () => {
+    const c = createConnection();
+    c.reportFailure('push', net());
+    c.reportFailure('push', net());
+    expect(c.state()).toBe('retrying');
+    c.reportOpen('push');
+    expect(c.state()).toBe('retrying');
+    c.reportSuccess('request');
+    expect(c.state()).toBe('ok');
+  });
+
+  it('a stream that fails again counts as failing again', () => {
+    const c = createConnection();
+    c.reportFailure('push', net());
+    c.reportFailure('push', net());
+    c.reportOpen('push');
+    c.reportFailure('push', net());
+    c.reportSuccess('request');
+    expect(c.state()).toBe('retrying');
+  });
+});

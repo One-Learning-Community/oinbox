@@ -27,6 +27,12 @@ export interface Connection {
   state: Accessor<ConnectionState>;
   reportFailure(source: ConnectionSource, error: unknown): void;
   reportSuccess(source: ConnectionSource): void;
+  /**
+   * The source is open again but has not answered yet: a reopened push stream that Firefox holds
+   * back until the server's first ping, 30 s in. It no longer counts as failing; the banner still
+   * waits for an answer from the server, which the catch-up after a reconnect brings.
+   */
+  reportOpen(source: ConnectionSource): void;
   signedOut(): void;
   /** `manual` is true when a person (or the browser coming back online) asked, false for the timed retries. */
   onRetry(fn: (manual: boolean) => void): () => void;
@@ -107,6 +113,9 @@ export function createConnection(opts: { graceMs?: number; failuresToShow?: numb
         setState('ok');
         for (const fn of recoveredFns) fn();
       }
+    },
+    reportOpen(source) {
+      failing.delete(source);
     },
     signedOut() {
       stopTimers();

@@ -389,6 +389,7 @@ async function boot() {
       onConnected: (confirmed) => {
         // Only an answer from the server is evidence for the banner; an open request is not.
         if (confirmed) connection.reportSuccess('push');
+        else connection.reportOpen('push');
         // Confirmation of a stream already taken as open: the catch-up below has been done.
         const again = confirmed && assumedOpen;
         assumedOpen = !confirmed;
