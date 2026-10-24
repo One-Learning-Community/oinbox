@@ -57,6 +57,9 @@ test('"Show original" opens the message as Stalwart holds it, and Back, Escape a
   await expect(page).not.toHaveURL(/original=/);
 });
 
+// The browser has the last word on the name: Linux WebKit (Ubuntu 26.04) saves spaces as underscores.
+const savedAs = (name: string) => name.replace(/_/g, ' ');
+
 test('the message downloads as an .eml file, from the menu and from the panel', async ({ page }) => {
   const { subject } = await openMessage(page);
   const more = page.locator('.msg').last().getByRole('button', { name: 'More' });
@@ -65,7 +68,7 @@ test('the message downloads as an .eml file, from the menu and from the panel', 
   const fromMenu = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'Download message' }).click();
   const file = await fromMenu;
-  expect(file.suggestedFilename()).toBe(`${subject}.eml`);
+  expect(savedAs(file.suggestedFilename())).toBe(`${subject}.eml`);
   const text = await (await file.createReadStream()).toArray().then((chunks) => Buffer.concat(chunks).toString('utf8'));
   expect(text).toContain(`Subject: ${subject}`);
 
@@ -73,7 +76,7 @@ test('the message downloads as an .eml file, from the menu and from the panel', 
   await page.getByRole('menuitem', { name: 'Show original' }).click();
   const fromPanel = page.waitForEvent('download');
   await panel(page).getByRole('button', { name: 'Download original' }).click();
-  expect((await fromPanel).suggestedFilename()).toBe(`${subject}.eml`);
+  expect(savedAs((await fromPanel).suggestedFilename())).toBe(`${subject}.eml`);
 });
 
 test('@phone the panel fills the screen, nothing is wider than it, and its buttons are finger-sized', async ({ page }) => {
